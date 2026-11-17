@@ -22,10 +22,12 @@ logging.basicConfig(
 async def lifespan(app: FastAPI):
     Path(settings.uploads_dir).mkdir(parents=True, exist_ok=True)
     await init_db()
-    # Warm up PaddleOCR in a thread so models download once at startup, not on first request
-    import asyncio
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, _warmup_ocr)
+    # Warm up PaddleOCR in a background thread so models download once, not on the first check.
+    # Not awaited: the site answers right away instead of returning 502 while models download.
+    # Without a model OCR is not used at all, so the warm-up is skipped.
+    if settings.llm_ready:
+        import asyncio
+        asyncio.get_running_loop().run_in_executor(None, _warmup_ocr)
     yield
 
 

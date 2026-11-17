@@ -1,12 +1,15 @@
+from __future__ import annotations
+
 import numpy as np
-from paddleocr import PaddleOCR
 
-_ocr: PaddleOCR | None = None
+_ocr = None
 
 
-def get_ocr() -> PaddleOCR:
+def get_ocr():
+    # imported lazily: paddle is heavy, and the rest of the site must start even if it cannot load
     global _ocr
     if _ocr is None:
+        from paddleocr import PaddleOCR
         _ocr = PaddleOCR(use_angle_cls=True, lang="ru", show_log=False)
     return _ocr
 
