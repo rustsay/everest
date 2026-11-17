@@ -155,6 +155,7 @@ async def answer(n: int, body: AnswerIn, user: User = Depends(get_current_user),
     first = pid not in done
     if first:  # the percentage counts the first attempt only: after it the solution is shown
         done[pid] = 1 if ok else 0
+        service.on_practice(user, row, n, ok)
         service.gain(row, 30 if ok else 5)
     service.touch(row)
     await db.commit()

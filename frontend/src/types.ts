@@ -152,9 +152,12 @@ export interface PlanBlock {
 }
 export interface PlanDay { date: string; rest?: boolean; past?: boolean; mock?: number; blocks: PlanBlock[] }
 
+export type RouteBasis = 'diag' | 'practice' | 'start'
 export interface Dashboard {
   exam: ExamInfo
   diag_done?: boolean
+  /** what the schedule rests on: a diagnostic, answers and photo checks, or nothing yet */
+  route_basis?: RouteBasis
   forecast: number
   gain: number
   model: { nodes: GraphNode[]; tasks: ExamTask[]; root: string | null; root_tasks: string[]; at_risk: number; weak: string[]; threat: string[] }
@@ -196,6 +199,7 @@ export interface PlanData {
   tasks: { id: string; n: number | string | null; name: string; risk: boolean; from?: string | null }[]
   root: string | null
   root_name: string | null
+  route_basis?: RouteBasis
 }
 
 export interface DiagItem {

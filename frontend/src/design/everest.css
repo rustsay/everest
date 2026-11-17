@@ -685,3 +685,9 @@ body.reveal #view>*:nth-child(1){animation-delay:.35s}body.reveal #view>*:nth-ch
   body{background:#fff}
   .tm-prob{break-inside:avoid;border-color:#bbb}
 }
+.route-note{display:flex;gap:8px;align-items:flex-start;font-size:13px;line-height:1.45;color:var(--ink);background:var(--bg);border:1px dashed var(--line);border-radius:12px;padding:10px 12px}
+.route-note .ico,.route-note svg{flex:none;margin-top:2px}
+.route-note-btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.plan-set .route-note{margin-top:12px}
+.item .t-strong,.pb-main b{overflow-wrap:anywhere;hyphens:auto}
+.item .t-sub,.pb-main small{overflow-wrap:anywhere}

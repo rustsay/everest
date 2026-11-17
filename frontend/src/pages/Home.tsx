@@ -3,7 +3,7 @@ import { assignmentDone, dailyAnswer, dailyHint, mapAnalysis, sendEvent, toggleP
 import { useApp } from '../app/store'
 import type { Dashboard, PlanBlock } from '../types'
 import { Icon, Md, Orn, STAR_D, StarBot, Typed, fmt1, fmtD, plural, reduceMotion, taskLabel } from '../design/ui'
-import { blockGo } from './Plan'
+import { RouteNote, blockGo } from './Plan'
 
 const hello = () => { const h = new Date().getHours(); return h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер' }
 
@@ -186,6 +186,7 @@ function Route({ d }: { d: Dashboard }) {
     <section className="card" style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: 10 }} aria-label="Маршрут на сегодня">
       <div className="card-h" style={{ margin: 0 }}><h2>Маршрут на сегодня</h2><span className="muted num">{done} из {blocks.length || 0}</span></div>
       <div className="bar"><i style={{ width: `${blocks.length ? (done / blocks.length) * 100 : 0}%`, background: 'var(--em)' }} /></div>
+      <RouteNote basis={d.route_basis} exam={d.exam} />
       {d.today.rest && <div className="item" style={{ cursor: 'default' }}><Icon n="moon" /><span style={{ flex: 1 }}><span className="t-strong">Сегодня отдых</span><span className="t-sub">выходной день в расписании</span></span><button className="btn btn-sm btn-line" onClick={() => app.go('plan')}>Неделя</button></div>}
       {blocks.map((b, i) => b && (
         <div key={b.key} className={`item ${i === cur ? 'current' : ''}`} style={{ cursor: 'default' }}>

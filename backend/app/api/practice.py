@@ -195,7 +195,9 @@ async def submit_variant(vid: int, body: SubmitIn, user: User = Depends(get_curr
         ok = engine.same_ans(body.answers.get(r, ""), p["a"])
         results[r] = 1 if ok else 0
         score += results[r]
-        tm.setdefault(p["pid"], results[r])  # feeds the task maps: the first attempt counts
+        if p["pid"] not in tm:  # the first attempt counts: for the task maps and for the schedule
+            tm[p["pid"]] = results[r]
+            service.on_practice(user, row, p["task"], ok)
     answers = {k: str(val)[:40] for k, val in body.answers.items() if k in (v.items or [])}
     db.add(VariantAttempt(variant_id=v.id, user_id=user.id, answers=answers, results=results, score=score, max_score=mx))
     service.gain(row, 20 * score)

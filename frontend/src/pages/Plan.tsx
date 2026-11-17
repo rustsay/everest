@@ -1,12 +1,33 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getPlan, putSettings, togglePlanBlock } from '../api/client'
 import { useApp } from '../app/store'
-import type { PlanBlock, PlanData } from '../types'
+import type { ExamInfo, PlanBlock, PlanData, RouteBasis } from '../types'
 import { Icon, dkey, fmtD, plural, taskLabel } from '../design/ui'
 
 type App = ReturnType<typeof useApp>
 
 /** Where a schedule block leads. */
+/** An honest line about what the route rests on; nothing once a diagnostic is done. */
+export function RouteNote({ basis, exam }: { basis?: RouteBasis; exam: ExamInfo }) {
+  const app = useApp()
+  if (!basis || basis === 'diag') return null
+  const tasks = exam.key === 'prof'
+  return (
+    <div className="route-note">
+      <Icon n="bulb" s={16} />
+      <span style={{ flex: 1 }}>
+        {basis === 'start'
+          ? <><b>Стартовый маршрут:</b> идём по порядку с основ. {tasks ? 'Пройди диагностику или порешай задачи, и он подстроится под тебя.' : 'Пройди диагностику, и он подстроится под тебя.'}</>
+          : <><b>Маршрут по твоим ответам</b> в банке задач, картах заданий и проверках по фото. С диагностикой он станет точнее.</>}
+        <span className="route-note-btns">
+          <button className="btn btn-sm btn-line" onClick={() => window.dispatchEvent(new Event('everest:diag'))}>Диагностика</button>
+          {tasks && basis === 'start' && <button className="btn btn-sm btn-line" onClick={() => app.go('practice')}>Банк задач</button>}
+        </span>
+      </span>
+    </div>
+  )
+}
+
 export function blockGo(b: PlanBlock, app: App) {
   if (b.k === 'mock') { window.dispatchEvent(new Event('everest:mock')); return }
   const prof = app.me.exam_info.key === 'prof'
@@ -66,6 +87,7 @@ export default function Plan() {
           <div className="field" style={{ flex: '1 1 150px' }}><label htmlFor="plMin">Минут в день</label>
             <select id="plMin" className="input" value={p.settings.min} onChange={(e) => setPlan('min', +e.target.value)}>{[30, 45, 60, 90].map((n) => <option key={n} value={n}>{n}</option>)}</select></div>
         </div>
+        <RouteNote basis={p.route_basis} exam={ex} />
         <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>{ex.date_note}. Воскресенье всегда выходной. Занятия заканчиваются до 21:30, чтобы не сбивать сон.</p>
       </section>
       <section className="card">
