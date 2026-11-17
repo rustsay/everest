@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { getResults, openWs, uploadTask, downloadReportFile } from '../api/client'
 import TaskCard from '../components/TaskCard'
 import { TaskResult, TASK_INFO, WsEvent } from '../types'
+import NoLlm from '../components/NoLlm'
 
 interface Props {
   sessionId: string
@@ -82,7 +83,7 @@ export default function Session({ sessionId, onBack, onOpenTrajectory, onChecked
     } catch (err) {
       setResults((prev) => ({
         ...prev,
-        [taskId]: { task_id: taskId, status: 'error', error: String(err) },
+        [taskId]: { task_id: taskId, status: 'error', error: String(err).replace('Error: ', '') },
       }))
     }
   }
@@ -118,6 +119,7 @@ export default function Session({ sessionId, onBack, onOpenTrajectory, onChecked
           </div>
         )}
       </div>
+      <NoLlm what="Проверка по фото" />
       <p className="muted">Загружайте фото решений: проверка запустится сразу после загрузки. Три эксперта проверяют независимо по критериям ФИПИ, при расхождении решает судья. Результат обновит прогноз и расписание.</p>
       <div className="sess-grid">
         {TASK_IDS.map((tid) => (

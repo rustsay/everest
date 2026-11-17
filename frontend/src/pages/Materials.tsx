@@ -3,6 +3,7 @@ import { addTextbook, deleteTextbook, generateMaterial, listTextbooks } from '..
 import { useApp } from '../app/store'
 import type { MaterialOut, Textbook } from '../types'
 import { Icon, Md, Orn, StarBot } from '../design/ui'
+import NoLlm from '../components/NoLlm'
 
 const TEMPLATE = ['Тема и параграф', 'Цель урока', 'Что повторить', 'Определения (дословно из учебника)', 'Теоремы и формулы (дословно)', 'Разобранный пример из учебника', 'Задачи из учебника: базовые и повышенные', 'Связь с экзаменом', 'Типичные ошибки по критериям ФИПИ', 'Домашнее задание (номера из учебника)']
 const TOPICS = ['Отбор корней на отрезке', 'Логарифмические неравенства', 'Экономическая задача: кредиты', 'Задачи с параметром', 'Стереометрия: угол между плоскостями', 'Единичная окружность', 'Производная', 'Квадратные уравнения', 'Вероятность']
@@ -66,6 +67,7 @@ export default function Materials() {
   return (
     <>
       <div><p className="muted">{tutor ? 'Кабинет репетитора' : 'Кабинет учителя'}</p><h1>Конспекты и презентации</h1></div>
+      <NoLlm what="Сборка конспектов и презентаций" />
       <section className="card">
         <div className="card-h"><div><h2>Библиотека учебников</h2><p className="muted" style={{ fontSize: 13 }}>конспекты строятся только по этим учебникам</p></div>
           <button className="btn btn-sm btn-line" onClick={() => setAdding(!adding)}><Icon n="plus" s={16} />Добавить учебник</button></div>

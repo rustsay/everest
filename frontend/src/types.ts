@@ -125,6 +125,8 @@ export interface Me {
   exam_info: ExamInfo
   needs_profile: boolean
   diag_required: boolean
+  /** false when the language model is not configured on the server */
+  llm_ready?: boolean
   diag_done?: boolean
   diag_in_progress?: boolean
   classes?: { id: number; name: string }[]

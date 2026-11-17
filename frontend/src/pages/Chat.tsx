@@ -3,6 +3,7 @@ import { clearChat, getChat, postChat } from '../api/client'
 import { useApp } from '../app/store'
 import type { ChatMsg } from '../types'
 import { Icon, Md } from '../design/ui'
+import NoLlm from '../components/NoLlm'
 
 const CHIPS_S = ['Не понимаю, как отбирать корни на отрезке', 'Дай подсказку к задаче дня', 'Почему у меня проседает первопричина?', 'Объясни единичную окружность простыми словами']
 const CHIPS_T = ['План урока на 45 минут по отбору корней', 'Кому из класса нужна помощь в первую очередь?', 'Объясните критерии задания 13', 'Подберите 5 задач на единичную окружность']
@@ -55,6 +56,7 @@ export default function Chat({ teacher }: { teacher: boolean }) {
         <div><p className="muted">{teacher ? 'Для учителя' : 'Задай вопрос по математике'}</p><h1>{teacher ? 'Помощник учителя' : 'Помощник'}</h1></div>
         {list.length > 0 && <button className="btn btn-sm btn-ghost" onClick={async () => { await clearChat(kind); setList([]) }}>Новый диалог</button>}
       </div>
+      <NoLlm what="Помощник" />
       <section className="chat">
         <div className="msgs">
           <div className="msg ai">{teacher ? 'Здравствуйте! Я вижу результаты ваших учеников. Могу предложить план урока, подобрать задачи или объяснить критерии.' : 'Привет! Я не решаю за тебя, но помогу дойти до ответа самому. Можно прислать фото решения.'}</div>

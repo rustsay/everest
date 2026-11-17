@@ -3,6 +3,7 @@ import { createSession, listSessions } from '../api/client'
 import { useApp } from '../app/store'
 import { SessionSummary, TASK_INFO } from '../types'
 import { Icon, StarBot } from '../design/ui'
+import NoLlm from '../components/NoLlm'
 
 const TASK_IDS = Object.keys(TASK_INFO).map(Number)
 
@@ -22,6 +23,7 @@ export default function Check() {
         <div><p className="muted">Вторая часть ЕГЭ · задания 13-19</p><h1>Проверка решения по фото</h1></div>
         <button className="btn btn-gold" onClick={startNew} disabled={creating}><Icon n="check" s={18} c="#16231F" />{creating ? 'Создаю…' : 'Новая проверка'}</button>
       </div>
+      <NoLlm what="Проверка по фото" />
       <section className="card check-intro">
         <StarBot size={64} />
         <div style={{ flex: '1 1 260px' }}>

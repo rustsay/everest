@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.agents.prompts.tasks import TASK_CONFIGS
+from app.config import NO_LLM, settings
 from app.auth.deps import get_current_user
 from app.db import crud_learning as crud
 from app.db.database import get_db
@@ -271,6 +272,8 @@ def _exam_link(topic: str) -> str:
 
 @router.post("/materials/generate")
 async def generate_material(body: MaterialIn, teacher: User = Depends(require_teacher), db: AsyncSession = Depends(get_db)):
+    if not settings.llm_ready:
+        raise HTTPException(503, NO_LLM)
     b = await db.get(Textbook, body.textbook_id)
     if b is None or b.owner_id != teacher.id:
         raise HTTPException(404, "Учебник не найден")

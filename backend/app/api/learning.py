@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user
+from app.config import NO_LLM, settings
 from app.db import crud_learning as crud
 from app.db.database import get_db
 from app.db.models import Assignment, ChatMessage, Diagnostic, User
@@ -38,6 +39,7 @@ def me_payload(user: User, state: dict, extra: dict | None = None) -> dict:
         "needs_profile": user.role == "student" and not user.grade,
         "diag_required": user.role == "student" and engine.diag_required(user.grade),
         "settings": {k: state.get(k) for k in ("plan", "care", "sound", "voice", "onb")},
+        "llm_ready": settings.llm_ready,
         **(extra or {}),
     }
 
@@ -495,6 +497,8 @@ class ChatIn(BaseModel):
 async def post_chat(kind: str, body: ChatIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if kind not in ("student", "teacher"):
         raise HTTPException(404, "Нет такого чата")
+    if not settings.llm_ready:
+        raise HTTPException(503, NO_LLM)
     if body.image:
         try:
             if len(base64.b64decode(body.image, validate=True)) > 8 * 1024 * 1024:
@@ -527,6 +531,8 @@ async def delete_chat(kind: str, user: User = Depends(get_current_user), db: Asy
 
 @router.post("/map/analysis")
 async def map_analysis(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if not settings.llm_ready:
+        raise HTTPException(503, NO_LLM)
     row = await service.get_state(db, user.id)
     key = service.key_for(user)
     m = engine.build_model(row.data, key)
