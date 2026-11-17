@@ -189,7 +189,8 @@ npm run dev   # vite proxy → localhost:8000
 - Таблицы нового дизайна: `learner_states` (JSONB-документ ученика), `diagnostics`, `measurements` (история прогноза),
   `notifications`, `chat_messages`, `class_groups`, `class_members`, `assignments`, `teacher_reviews`, `textbooks`, `materials`
 - Ключи ответов диагностики хранятся только на сервере (`learning/content.py`), клиент получает задания без них
-- После проверки по фото `api/router.py` вызывает `learning.service.on_task_checked`: балл обновляет освоение тем,
-  прогноз и расписание (точка на графике появляется только после диагностики)
+- После проверки по фото `api/router.py` вызывает `learning.service.on_task_checked`: балл обновляет оценку
+  самого задания (`obs`, вес 60% в прогнозе), а через неё прогноз и расписание; освоение тем на карте не меняется.
+  Точка на графике появляется только после диагностики
 - Логика модели в `learning/engine.py` без БД и сети: её удобно проверять обычными вызовами функций
 - JWT токен живёт 30 дней, хранится в localStorage
