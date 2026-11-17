@@ -25,6 +25,7 @@ services:
       - "8000:8000"
     volumes:
       - uploads:/app/uploads
+      - ocr_models:/root/.paddleocr
     env_file:
       - .env
     environment:
@@ -48,3 +49,4 @@ services:
 volumes:
   pgdata:
   uploads:
+  ocr_models:

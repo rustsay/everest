@@ -152,8 +152,14 @@ export interface PlanBlock {
 }
 export interface PlanDay { date: string; rest?: boolean; past?: boolean; mock?: number; blocks: PlanBlock[] }
 
+export type RouteBasis = 'path' | 'diag' | 'practice' | 'start'
 export interface Dashboard {
   exam: ExamInfo
+  diag_done?: boolean
+  /** what the schedule rests on: a diagnostic, answers and photo checks, or nothing yet */
+  route_basis?: RouteBasis
+  /** the stage of the educational trajectory the schedule follows today */
+  path_stage?: PathStageInfo | null
   forecast: number
   gain: number
   model: { nodes: GraphNode[]; tasks: ExamTask[]; root: string | null; root_tasks: string[]; at_risk: number; weak: string[]; threat: string[] }
@@ -195,6 +201,8 @@ export interface PlanData {
   tasks: { id: string; n: number | string | null; name: string; risk: boolean; from?: string | null }[]
   root: string | null
   root_name: string | null
+  route_basis?: RouteBasis
+  path_stage?: PathStageInfo | null
 }
 
 export interface DiagItem {
@@ -229,18 +237,54 @@ export interface MaterialOut { id: number; kind: 'conspect' | 'slides'; topic: s
 
 // ---------- task maps (knowledge map of one exam task) ----------
 export interface TmStat { pct: number | null; ok: number; count: number }
-export interface TmProblem { id: string; q: string; done: 0 | 1 | null; sol: string | null }
+export interface TmProblem { id: string; q: string; done: 0 | 1 | null; sol: string | null; src: string; check: 'answer' | 'photo' }
 export interface TmFile { id: number; name: string; size: number; mine: boolean }
 export interface TmProto extends TmStat {
-  id: string; name: string; fig: string; skills: string[]; know: string[]; added: string | null
+  id: string; name: string; fig: string | null; skills: string[]; know: string[]; added: string | null
   links: { title: string; url: string }[]; from_diag: number; problems: TmProblem[]; files: TmFile[]
 }
-export interface TmSkill extends TmStat { id: string; name: string; know: string[] }
+export interface TmSkill extends TmStat { id: string; name: string; short: string; know: string[]; fig: string | null }
 export interface TaskMapData {
-  n: number; name: string
-  codifier: { elements: [string, string][]; requirements: [string, string][]; note: string }
+  n: number; name: string; part: 1 | 2
   skills: TmSkill[]; protos: TmProto[]
   total: TmStat & { covered: number; of: number }
   can_upload: boolean
 }
 export interface TmAnswer { ok: boolean; first: boolean; answer: string; sol: string }
+export interface SkillExplain { text: string | null; book: { id: number; title: string; authors: string }; pages: string[]; cached?: boolean; message?: string }
+
+// ---------- task bank ----------
+export interface BankItem { id: number; task: number; proto: string; text: string; answer: string | null; solution: string; source: string; status: 'draft' | 'approved'; mine: boolean }
+export interface BankTask { n: number; name: string; protos: { id: string; name: string }[] }
+
+// ---------- practice bank and variants ----------
+export interface PracticeItem { ref: string; pid: string; task: number; proto: string; proto_name: string; q: string; src: string; check: 'answer' | 'photo'; done: 0 | 1 | null; sol: string | null; answer?: string | null }
+export interface VariantSummary { id: number; title: string; count: number; class_id: number | null; class_name: string | null; due: string | null; attempt: { score: number; max: number } | null }
+export interface VariantFull {
+  id: number; title: string; class_id: number | null; due: string | null; owner: boolean; items: PracticeItem[]
+  attempt?: { answers: Record<string, string>; results: Record<string, 0 | 1>; score: number; max: number }
+  results?: { name: string; score: number; max: number; results: Record<string, 0 | 1> }[]
+}
+
+// ---------- educational trajectory ----------
+export interface PathStageInfo { title: string | null; goal: string | null; index: number | null; count: number; approved: boolean }
+export interface PathStage { title: string; from: string; to: string; goal: string; check: string; tasks: string[]; problems?: string[] }
+export interface PathData {
+  source: 'ai' | 'rules'; fallback?: string; edited?: boolean; summary: string; why: string[]; stages: PathStage[]
+  exam: string; end: string; built: string; labels: Record<string, string>; nums: Record<string, number | string | null>
+}
+export interface PathOut {
+  id: number; status: 'draft' | 'pending' | 'active' | 'archived' | 'rejected'; kind: 'student' | 'class'
+  student_id: number | null; student_name: string | null; class_id: number | null; class_name: string | null
+  author: string | null; approved_by: string | null; note: string; data: PathData; created_at: string | null; approved_at: string | null
+}
+export interface MyPath {
+  mode: 'solo' | 'class'; teachers: string[]; follow: boolean; llm_ready: boolean
+  active: PathOut | null; pending: PathOut | null; rejected: PathOut | null; class_path: PathOut | null
+}
+interface PathRefs { active: number | null; pending: number | null; draft: number | null }
+export interface TeacherPaths {
+  pending: PathOut[]; llm_ready: boolean
+  classes: ({ id: number; name: string; students: number } & PathRefs)[]
+  students: ({ id: number; name: string; exam: string; classes: string[] } & PathRefs)[]
+}

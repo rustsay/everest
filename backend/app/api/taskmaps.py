@@ -1,4 +1,4 @@
-"""Knowledge map of one exam task: prototypes, what to know, practice problems, files (new design)."""
+"""Knowledge map of one exam task: prototypes, skills, practice problems, files, skill explanations from the textbook."""
 from __future__ import annotations
 
 import logging
@@ -13,13 +13,13 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user
-from app.config import settings
+from app.config import NO_LLM, settings
 from app.db import crud_learning as crud
 from app.db.database import get_db
-from app.db.models import Diagnostic, TaskFile, User
-from app.learning import engine, service
+from app.db.models import BankProblem, Diagnostic, SkillExplanation, TaskFile, Textbook, User
+from app.learning import engine, llm, service, textbook_search
 from app.learning.content import PROF_P1
-from app.learning.taskmaps import AVAILABLE, SKILLS, TASK_MAPS, problem_index
+from app.learning.taskmaps import AVAILABLE, PART2, SKILLS, TASK_MAPS, problem_index
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["taskmaps"])
@@ -34,21 +34,21 @@ def _map(n: int) -> dict:
     return TASK_MAPS[n]
 
 
-async def _diag_entries(db: AsyncSession, user: User, n: int) -> list[tuple[str, list[str], int]]:
-    """(prototype, skills, 0/1) for this task's items in every finished diagnostic and mock."""
+async def _diag_entries(db: AsyncSession, user: User, n: int) -> list[tuple[str, int]]:
+    """(prototype, 0/1) for this task's item in every finished diagnostic and mock."""
     tm = TASK_MAPS[n]
-    if service.key_for(user) != "prof" or n not in PROF_P1:
+    if service.key_for(user) != "prof" or n not in PROF_P1 or not tm["diag"]:
         return []
     res = await db.execute(select(Diagnostic).where(Diagnostic.user_id == user.id, Diagnostic.finished.is_(True),
                                                     Diagnostic.exam_key == "prof"))
     out = []
     for d in res.scalars():
         vi = d.variant % len(PROF_P1[n])
-        tag = tm["diag"].get(vi)
-        if tag is None:
+        proto = tm["diag"].get(vi)
+        if proto is None:
             continue
         ok = engine.same_ans((d.answers or {}).get(f"p{n}_{vi}"), PROF_P1[n][vi]["a"])
-        out.append((tag[0], tag[1], 1 if ok else 0))
+        out.append((proto, 1 if ok else 0))
     return out
 
 
@@ -64,6 +64,20 @@ async def _files_visible(db: AsyncSession, user: User, n: int) -> list[TaskFile]
     return list(res.scalars())
 
 
+async def _bank(db: AsyncSession, n: int) -> list[BankProblem]:
+    res = await db.execute(select(BankProblem).where(BankProblem.task_n == n, BankProblem.status == "approved").order_by(BankProblem.id))
+    return list(res.scalars())
+
+
+def _problems(n: int, pr: dict, bank: list[BankProblem]) -> list[dict]:
+    """Static problems of the prototype + approved bank problems, one shape: id, q, a, sol, skills."""
+    out = [{"id": p["id"], "q": p["q"], "a": p["a"], "sol": p["sol"], "skills": p["skills"], "src": ""} for p in pr["problems"]]
+    for b in bank:
+        if b.proto == pr["id"]:
+            out.append({"id": f"b{b.id}", "q": b.text, "a": b.answer, "sol": b.solution or "", "skills": pr["skills"], "src": b.source})
+    return out
+
+
 @router.get("/taskmaps")
 async def list_maps(user: User = Depends(get_current_user)):
     return {"maps": [{"n": n, "name": TASK_MAPS[n]["name"]} for n in AVAILABLE]}
@@ -76,33 +90,38 @@ async def get_map(n: int, user: User = Depends(get_current_user), db: AsyncSessi
     done: dict = row.data.get("tm", {})
     diag = await _diag_entries(db, user, n)
     files = await _files_visible(db, user, n)
-    skill_vals: dict[str, list[int]] = {k: [] for k in SKILLS}
+    bank = await _bank(db, n)
+    used = [s for pr in tm["protos"] for s in pr["skills"]]
+    skill_vals: dict[str, list[int]] = {k: [] for k in dict.fromkeys(used)}
     all_vals: list[int] = []
     protos = []
     for pr in tm["protos"]:
-        vals = [done[p["id"]] for p in pr["problems"] if p["id"] in done]
-        for p in pr["problems"]:
+        probs = _problems(n, pr, bank)
+        vals = []
+        for p in probs:
             if p["id"] in done:
+                vals.append(done[p["id"]])
                 for s in p["skills"]:
-                    skill_vals[s].append(done[p["id"]])
-        for proto, skills, v in diag:
+                    skill_vals.setdefault(s, []).append(done[p["id"]])
+        for proto, v in diag:
             if proto == pr["id"]:
                 vals.append(v)
-                for s in skills:
+                for s in pr["skills"]:
                     skill_vals[s].append(v)
         all_vals += vals
         protos.append({
-            "id": pr["id"], "name": pr["name"], "fig": pr["fig"], "skills": pr["skills"], "know": pr["know"],
-            "added": pr.get("added"), "links": pr["links"], **_stat(vals),
-            "from_diag": sum(1 for proto, _, _ in diag if proto == pr["id"]),
-            "problems": [{"id": p["id"], "q": p["q"], "done": done.get(p["id"]),
-                          "sol": p["sol"] if p["id"] in done else None} for p in pr["problems"]],
+            "id": pr["id"], "name": pr["name"], "fig": pr.get("fig"), "skills": pr["skills"], "know": pr.get("know", []),
+            "added": pr.get("added"), "links": pr.get("links", []), **_stat(vals),
+            "from_diag": sum(1 for proto, _ in diag if proto == pr["id"]),
+            "problems": [{"id": p["id"], "q": p["q"], "done": done.get(p["id"]), "src": p["src"],
+                          "check": "answer" if p["a"] else "photo",
+                          "sol": p["sol"] if p["id"] in done else None} for p in probs],
             "files": [{"id": f.id, "name": f.name, "size": f.size, "mine": f.owner_id == user.id} for f in files if f.proto == pr["id"]],
         })
-    used = {s for pr in tm["protos"] for s in pr["skills"]}
     return {
-        "n": n, "name": tm["name"], "codifier": tm["codifier"],
-        "skills": [{"id": k, "name": SKILLS[k]["name"], "know": SKILLS[k]["know"], **_stat(skill_vals[k])} for k in SKILLS if k in used],
+        "n": n, "name": tm["name"], "part": 2 if n in PART2 else 1,
+        "skills": [{"id": k, "name": SKILLS[k]["name"], "short": SKILLS[k]["short"], "know": SKILLS[k]["know"], "fig": SKILLS[k]["fig"],
+                    **_stat(skill_vals[k])} for k in skill_vals],
         "protos": protos,
         "total": {**_stat(all_vals), "covered": sum(1 for p in protos if p["count"]), "of": len(protos)},
         "can_upload": user.role in ("teacher", "tutor"),
@@ -117,20 +136,78 @@ class AnswerIn(BaseModel):
 @router.post("/taskmaps/{n}/answer")
 async def answer(n: int, body: AnswerIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     _map(n)
-    idx = problem_index(n)
-    if body.problem_id not in idx:
-        raise HTTPException(404, "Нет такой задачи")
-    _, p = idx[body.problem_id]
-    ok = engine.same_ans(body.answer, p["a"])
+    pid = body.problem_id
+    if pid.startswith("b") and pid[1:].isdigit():
+        b = await db.get(BankProblem, int(pid[1:]))
+        if b is None or b.status != "approved" or b.task_n != n:
+            raise HTTPException(404, "Нет такой задачи")
+        right, sol = b.answer, b.solution or ""
+    else:
+        idx = problem_index(n)
+        if pid not in idx:
+            raise HTTPException(404, "Нет такой задачи")
+        right, sol = idx[pid][1]["a"], idx[pid][1]["sol"]
+    if not right:
+        raise HTTPException(400, "У этой задачи нет короткого ответа: решите её и отправьте на проверку по фото")
+    ok = engine.same_ans(body.answer, right)
     row = await service.get_state(db, user.id)
     done = row.data.setdefault("tm", {})
-    first = body.problem_id not in done
+    first = pid not in done
     if first:  # the percentage counts the first attempt only: after it the solution is shown
-        done[body.problem_id] = 1 if ok else 0
+        done[pid] = 1 if ok else 0
+        service.on_practice(user, row, n, ok)
         service.gain(row, 30 if ok else 5)
     service.touch(row)
     await db.commit()
-    return {"ok": ok, "first": first, "answer": p["a"], "sol": p["sol"]}
+    return {"ok": ok, "first": first, "answer": right, "sol": sol or "Решение к этой задаче не добавлено."}
+
+
+# ---------- explanation of a skill from the textbook ----------
+
+async def _books_for(db: AsyncSession, user: User) -> list[Textbook]:
+    owners = {user.id}
+    if user.role == "student":
+        owners |= {c.teacher_id for c in await crud.student_classes(db, user.id)}
+    res = await db.execute(select(Textbook).where(Textbook.owner_id.in_(owners)).order_by(Textbook.id))
+    return [b for b in res.scalars() if (b.text or "").strip()]
+
+
+class ExplainIn(BaseModel):
+    textbook_id: int | None = None
+
+
+@router.post("/skills/{skill_id}/explain")
+async def explain(skill_id: str, body: ExplainIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    sk = SKILLS.get(skill_id)
+    if sk is None:
+        raise HTTPException(404, "Нет такого умения")
+    books = await _books_for(db, user)
+    if body.textbook_id is not None:
+        books = [b for b in books if b.id == body.textbook_id]
+    if not books:
+        raise HTTPException(404, "Учебника с текстом пока нет: его загружает учитель в разделе «Конспекты и презентации»"
+                            if user.role == "student" else "Загрузите учебник с текстом в разделе «Конспекты и презентации»")
+    scored = sorted(((textbook_search.best_pages(b.text, sk["keys"]), b) for b in books), key=lambda x: -x[0][0])
+    (total, frags), book = scored[0]
+    if total <= 0:
+        return {"text": None, "book": {"id": book.id, "title": book.title, "authors": book.authors}, "pages": [],
+                "message": "В загруженных учебниках не нашлось страниц про это умение. Можно спросить помощника."}
+    cached = (await db.execute(select(SkillExplanation).where(SkillExplanation.skill == skill_id, SkillExplanation.textbook_id == book.id))).scalars().first()
+    out_book = {"id": book.id, "title": book.title, "authors": book.authors}
+    if cached:
+        return {"text": cached.text, "book": out_book, "pages": cached.pages, "cached": True}
+    if not settings.llm_ready:
+        raise HTTPException(503, NO_LLM)
+    fragments = "\n\n".join(f"[[{label}]]\n{body_}" for label, body_ in frags)
+    try:
+        text = await llm.explain_skill(sk["name"], out_book, fragments)
+    except Exception as exc:
+        log.exception("skill explanation failed: %s", exc)
+        raise HTTPException(502, "Объяснение сейчас недоступно. Попробуйте через минуту.")
+    labels = [label for label, _ in frags]
+    db.add(SkillExplanation(skill=skill_id, textbook_id=book.id, text=text, pages=labels))
+    await db.commit()
+    return {"text": text, "book": out_book, "pages": labels, "cached": False}
 
 
 @router.post("/taskmaps/{n}/files")

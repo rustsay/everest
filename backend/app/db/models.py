@@ -26,6 +26,21 @@ class User(Base):
     sessions: Mapped[list["Session"]] = relationship("Session", back_populates="user")
 
 
+class GeneratedVideo(Base):
+    __tablename__ = "generated_videos"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    problem: Mapped[str] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(String(200), default="Разбор задачи")
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    stage: Mapped[str] = mapped_column(String(250), default="В очереди")
+    html: Mapped[str | None] = mapped_column(Text)
+    steps: Mapped[list | None] = mapped_column(JSONB)
+    error: Mapped[str | None] = mapped_column(Text)
+    duration: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class Session(Base):
     __tablename__ = "sessions"
 
@@ -228,3 +243,77 @@ class TaskFile(Base):
     path: Mapped[str] = mapped_column(String(300), nullable=False)
     size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class BankProblem(Base):
+    """A problem of the task bank: imported from a file, checked by a teacher or methodist, then published."""
+    __tablename__ = "bank_problems"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    task_n: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    proto: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str | None] = mapped_column(String(80))
+    solution: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(300), default="")
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="draft", index=True)  # draft | approved
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class SkillExplanation(Base):
+    """Cached explanation of a cross-cutting skill, written strictly from one textbook's text."""
+    __tablename__ = "skill_explanations"
+    __table_args__ = (UniqueConstraint("skill", "textbook_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    skill: Mapped[str] = mapped_column(String(10), nullable=False)
+    textbook_id: Mapped[int] = mapped_column(Integer, ForeignKey("textbooks.id", ondelete="CASCADE"), nullable=False, index=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    pages: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class Variant(Base):
+    """A variant a teacher or tutor composed from the task bank; can be given to a class with a deadline."""
+    __tablename__ = "variants"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    items: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)  # problem refs: "b12" (bank) or "s1:r2" (built-in)
+    class_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("class_groups.id"), index=True)
+    due: Mapped[datetime | None] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class VariantAttempt(Base):
+    __tablename__ = "variant_attempts"
+    __table_args__ = (UniqueConstraint("variant_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    variant_id: Mapped[int] = mapped_column(Integer, ForeignKey("variants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    answers: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    results: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)  # ref -> 0/1 for problems with a short answer
+    score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class LearningPath(Base):
+    """An educational trajectory for one student or for a whole class.
+    status: draft (teacher works on it) | pending (student in a class asked, waits for the teacher) |
+            active (in use) | archived | rejected."""
+    __tablename__ = "learning_paths"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    student_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), index=True)
+    class_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("class_groups.id", ondelete="CASCADE"), index=True)
+    author_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="draft", index=True)
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")  # the teacher's comment
+    approved_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime)

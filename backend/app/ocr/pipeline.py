@@ -37,7 +37,7 @@ def run_ocr(files: FileInput) -> dict:
     }
 
 
-def get_scan_jpegs(files: FileInput, max_width: int = 1280, max_images: int = 4) -> list[bytes]:
+def get_scan_jpegs(files: FileInput, max_width: int = 1280, max_images: int = 30) -> list[bytes]:
     """Return up to max_images JPEG bytes across all files/pages for VLM input."""
     result = []
     for file_bytes, filename in files:

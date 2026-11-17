@@ -6,7 +6,6 @@ import Chat from './pages/Chat'
 import Check from './pages/Check'
 import Diagnostic from './pages/Diagnostic'
 import Home from './pages/Home'
-import KnowledgeMap from './pages/KnowledgeMap'
 import Materials from './pages/Materials'
 import Onboarding from './pages/Onboarding'
 import Plan from './pages/Plan'
@@ -16,7 +15,11 @@ import Stars from './pages/Stars'
 import Teacher from './pages/Teacher'
 import Tour from './pages/Tour'
 import TaskMap from './pages/TaskMap'
+import Bank from './pages/Bank'
+import Practice from './pages/Practice'
+import Variants, { VariantPage } from './pages/Variants'
 import TrajectoryPage from './pages/Trajectory'
+import PathPage, { TeacherPaths } from './pages/Path'
 import Videos from './pages/Videos'
 import type { DiagResult, Me } from './types'
 
@@ -41,7 +44,8 @@ export default function App() {
   const route = useCallback((m: Me) => {
     setMe(m)
     if (m.role === 'student' && m.needs_profile) return setStage('profile')
-    if (m.role === 'student' && !m.diag_done && (m.diag_required || m.settings.onb === 'new')) return setStage('diag')
+    // the diagnostic is offered once after sign-up and can be skipped; later it starts from the home screen
+    if (m.role === 'student' && !m.diag_done && m.settings.onb === 'new') return setStage('diag')
     setStage('app')
     if (m.settings.onb !== 'done') reveal(m)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -58,6 +62,12 @@ export default function App() {
     setTimeout(() => setTour(true), 1700)
   }
 
+  useEffect(() => {
+    const on = () => setStage('diag')
+    addEventListener('everest:diag', on)
+    return () => removeEventListener('everest:diag', on)
+  }, [])
+
   const onToken = (t: string, email: string) => {
     localStorage.setItem('token', t)
     localStorage.setItem('email', email)
@@ -70,7 +80,7 @@ export default function App() {
   if (stage === 'profile') return <Onboarding me={me} onToken={onToken} onProfile={route} />
   if (stage === 'diag') {
     return (
-      <Diagnostic mode="first" required={me.diag_required} exam={me.exam_info}
+      <Diagnostic mode="first" required={false} exam={me.exam_info}
         onFinished={(r) => { setResult(r); setStage('result') }}
         onSkip={() => { const m = { ...me, settings: { ...me.settings, onb: 'skipped' } }; setMe(m); setStage('app'); reveal(m) }} />
     )
@@ -110,9 +120,14 @@ function Main() {
     case 'materials': page = teacher ? <Materials /> : <Home />; break
     case 'tchat': page = teacher ? <Chat teacher /> : <Chat teacher={false} />; break
     case 'plan': page = teacher ? <Teacher /> : <Plan />; break
-    case 'map': page = teacher ? <Teacher /> : <KnowledgeMap />; break
     case 'video': page = <Videos />; break
     case 'task': page = <TaskMap n={Number(view.id) || 1} />; break
+    case 'bank': page = teacher ? <Bank /> : <Practice />; break
+    case 'practice': page = <Practice />; break
+    case 'path': page = teacher ? <TeacherPaths /> : <PathPage />; break
+    case 'paths': page = teacher ? <TeacherPaths /> : <PathPage />; break
+    case 'variants': page = teacher ? <Variants /> : <Practice />; break
+    case 'variant': page = view.id ? <VariantPage id={Number(view.id)} /> : teacher ? <Variants /> : <Practice />; break
     case 'chat': page = teacher ? <Chat teacher /> : <Chat teacher={false} />; break
     case 'awards': page = teacher ? <Teacher /> : <Stars />; break
     default: page = teacher ? <Teacher /> : <Home />
