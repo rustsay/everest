@@ -66,7 +66,7 @@ export default function TaskMap({ n }: { n: number }) {
           </div>
         </div>
         <Graph d={d} hover={hover} sel={sel} onHover={setHover} onPick={setSel} />
-        <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>Нажми на прототип: там что нужно знать, задачи для проверки, разбор и файлы. Процент считается по первой попытке в каждой задаче и по диагностике. {d.codifier.note}</p>
+        <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>Линии от прототипов сходятся в задание, цвет линии - уровень прототипа. Наведи на прототип или умение, чтобы увидеть их связь. Нажми на прототип: там что нужно знать, задачи, разбор и файлы. Процент считается по первой попытке в каждой задаче и по диагностике. {d.codifier.note}</p>
       </section>
 
       {sel && <Drawer onClose={() => setSel(null)}>
@@ -92,32 +92,43 @@ function TaskRing({ s, size }: { s: TmStat; size: number }) {
 
 /* ---------- graph: HTML cards + SVG arrows measured from the DOM ---------- */
 
-type Edge = { key: string; from: string; to: string; path: string }
+type Geo = { stubs: { id: string; d: string }[]; trunk: string; toTask: string; links: { from: string; to: string; d: string }[] }
 
+/** Lines: every prototype → one trunk → the task (colour = prototype level).
+ *  Skill links are drawn only for the prototype or skill under the cursor / selected, so the map never turns into a mesh. */
 function Graph({ d, hover, sel, onHover, onPick }: { d: TaskMapData; hover: string | null; sel: Sel; onHover: (id: string | null) => void; onPick: (s: Sel) => void }) {
   const box = useRef<HTMLDivElement>(null)
   const refs = useRef<Record<string, HTMLElement | null>>({})
-  const [edges, setEdges] = useState<Edge[]>([])
-  const pairs: [string, string][] = [
-    ...d.protos.flatMap((p) => [...p.skills.filter((s) => d.skills.some((k) => k.id === s)).map((s): [string, string] => [p.id, 's:' + s]), [p.id, 'task'] as [string, string]]),
-    ...d.skills.map((s): [string, string] => ['s:' + s.id, 'task']),
-  ]
+  const [g, setG] = useState<Geo | null>(null)
+  const skillName = (id: string) => d.skills.find((k) => k.id === id)?.name ?? id
 
   const measure = useCallback(() => {
-    const B = box.current?.getBoundingClientRect()
-    if (!B) return
-    const out: Edge[] = []
-    for (const [a, b] of pairs) {
-      const ea = refs.current[a], eb = refs.current[b]
-      if (!ea || !eb || !ea.offsetParent || !eb.offsetParent) continue
-      const ra = ea.getBoundingClientRect(), rb = eb.getBoundingClientRect()
-      const x1 = ra.right - B.left, y1 = ra.top + ra.height / 2 - B.top
-      const x2 = rb.left - B.left - 4, y2 = rb.top + rb.height / 2 - B.top
-      const mx = x1 + (x2 - x1) * 0.55
-      out.push({ key: a + '>' + b, from: a, to: b, path: `M${x1} ${y1} C${mx} ${y1} ${mx} ${y2} ${x2} ${y2}` })
+    const B = box.current?.getBoundingClientRect(), T = refs.current.task
+    if (!B || !T || !T.offsetParent) { setG(null); return }
+    const rt = T.getBoundingClientRect()
+    const taskY = rt.top + rt.height / 2 - B.top, taskX = rt.left - B.left
+    const pts = d.protos.map((p) => { const r = refs.current[p.id]?.getBoundingClientRect(); return r ? { id: p.id, x: r.right - B.left, y: r.top + r.height / 2 - B.top } : null }).filter(Boolean) as { id: string; x: number; y: number }[]
+    if (!pts.length) return
+    const right = Math.max(...pts.map((q) => q.x)), tx = right + (taskX - right) * 0.45
+    const ys = [...pts.map((q) => q.y), taskY]
+    const links: Geo['links'] = []
+    for (const p of d.protos) {
+      const a = pts.find((q) => q.id === p.id)
+      for (const sid of p.skills) {
+        const el = refs.current['s:' + sid]
+        if (!a || !el) continue
+        const r = el.getBoundingClientRect(), x2 = r.left - B.left - 4, y2 = r.top + r.height / 2 - B.top
+        const mx = a.x + (x2 - a.x) * 0.5
+        links.push({ from: p.id, to: 's:' + sid, d: `M${a.x} ${a.y} C${mx} ${a.y} ${mx} ${y2} ${x2} ${y2}` })
+      }
     }
-    setEdges(out)
-  }, [d]) // eslint-disable-line react-hooks/exhaustive-deps
+    setG({
+      stubs: pts.map((q) => ({ id: q.id, d: `M${q.x} ${q.y} H${tx}` })),
+      trunk: `M${tx} ${Math.min(...ys)} V${Math.max(...ys)}`,
+      toTask: `M${tx} ${taskY} H${taskX - 5}`,
+      links,
+    })
+  }, [d])
 
   useLayoutEffect(() => {
     measure()
@@ -127,43 +138,42 @@ function Graph({ d, hover, sel, onHover, onPick }: { d: TaskMapData; hover: stri
   }, [measure])
 
   const active = hover ?? (sel ? (sel.kind === 'skill' ? 's:' + sel.id : sel.kind === 'task' ? 'task' : sel.id) : null)
-  const on = (e: Edge) => active != null && (e.from === active || e.to === active)
+  const activeSkill = active?.startsWith('s:') ? active.slice(2) : null
+  const lit = (pid: string) => active == null || active === 'task' || active === pid || (activeSkill != null && d.protos.find((p) => p.id === pid)?.skills.includes(activeSkill))
+  const shown = (g?.links ?? []).filter((l) => active != null && (l.from === active || l.to === active))
   const reg = (id: string) => (el: HTMLElement | null) => { refs.current[id] = el }
   const hov = (id: string) => ({ onMouseEnter: () => onHover(id), onMouseLeave: () => onHover(null), onFocus: () => onHover(id), onBlur: () => onHover(null) })
 
   return (
     <div className="tm-graph" ref={box}>
-      <svg className="tm-edges" aria-hidden="true">
-        <defs>
-          <marker id="tmA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--line)" /></marker>
-          <marker id="tmB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--em-3)" /></marker>
-        </defs>
-        {edges.filter((e) => !on(e)).map((e) => <path key={e.key} d={e.path} fill="none" stroke="var(--line)" strokeWidth={1.3} markerEnd="url(#tmA)" opacity={active ? 0.35 : 1} />)}
-        {edges.filter(on).map((e) => <path key={e.key} d={e.path} fill="none" stroke="var(--em-3)" strokeWidth={2.4} className="flow" markerEnd="url(#tmB)" />)}
-      </svg>
+      {g && (
+        <svg className="tm-edges" aria-hidden="true">
+          <defs>
+            <marker id="tmA" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--muted)" /></marker>
+            <marker id="tmB" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="var(--em-3)" /></marker>
+          </defs>
+          {g.stubs.map((s) => {
+            const p = d.protos.find((x) => x.id === s.id)!
+            return <path key={s.id} d={s.d} fill="none" stroke={p.pct == null ? 'var(--line)' : COLOR[lvl(p)]} strokeWidth={active === s.id ? 4 : 2.5} strokeLinecap="round" opacity={lit(s.id) ? 1 : 0.25} />
+          })}
+          <path d={g.trunk} fill="none" stroke="var(--muted)" strokeWidth={2.5} strokeLinecap="round" opacity={0.55} />
+          <path d={g.toTask} fill="none" stroke="var(--muted)" strokeWidth={2.5} markerEnd="url(#tmA)" opacity={0.75} />
+          {shown.map((l) => <path key={l.from + l.to} d={l.d} fill="none" stroke="var(--em-3)" strokeWidth={2.2} strokeDasharray="6 5" className="flow" markerEnd="url(#tmB)" />)}
+        </svg>
+      )}
 
       <div className="tm-col">
         <span className="label tm-colh">Прототипы</span>
         {d.protos.map((p) => (
-          <button key={p.id} ref={reg(p.id)} className={`tm-card lvl-${lvl(p)} ${sel?.id === p.id ? 'sel' : ''}`} onClick={() => onPick({ kind: 'proto', id: p.id })} {...hov(p.id)}
+          <button key={p.id} ref={reg(p.id)} className={`tm-card lvl-${lvl(p)} ${sel?.id === p.id ? 'sel' : ''} ${lit(p.id) ? '' : 'dim'}`} onClick={() => onPick({ kind: 'proto', id: p.id })} {...hov(p.id)}
             aria-label={`${p.name}, ${pctText(p)}`}>
             <GeoFig k={p.fig} w={64} />
             <span className="tm-card-b">
               <b>{p.name}</b>
               <span className="bar"><i style={{ width: `${p.pct ?? 0}%`, background: COLOR[lvl(p)] }} /></span>
               <small className="muted">{pctText(p)}{p.files.length ? ` · файлов ${p.files.length}` : ''}</small>
+              {p.skills.length > 0 && <span className="tm-tags">{p.skills.map((sid) => <i key={sid} className={activeSkill === sid ? 'on' : ''}>{skillName(sid)}</i>)}</span>}
             </span>
-          </button>
-        ))}
-      </div>
-
-      <div className="tm-col tm-mid">
-        <span className="label tm-colh">Сквозные умения</span>
-        {d.skills.map((s) => (
-          <button key={s.id} ref={reg('s:' + s.id)} className={`tm-card tm-skill lvl-${lvl(s)} ${sel?.id === s.id ? 'sel' : ''}`} onClick={() => onPick({ kind: 'skill', id: s.id })} {...hov('s:' + s.id)}
-            aria-label={`${s.name}, ${pctText(s)}`}>
-            <GeoFig k={s.id} w={52} />
-            <span className="tm-card-b"><b>{s.name}</b><small className="muted">{pctText(s)}</small></span>
           </button>
         ))}
       </div>
@@ -176,6 +186,14 @@ function Graph({ d, hover, sel, onHover, onPick }: { d: TaskMapData; hover: stri
           <TaskRing s={d.total} size={92} />
           <small className="muted">прототипов {d.total.covered} из {d.total.of}</small>
         </button>
+        <span className="label tm-colh" style={{ marginTop: 18 }}>Сквозные умения</span>
+        {d.skills.map((s) => (
+          <button key={s.id} ref={reg('s:' + s.id)} className={`tm-card tm-skill lvl-${lvl(s)} ${sel?.id === s.id ? 'sel' : ''}`} onClick={() => onPick({ kind: 'skill', id: s.id })} {...hov('s:' + s.id)}
+            aria-label={`${s.name}, ${pctText(s)}`}>
+            <GeoFig k={s.id} w={52} />
+            <span className="tm-card-b"><b>{s.name}</b><small className="muted">{pctText(s)} · в {d.protos.filter((p) => p.skills.includes(s.id)).length} прототипах</small></span>
+          </button>
+        ))}
       </div>
     </div>
   )
