@@ -16,6 +16,7 @@ import Stars from './pages/Stars'
 import Teacher from './pages/Teacher'
 import Tour from './pages/Tour'
 import TaskMap from './pages/TaskMap'
+import Bank from './pages/Bank'
 import TrajectoryPage from './pages/Trajectory'
 import Videos from './pages/Videos'
 import type { DiagResult, Me } from './types'
@@ -113,6 +114,7 @@ function Main() {
     case 'map': page = teacher ? <Teacher /> : <KnowledgeMap />; break
     case 'video': page = <Videos />; break
     case 'task': page = <TaskMap n={Number(view.id) || 1} />; break
+    case 'bank': page = teacher ? <Bank /> : <Home />; break
     case 'chat': page = teacher ? <Chat teacher /> : <Chat teacher={false} />; break
     case 'awards': page = teacher ? <Teacher /> : <Stars />; break
     default: page = teacher ? <Teacher /> : <Home />

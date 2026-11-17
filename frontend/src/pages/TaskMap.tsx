@@ -1,9 +1,9 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { answerTaskMap, deleteTaskFile, downloadTaskFile, getTaskMap, listTaskMaps, uploadTaskFile } from '../api/client'
+import { answerTaskMap, deleteTaskFile, downloadTaskFile, explainSkill, getTaskMap, listTaskMaps, uploadTaskFile } from '../api/client'
 import { useApp } from '../app/store'
-import type { TaskMapData, TmAnswer, TmProblem, TmProto, TmSkill, TmStat } from '../types'
-import { Icon } from '../design/ui'
+import type { SkillExplain, TaskMapData, TmAnswer, TmProblem, TmProto, TmSkill, TmStat } from '../types'
+import { Icon, Md } from '../design/ui'
 import GeoFig from '../components/GeoFig'
 
 type Sel = { kind: 'proto' | 'skill' | 'task'; id: string } | null
@@ -11,6 +11,12 @@ type Sel = { kind: 'proto' | 'skill' | 'task'; id: string } | null
 const lvl = (s: TmStat) => (s.pct == null ? 'none' : s.pct < 50 ? 'bad' : s.pct < 80 ? 'gold' : 'em')
 const COLOR: Record<string, string> = { none: 'var(--line)', bad: 'var(--bad)', gold: 'var(--gold)', em: 'var(--em-3)' }
 const pctText = (s: TmStat) => (s.pct == null ? 'ещё не решал' : `${s.pct}% · ${s.ok} из ${s.count}`)
+/** A geometry drawing when there is one, otherwise the task number. */
+function Fig({ k, n, w }: { k: string | null; n: number; w: number }) {
+  if (k) return <GeoFig k={k} w={w} />
+  return <span className="tm-badge" style={{ width: w, height: Math.round(w * 0.7), fontSize: Math.max(12, w / 4) }} aria-hidden="true">№{n}</span>
+}
+
 const zadach = (k: number) => (k % 10 === 1 && k % 100 !== 11 ? 'задача' : [2, 3, 4].includes(k % 10) && ![12, 13, 14].includes(k % 100) ? 'задачи' : 'задач')
 
 /** Knowledge map of one exam task: prototypes → skills → task, with practice, materials and files. */
@@ -35,13 +41,13 @@ export default function TaskMap({ n }: { n: number }) {
       <div className="card-h" style={{ margin: 0, alignItems: 'flex-end' }}>
         <div>
           {!teacher && <button className="btn btn-sm btn-ghost" style={{ marginBottom: 8 }} onClick={() => app.go('map')}><Icon n="prev" s={16} />Карта знаний</button>}
-          <p className="muted">Карта задания · {d.protos.length} прототипов</p>
+          <p className="muted">Карта задания · {d.part === 2 ? 'вторая часть' : 'первая часть'} · {d.protos.length} прототипов</p>
           <h1>Задание № {d.n} · {d.name}</h1>
         </div>
         <div className="tm-tabs" role="tablist" aria-label="Задания">
-          {Array.from({ length: 12 }, (_, i) => i + 1).map((k) => {
-            const ready = maps.some((m) => m.n === k)
-            return <button key={k} role="tab" aria-selected={k === n} disabled={!ready} title={ready ? '' : 'Скоро'} className={k === n ? 'on' : ''} onClick={() => app.go({ v: 'task', id: String(k) })}>{k}</button>
+          {Array.from({ length: 19 }, (_, i) => i + 1).map((k) => {
+            const m = maps.find((x) => x.n === k)
+            return <button key={k} role="tab" aria-selected={k === n} disabled={!m} title={m ? m.name : 'Скоро'} className={`${k === n ? 'on' : ''} ${k >= 13 ? 'p2' : ''}`} onClick={() => app.go({ v: 'task', id: String(k) })}>{k}</button>
           })}
         </div>
       </div>
@@ -51,10 +57,6 @@ export default function TaskMap({ n }: { n: number }) {
         <div style={{ flex: '1 1 220px' }}>
           <b>{d.total.pct == null ? 'Ты ещё не решал задачи этого задания' : `Выполняемость ${d.total.pct}%: верно ${d.total.ok} из ${d.total.count}`}</b>
           <p className="muted" style={{ fontSize: 13.5, marginTop: 4 }}>Пройдено прототипов: {d.total.covered} из {d.total.of}.{start ? <> Начни с «{start.name}».</> : null}</p>
-          <div className="tm-codes">
-            {d.codifier.elements.map(([c, t]) => <span key={c} className="pill p-em">Кодификатор {c}: {t}</span>)}
-            {d.codifier.requirements.map(([c, t]) => <span key={c} className="pill p-gold">Требование {c}: {t}</span>)}
-          </div>
         </div>
         {start && <button className="btn btn-em" onClick={() => setSel({ kind: 'proto', id: start.id })}>Открыть «{start.name.split(':')[0]}»</button>}
       </section>
@@ -66,7 +68,7 @@ export default function TaskMap({ n }: { n: number }) {
           </div>
         </div>
         <Graph d={d} hover={hover} sel={sel} onHover={setHover} onPick={setSel} />
-        <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>Линии от прототипов сходятся в задание, цвет линии - уровень прототипа. Наведи на прототип или умение, чтобы увидеть их связь. Нажми на прототип: там что нужно знать, задачи, разбор и файлы. Процент считается по первой попытке в каждой задаче и по диагностике. {d.codifier.note}</p>
+        <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>Линии от прототипов сходятся в задание, цвет линии - уровень прототипа. Наведи на прототип или умение, чтобы увидеть их связь. Нажми на прототип: там что нужно знать, задачи, разбор и файлы. Процент считается по первой попытке в каждой задаче и по диагностике.</p>
       </section>
 
       {sel && <Drawer onClose={() => setSel(null)}>
@@ -100,7 +102,7 @@ function Graph({ d, hover, sel, onHover, onPick }: { d: TaskMapData; hover: stri
   const box = useRef<HTMLDivElement>(null)
   const refs = useRef<Record<string, HTMLElement | null>>({})
   const [g, setG] = useState<Geo | null>(null)
-  const skillName = (id: string) => d.skills.find((k) => k.id === id)?.name ?? id
+  const skillShort = (id: string) => d.skills.find((k) => k.id === id)?.short ?? id
 
   const measure = useCallback(() => {
     const B = box.current?.getBoundingClientRect(), T = refs.current.task
@@ -167,12 +169,12 @@ function Graph({ d, hover, sel, onHover, onPick }: { d: TaskMapData; hover: stri
         {d.protos.map((p) => (
           <button key={p.id} ref={reg(p.id)} className={`tm-card lvl-${lvl(p)} ${sel?.id === p.id ? 'sel' : ''} ${lit(p.id) ? '' : 'dim'}`} onClick={() => onPick({ kind: 'proto', id: p.id })} {...hov(p.id)}
             aria-label={`${p.name}, ${pctText(p)}`}>
-            <GeoFig k={p.fig} w={64} />
+            <Fig k={p.fig} n={d.n} w={64} />
             <span className="tm-card-b">
               <b>{p.name}</b>
               <span className="bar"><i style={{ width: `${p.pct ?? 0}%`, background: COLOR[lvl(p)] }} /></span>
               <small className="muted">{pctText(p)}{p.files.length ? ` · файлов ${p.files.length}` : ''}</small>
-              {p.skills.length > 0 && <span className="tm-tags">{p.skills.map((sid) => <i key={sid} className={activeSkill === sid ? 'on' : ''}>{skillName(sid)}</i>)}</span>}
+              {p.skills.length > 0 && <span className="tm-tags">{p.skills.map((sid) => <i key={sid} className={activeSkill === sid ? 'on' : ''}>{skillShort(sid)}</i>)}</span>}
             </span>
           </button>
         ))}
@@ -190,7 +192,7 @@ function Graph({ d, hover, sel, onHover, onPick }: { d: TaskMapData; hover: stri
         {d.skills.map((s) => (
           <button key={s.id} ref={reg('s:' + s.id)} className={`tm-card tm-skill lvl-${lvl(s)} ${sel?.id === s.id ? 'sel' : ''}`} onClick={() => onPick({ kind: 'skill', id: s.id })} {...hov('s:' + s.id)}
             aria-label={`${s.name}, ${pctText(s)}`}>
-            <GeoFig k={s.id} w={52} />
+            {s.fig ? <GeoFig k={s.fig} w={52} /> : <span className="tm-skico" aria-hidden="true"><Icon n="bulb" s={22} /></span>}
             <span className="tm-card-b"><b>{s.name}</b><small className="muted">{pctText(s)} · в {d.protos.filter((p) => p.skills.includes(s.id)).length} прототипах</small></span>
           </button>
         ))}
@@ -216,11 +218,11 @@ function Drawer({ children, onClose }: { children: ReactNode; onClose: () => voi
     </div>, document.body)
 }
 
-function Head({ fig, title, s, sub }: { fig: string; title: string; s: TmStat; sub?: string }) {
+function Head({ fig, n, title, s, sub }: { fig: string | null; n: number; title: string; s: TmStat; sub?: string }) {
   return (
     <>
       <div style={{ display: 'flex', gap: 14, alignItems: 'center', paddingRight: 44 }}>
-        <span className="tm-figbox"><GeoFig k={fig} w={110} /></span>
+        {fig || n ? <span className="tm-figbox"><Fig k={fig} n={n} w={110} /></span> : null}
         <div><h2 style={{ fontSize: 20 }}>{title}</h2>{sub && <p className="muted" style={{ fontSize: 13 }}>{sub}</p>}</div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
@@ -232,6 +234,7 @@ function Head({ fig, title, s, sub }: { fig: string; title: string; s: TmStat; s
 }
 
 function Know({ items }: { items: string[] }) {
+  if (!items.length) return null
   return (
     <div className="tm-sec"><span className="label">Что нужно знать</span>
       <ul className="tm-know">{items.map((k) => <li key={k}>{k}</li>)}</ul>
@@ -250,15 +253,16 @@ function ProtoPanel({ d, p, onChanged, onPick }: { d: TaskMapData; p: TmProto; o
   }
   return (
     <>
-      <Head fig={p.fig} title={p.name} s={p} sub={`Задание № ${d.n} · ${src}`} />
+      <Head fig={p.fig} n={d.n} title={p.name} s={p} sub={`Задание № ${d.n} · ${src}`} />
       {p.added && <p className="tm-note">{p.added}</p>}
       <Know items={p.know} />
-      {p.skills.length > 0 && <div className="tm-sec"><span className="label">Нужны умения</span>
+      {p.skills.length > 0 && <div className="tm-sec"><span className="label">Нужны умения · нажми, чтобы прочитать объяснение по учебнику</span>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
           {p.skills.map((sid) => { const s = d.skills.find((x) => x.id === sid); return s ? <button key={sid} className={`pill ${s.pct == null ? '' : 'p-' + lvl(s)}`} style={{ border: s.pct == null ? '1.5px dashed var(--line)' : 0, cursor: 'pointer', minHeight: 30 }} onClick={() => onPick({ kind: 'skill', id: sid })}>{s.name} · {s.pct == null ? 'не решал' : s.pct + '%'}</button> : null })}
         </div></div>}
       <div className="tm-sec"><span className="label">Проверь себя · {p.problems.length} {zadach(p.problems.length)}</span>
-        <div style={{ display: 'grid', gap: 10, marginTop: 8 }}>{p.problems.map((q, i) => <Problem key={q.id} n={d.n} i={i} q={q} onDone={onChanged} />)}</div>
+        {p.problems.length ? <div style={{ display: 'grid', gap: 10, marginTop: 8 }}>{p.problems.map((q, i) => <Problem key={q.id} n={d.n} i={i} q={q} onDone={onChanged} />)}</div>
+          : <p className="muted" style={{ fontSize: 13.5, marginTop: 6 }}>Задач по этому прототипу пока нет. {d.can_upload ? 'Добавьте их в разделе «Банк задач».' : 'Их добавит учитель через банк задач.'}</p>}
       </div>
       <div className="tm-sec"><span className="label">Материалы</span>
         <div className="tm-links">
@@ -284,6 +288,7 @@ function ProtoPanel({ d, p, onChanged, onPick }: { d: TaskMapData; p: TmProto; o
 }
 
 function Problem({ n, i, q, onDone }: { n: number; i: number; q: TmProblem; onDone: () => void }) {
+  const app = useApp()
   const [v, setV] = useState('')
   const [res, setRes] = useState<TmAnswer | null>(null)
   const [busy, setBusy] = useState(false)
@@ -297,7 +302,10 @@ function Problem({ n, i, q, onDone }: { n: number; i: number; q: TmProblem; onDo
   return (
     <div className={`tm-prob ${res ? (res.ok ? 'ok' : 'no') : was === 1 ? 'ok' : was === 0 ? 'no' : ''}`}>
       <p><b>{i + 1}.</b> {q.q}</p>
-      {res ? (
+      {q.src && <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>Источник: {q.src}</p>}
+      {q.check === 'photo' && !res && was == null ? (
+        <button className="btn btn-sm btn-line" style={{ marginTop: 10 }} onClick={() => app.go('check')}><Icon n="check" s={16} />Решить и проверить по фото</button>
+      ) : res ? (
         <p className="tm-res"><b>{res.ok ? 'Верно.' : `Неверно, ответ ${res.answer}.`}</b> {res.sol}{!res.first && <span className="muted"> В процент идёт первая попытка.</span>}</p>
       ) : was != null ? (
         <p className="tm-res"><b>{was ? 'Решено с первой попытки.' : 'С первой попытки не получилось.'}</b> {q.sol}</p>
@@ -312,13 +320,35 @@ function Problem({ n, i, q, onDone }: { n: number; i: number; q: TmProblem; onDo
 }
 
 function SkillPanel({ d, s, onPick }: { d: TaskMapData; s: TmSkill; onPick: (s: Sel) => void }) {
+  const app = useApp()
   const users = d.protos.filter((p) => p.skills.includes(s.id))
+  const [ex, setEx] = useState<SkillExplain | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const explain = async () => {
+    setBusy(true); setErr('')
+    try { setEx(await explainSkill(s.id)) } catch (e) { setErr(String(e).replace('Error: ', '')) } finally { setBusy(false) }
+  }
   return (
     <>
-      <Head fig={s.id} title={s.name} s={s} sub={s.count ? `верно ${s.ok} из ${s.count} в задачах, где нужно это умение` : 'процент появится после задач, где нужно это умение'} />
+      <Head fig={s.fig} n={0} title={s.name} s={s} sub={s.count ? `верно ${s.ok} из ${s.count} в задачах, где нужно это умение` : 'процент появится после задач, где нужно это умение'} />
       <Know items={s.know} />
+      <div className="tm-sec"><span className="label">Объяснение по учебнику</span>
+        {ex?.text ? (
+          <div className="tm-explain">
+            <Md text={ex.text} />
+            <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>Источник: «{ex.book.title}»{ex.book.authors ? `, ${ex.book.authors}` : ''}{ex.pages.length ? `, ${ex.pages.join(', ')}` : ''}. Написано помощником строго по этим страницам; если что-то расходится с учебником, верен учебник.</p>
+          </div>
+        ) : ex ? <p className="muted" style={{ fontSize: 13.5, marginTop: 6 }}>{ex.message}</p>
+          : <p className="muted" style={{ fontSize: 13.5, marginTop: 6 }}>Помощник найдёт страницы про это умение в учебнике и объяснит по ним, со ссылками на страницы.</p>}
+        {err && <p className="auth-msg" style={{ marginTop: 6 }}>{err}</p>}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 10 }}>
+          {!ex?.text && <button className="btn btn-em" onClick={explain} disabled={busy}><Icon n="book" s={18} />{busy ? 'Ищу в учебнике…' : 'Объяснить по учебнику'}</button>}
+          <button className="btn btn-ghost" onClick={() => app.go({ v: 'chat', id: `Умение «${s.name}». Объясни на примере из ЕГЭ, начни с вопроса ко мне.` })}><Icon n="chat" s={18} />Спросить помощника</button>
+        </div>
+      </div>
       <div className="tm-sec"><span className="label">Где нужно в задании № {d.n}</span>
-        <div className="tm-links">{users.map((p) => <button key={p.id} className="item" onClick={() => onPick({ kind: 'proto', id: p.id })}><GeoFig k={p.fig} w={40} /><span className="t-strong" style={{ flex: 1 }}>{p.name}</span><span className="muted num" style={{ fontSize: 13 }}>{p.pct == null ? '-' : p.pct + '%'}</span></button>)}</div>
+        <div className="tm-links">{users.map((p) => <button key={p.id} className="item" onClick={() => onPick({ kind: 'proto', id: p.id })}><Fig k={p.fig} n={d.n} w={40} /><span className="t-strong" style={{ flex: 1 }}>{p.name}</span><span className="muted num" style={{ fontSize: 13 }}>{p.pct == null ? '-' : p.pct + '%'}</span></button>)}</div>
       </div>
     </>
   )
@@ -334,15 +364,13 @@ function TaskPanel({ d, onPick }: { d: TaskMapData; onPick: (s: Sel) => void }) 
         <div><span className="label">Задание № {d.n}</span><h2 style={{ fontSize: 20 }}>{d.name}</h2>
           <p className="muted" style={{ fontSize: 13 }}>{d.total.count ? `верно ${d.total.ok} из ${d.total.count} · прототипов ${d.total.covered} из ${d.total.of}` : 'задачи ещё не решались'}</p></div>
       </div>
-      <div className="tm-sec"><span className="label">По кодификатору ЕГЭ 2027</span>
-        <ul className="tm-know">
-          {d.codifier.elements.map(([c, t]) => <li key={c}>Элемент содержания {c}: {t}</li>)}
-          {d.codifier.requirements.map(([c, t]) => <li key={c}>Проверяемое требование {c}: {t}</li>)}
-        </ul>
-        <p className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>{d.codifier.note}</p>
+      <div className="tm-sec"><span className="label">Сквозные умения задания</span>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>
+          {d.skills.map((k) => <button key={k.id} className={`pill ${k.pct == null ? '' : 'p-' + lvl(k)}`} style={{ border: k.pct == null ? '1.5px dashed var(--line)' : 0, cursor: 'pointer', minHeight: 30 }} onClick={() => onPick({ kind: 'skill', id: k.id })}>{k.short} · {k.pct == null ? 'не решал' : k.pct + '%'}</button>)}
+        </div>
       </div>
       <div className="tm-sec"><span className="label">Прототипы, от слабых к сильным</span>
-        <div className="tm-links">{order.map((p) => <button key={p.id} className="item" onClick={() => onPick({ kind: 'proto', id: p.id })}><GeoFig k={p.fig} w={40} /><span className="t-strong" style={{ flex: 1 }}>{p.name}</span><span className={`pill ${p.pct == null ? '' : 'p-' + lvl(p)} num`} style={p.pct == null ? { border: '1.5px dashed var(--line)' } : undefined}>{p.pct == null ? 'не решал' : p.pct + '%'}</span></button>)}</div>
+        <div className="tm-links">{order.map((p) => <button key={p.id} className="item" onClick={() => onPick({ kind: 'proto', id: p.id })}><Fig k={p.fig} n={d.n} w={40} /><span className="t-strong" style={{ flex: 1 }}>{p.name}</span><span className={`pill ${p.pct == null ? '' : 'p-' + lvl(p)} num`} style={p.pct == null ? { border: '1.5px dashed var(--line)' } : undefined}>{p.pct == null ? 'не решал' : p.pct + '%'}</span></button>)}</div>
       </div>
       <button className="btn btn-line" style={{ marginTop: 14 }} onClick={() => app.go({ v: 'video', id: String(d.n) })}><Icon n="play" s={18} />Видеоразбор задания № {d.n}</button>
     </>

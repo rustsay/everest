@@ -58,9 +58,9 @@ export default function KnowledgeMap() {
       {d.exam.key === 'prof' && maps.length > 0 && (
         <section className="card" style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ flex: '1 1 260px' }}><b>Карты заданий</b>
-            <p className="muted" style={{ fontSize: 13.5, marginTop: 4 }}>Из каких прототипов состоит каждое задание, что нужно знать, задачи для проверки и файлы. Процент выполняемости по каждому прототипу.</p></div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {maps.map((m) => <button key={m.n} className="btn btn-em" onClick={() => app.go({ v: 'task', id: String(m.n) })}><Icon n="map" s={18} />№ {m.n} · {m.name}</button>)}
+            <p className="muted" style={{ fontSize: 13.5, marginTop: 4 }}>Из каких прототипов состоит каждое задание 1-19 и какие сквозные умения в нём нужны. Задачи для проверки, объяснения по учебнику и процент выполняемости по каждому прототипу.</p></div>
+          <div className="tm-tabs" aria-label="Карты заданий">
+            {maps.map((m) => <button key={m.n} className={m.n >= 13 ? 'p2' : ''} title={m.name} onClick={() => app.go({ v: 'task', id: String(m.n) })}>{m.n}</button>)}
           </div>
         </section>
       )}

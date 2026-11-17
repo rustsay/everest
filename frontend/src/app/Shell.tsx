@@ -7,11 +7,12 @@ import { useApp, ViewName } from './store'
 
 const NAV_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['plan', 'Расписание', 'cal'], ['check', 'Проверка', 'check'], ['map', 'Карта знаний', 'map'], ['video', 'Разборы', 'play'], ['chat', 'Помощник', 'chat'], ['awards', 'Звёзды', 'star']]
 const BOT_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['plan', 'План', 'cal'], ['check', 'Проверка', 'check'], ['map', 'Карта', 'map'], ['video', 'Разборы', 'play'], ['chat', 'Помощник', 'chat']]
-const NAV_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['materials', 'Конспекты и презентации', 'slides'], ['task', 'Карты заданий', 'map'], ['tchat', 'Помощник учителя', 'chat'], ['check', 'Проверка', 'check']]
-const BOT_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['materials', 'Материалы', 'slides'], ['tchat', 'Помощник', 'chat'], ['check', 'Проверка', 'check']]
+const NAV_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['materials', 'Конспекты и презентации', 'slides'], ['task', 'Карты заданий', 'map'], ['bank', 'Банк задач', 'book'], ['tchat', 'Помощник учителя', 'chat'], ['check', 'Проверка', 'check']]
+const BOT_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['materials', 'Материалы', 'slides'], ['bank', 'Банк', 'book'], ['tchat', 'Помощник', 'chat'], ['check', 'Проверка', 'check']]
 
 const MLINES: Partial<Record<ViewName, string[]>> = {
   check: ['Сфотографируй решение целиком, вместе с номером задания. Чем ровнее фото, тем точнее проверка.', 'Три эксперта проверяют решение независимо, а если они расходятся, решает судья.'],
+  bank: ['Загрузите файл с задачами, проверьте условие и ответ, потом опубликуйте.'],
   task: ['Нажми на прототип: там всё, что нужно знать, задачи для проверки и материалы.', 'Процент считается по первой попытке в каждой задаче, поэтому решай честно.'],
   map: ['Красные темы тянут вниз всё, что над ними. Начинай с самой нижней красной.', 'Нажми на тему, и я покажу, какие задания от неё зависят.'],
   video: ['Выбери папку с номером задания. Понял разбор, жми «Понял» и иди дальше.', 'Если шаг непонятен, жми «Не понял». Разберём его в чате.'],

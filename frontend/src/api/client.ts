@@ -90,7 +90,7 @@ export function openWs(sessionId: string): WebSocket {
 // ---------------- new design: profile, learning model, teacher ----------------
 import type {
   Me, Dashboard, PlanData, DiagRun, DiagResult, NotificationItem, ChatMsg, TeacherOverview, StudentDetail, Textbook, MaterialOut,
-  TaskMapData, TmAnswer, TmFile,
+  TaskMapData, TmAnswer, TmFile, SkillExplain, BankItem, BankTask,
 } from '../types'
 
 export async function registerFull(body: { email: string; password: string; name?: string; role: string; grade?: string | null; exam?: string | null }) {
@@ -189,3 +189,35 @@ export async function downloadTaskFile(id: number, name: string): Promise<void> 
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 export const deleteTaskFile = (id: number) => apiFetch(`/taskfiles/${id}`, { method: 'DELETE' })
+
+export const explainSkill = (id: string, textbook_id?: number): Promise<SkillExplain> =>
+  apiFetch(`/skills/${id}/explain`, { method: 'POST', body: JSON.stringify({ textbook_id: textbook_id ?? null }) })
+
+// ---------- task bank ----------
+export const bankTasks = (): Promise<{ tasks: BankTask[] }> => apiFetch('/bank/protos')
+export const listBank = (status: 'draft' | 'approved', task?: number): Promise<{ items: BankItem[]; counts: Record<string, { approved: number; draft: number }> }> =>
+  apiFetch(`/bank?status=${status}${task ? `&task=${task}` : ''}`)
+export const editBank = (id: number, body: Partial<Pick<BankItem, 'text' | 'answer' | 'solution' | 'proto' | 'status'>>): Promise<BankItem> =>
+  apiFetch(`/bank/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+export const deleteBank = (id: number) => apiFetch(`/bank/${id}`, { method: 'DELETE' })
+export async function importBank(task: number, file: File): Promise<{ added: number; skipped: number; note: string }> {
+  const form = new FormData()
+  form.append('task', String(task))
+  form.append('file', file)
+  const res = await fetch(`${BASE}/bank/import`, { method: 'POST', headers: authHeader(), body: form })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail ?? 'Не удалось импортировать файл')
+  }
+  return res.json()
+}
+export async function downloadBankTemplate(): Promise<void> {
+  const res = await fetch(`${BASE}/bank/template.csv`, { headers: authHeader() })
+  if (!res.ok) throw new Error('Шаблон недоступен')
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'bank_template.csv'
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}

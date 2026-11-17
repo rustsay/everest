@@ -229,18 +229,22 @@ export interface MaterialOut { id: number; kind: 'conspect' | 'slides'; topic: s
 
 // ---------- task maps (knowledge map of one exam task) ----------
 export interface TmStat { pct: number | null; ok: number; count: number }
-export interface TmProblem { id: string; q: string; done: 0 | 1 | null; sol: string | null }
+export interface TmProblem { id: string; q: string; done: 0 | 1 | null; sol: string | null; src: string; check: 'answer' | 'photo' }
 export interface TmFile { id: number; name: string; size: number; mine: boolean }
 export interface TmProto extends TmStat {
-  id: string; name: string; fig: string; skills: string[]; know: string[]; added: string | null
+  id: string; name: string; fig: string | null; skills: string[]; know: string[]; added: string | null
   links: { title: string; url: string }[]; from_diag: number; problems: TmProblem[]; files: TmFile[]
 }
-export interface TmSkill extends TmStat { id: string; name: string; know: string[] }
+export interface TmSkill extends TmStat { id: string; name: string; short: string; know: string[]; fig: string | null }
 export interface TaskMapData {
-  n: number; name: string
-  codifier: { elements: [string, string][]; requirements: [string, string][]; note: string }
+  n: number; name: string; part: 1 | 2
   skills: TmSkill[]; protos: TmProto[]
   total: TmStat & { covered: number; of: number }
   can_upload: boolean
 }
 export interface TmAnswer { ok: boolean; first: boolean; answer: string; sol: string }
+export interface SkillExplain { text: string | null; book: { id: number; title: string; authors: string }; pages: string[]; cached?: boolean; message?: string }
+
+// ---------- task bank ----------
+export interface BankItem { id: number; task: number; proto: string; text: string; answer: string | null; solution: string; source: string; status: 'draft' | 'approved'; mine: boolean }
+export interface BankTask { n: number; name: string; protos: { id: string; name: string }[] }

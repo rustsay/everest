@@ -228,3 +228,32 @@ class TaskFile(Base):
     path: Mapped[str] = mapped_column(String(300), nullable=False)
     size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class BankProblem(Base):
+    """A problem of the task bank: imported from a file, checked by a teacher or methodist, then published."""
+    __tablename__ = "bank_problems"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    task_n: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    proto: Mapped[str] = mapped_column(String(40), nullable=False, default="")
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    answer: Mapped[str | None] = mapped_column(String(80))
+    solution: Mapped[str] = mapped_column(Text, default="")
+    source: Mapped[str] = mapped_column(String(300), default="")
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="draft", index=True)  # draft | approved
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class SkillExplanation(Base):
+    """Cached explanation of a cross-cutting skill, written strictly from one textbook's text."""
+    __tablename__ = "skill_explanations"
+    __table_args__ = (UniqueConstraint("skill", "textbook_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    skill: Mapped[str] = mapped_column(String(10), nullable=False)
+    textbook_id: Mapped[int] = mapped_column(Integer, ForeignKey("textbooks.id", ondelete="CASCADE"), nullable=False, index=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    pages: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
