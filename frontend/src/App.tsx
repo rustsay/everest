@@ -15,6 +15,7 @@ import Session from './pages/Session'
 import Stars from './pages/Stars'
 import Teacher from './pages/Teacher'
 import Tour from './pages/Tour'
+import TaskMap from './pages/TaskMap'
 import TrajectoryPage from './pages/Trajectory'
 import Videos from './pages/Videos'
 import type { DiagResult, Me } from './types'
@@ -111,6 +112,7 @@ function Main() {
     case 'plan': page = teacher ? <Teacher /> : <Plan />; break
     case 'map': page = teacher ? <Teacher /> : <KnowledgeMap />; break
     case 'video': page = <Videos />; break
+    case 'task': page = <TaskMap n={Number(view.id) || 1} />; break
     case 'chat': page = teacher ? <Chat teacher /> : <Chat teacher={false} />; break
     case 'awards': page = teacher ? <Teacher /> : <Stars />; break
     default: page = teacher ? <Teacher /> : <Home />

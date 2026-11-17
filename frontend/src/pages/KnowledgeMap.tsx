@@ -1,5 +1,5 @@
 import { KeyboardEvent, ReactElement, useEffect, useState } from 'react'
-import { mapAnalysis, nodeQuiz, sendEvent } from '../api/client'
+import { listTaskMaps, mapAnalysis, nodeQuiz, sendEvent } from '../api/client'
 import { useApp } from '../app/store'
 import type { Dashboard, ExamTask, GraphNode } from '../types'
 import { Icon, Md, fmt1, reduceMotion, taskLabel } from '../design/ui'
@@ -31,6 +31,8 @@ export default function KnowledgeMap() {
     try { setAi({ busy: false, text: (await mapAnalysis()).text }); app.reload() } catch (e) { setAi({ busy: false, text: '' }); app.toast(String(e).replace('Error: ', '')) }
   }
   useEffect(() => { if (app.view.id === 'analysis') runAi() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  const [maps, setMaps] = useState<{ n: number; name: string }[]>([])
+  useEffect(() => { listTaskMaps().then((r) => setMaps(r.maps)).catch(() => null) }, [])
 
   if (!d) return <p className="muted">Загружаю…</p>
   const M = d.model, ex = d.exam
@@ -53,6 +55,15 @@ export default function KnowledgeMap() {
         <section className="card" style={{ flex: '1 1 220px' }}><span className="label">Если закрыть пробел</span><h2 style={{ marginTop: 6, color: 'var(--em-ink)' }}>+{ex.pct ? Math.round((d.gain / ex.max) * 100) + '%' : fmt1(d.gain) + ' ' + (ex.unit === 'б.' ? 'балла' : 'первичных')}</h2>
           <p className="muted" style={{ fontSize: 13.5, marginTop: 4 }}>прогноз сейчас {d.forecast}{ex.pct ? '%' : ' из ' + ex.max}</p></section>
       </div>
+      {d.exam.key === 'prof' && maps.length > 0 && (
+        <section className="card" style={{ display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 260px' }}><b>Карты заданий</b>
+            <p className="muted" style={{ fontSize: 13.5, marginTop: 4 }}>Из каких прототипов состоит каждое задание, что нужно знать, задачи для проверки и файлы. Процент выполняемости по каждому прототипу.</p></div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {maps.map((m) => <button key={m.n} className="btn btn-em" onClick={() => app.go({ v: 'task', id: String(m.n) })}><Icon n="map" s={18} />№ {m.n} · {m.name}</button>)}
+          </div>
+        </section>
+      )}
       <section aria-label="Граф тем">
         <div className="card-h"><h2>Как темы связаны с {ex.pct ? 'разделами' : 'заданиями'}</h2>
           <div style={{ display: 'flex', gap: 10, fontSize: 12.5, flexWrap: 'wrap' }} className="muted"><span className="pill p-bad">меньше 50%</span><span className="pill p-gold">50-79%</span><span className="pill p-em">80% и выше</span></div></div>
@@ -61,7 +72,7 @@ export default function KnowledgeMap() {
           <button className="ob-link" style={{ padding: 4 }} onClick={() => setAll(!all)}>{all ? 'Показать только важные' : 'Показать все задания'}</button></p>
       </section>
       <div className="grid2 stagger">
-        <section className="card" aria-live="polite">{node ? <NodePanel n={node} d={d} onPick={setSel} /> : task ? <TaskPanel t={task} d={d} onPick={setSel} /> : <NodePanel n={M.nodes[0]} d={d} onPick={setSel} />}</section>
+        <section className="card" aria-live="polite">{node ? <NodePanel n={node} d={d} onPick={setSel} /> : task ? <TaskPanel t={task} d={d} onPick={setSel} maps={maps.map((m) => m.n)} /> : <NodePanel n={M.nodes[0]} d={d} onPick={setSel} />}</section>
         <section className="card">
           <div className="card-h"><h2>Подробный разбор пробелов</h2></div>
           <div className="ai-out">{ai.text ? <Md text={ai.text} /> : <p className="muted">Помощник посмотрит на карту и объяснит, какие темы и задания ты теряешь из-за первопричины и что делать на этой неделе.</p>}</div>
@@ -160,7 +171,7 @@ function NodePanel({ n, d, onPick }: { n: GraphNode; d: Dashboard; onPick: (id: 
   )
 }
 
-function TaskPanel({ t, d, onPick }: { t: ExamTask; d: Dashboard; onPick: (id: string) => void }) {
+function TaskPanel({ t, d, onPick, maps }: { t: ExamTask; d: Dashboard; onPick: (id: string) => void; maps: number[] }) {
   const app = useApp()
   const nodes = Object.fromEntries(d.model.nodes.map((x) => [x.id, x]))
   return (
@@ -173,6 +184,7 @@ function TaskPanel({ t, d, onPick }: { t: ExamTask; d: Dashboard; onPick: (id: s
         </div>
       </div>
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+        {typeof t.n === 'number' && d.exam.key === 'prof' && maps.includes(t.n) && <button className="btn btn-em" onClick={() => app.go({ v: 'task', id: String(t.n) })}>Карта задания</button>}
         {typeof t.n === 'number' && d.exam.key === 'prof' && <button className="btn btn-line" onClick={() => app.go({ v: 'video', id: String(t.n) })}>Видеоразбор</button>}
         {typeof t.n === 'number' && t.n >= 13 && t.n <= 19 && <button className="btn btn-em" onClick={() => app.go('check')}>Решить и проверить по фото</button>}
       </div>

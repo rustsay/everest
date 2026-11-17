@@ -214,3 +214,17 @@ class Material(Base):
     section: Mapped[str] = mapped_column(String(80), default="")
     content: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class TaskFile(Base):
+    """A file a teacher attached to a prototype on a task map (theory, problem sets)."""
+    __tablename__ = "task_files"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    task_n: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    proto: Mapped[str] = mapped_column(String(40), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    path: Mapped[str] = mapped_column(String(300), nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

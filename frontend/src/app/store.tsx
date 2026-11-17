@@ -4,12 +4,12 @@ import type { Dashboard, Me } from '../types'
 import { hush, reduceMotion, speak } from '../design/ui'
 
 export type ViewName =
-  | 'home' | 'plan' | 'check' | 'session' | 'trajectory' | 'map' | 'video' | 'chat' | 'awards' | 'teacher' | 'materials' | 'tchat'
+  | 'home' | 'plan' | 'check' | 'session' | 'trajectory' | 'map' | 'video' | 'chat' | 'awards' | 'teacher' | 'materials' | 'tchat' | 'task'
 export interface View { v: ViewName; id?: string }
 
 export function parseHash(h: string): View {
   const [v, id] = h.replace(/^#/, '').split('/')
-  const known: ViewName[] = ['home', 'plan', 'check', 'session', 'trajectory', 'map', 'video', 'chat', 'awards', 'teacher', 'materials', 'tchat']
+  const known: ViewName[] = ['home', 'plan', 'check', 'session', 'trajectory', 'map', 'video', 'chat', 'awards', 'teacher', 'materials', 'tchat', 'task']
   return known.includes(v as ViewName) ? { v: v as ViewName, id: id ? decodeURIComponent(id) : undefined } : { v: 'home' }
 }
 export const viewHash = (v: View) => '#' + v.v + (v.id ? '/' + encodeURIComponent(v.id) : '')

@@ -226,3 +226,21 @@ export interface StudentDetail {
 export interface Textbook { id: number; title: string; authors: string; grade: string; filename: string | null; chars: number }
 export interface Slide { title: string; bullets: string[]; note: string }
 export interface MaterialOut { id: number; kind: 'conspect' | 'slides'; topic: string; text?: string; slides?: Slide[] }
+
+// ---------- task maps (knowledge map of one exam task) ----------
+export interface TmStat { pct: number | null; ok: number; count: number }
+export interface TmProblem { id: string; q: string; done: 0 | 1 | null; sol: string | null }
+export interface TmFile { id: number; name: string; size: number; mine: boolean }
+export interface TmProto extends TmStat {
+  id: string; name: string; fig: string; skills: string[]; know: string[]; added: string | null
+  links: { title: string; url: string }[]; from_diag: number; problems: TmProblem[]; files: TmFile[]
+}
+export interface TmSkill extends TmStat { id: string; name: string; know: string[] }
+export interface TaskMapData {
+  n: number; name: string
+  codifier: { elements: [string, string][]; requirements: [string, string][]; note: string }
+  skills: TmSkill[]; protos: TmProto[]
+  total: TmStat & { covered: number; of: number }
+  can_upload: boolean
+}
+export interface TmAnswer { ok: boolean; first: boolean; answer: string; sol: string }

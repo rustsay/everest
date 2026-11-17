@@ -59,12 +59,14 @@ backend/app/
 │   ├── content.py       # граф тем NODES, экзамены EXAMS, задания диагностики с ключами, звёзды, этапы
 │   ├── engine.py        # чистые функции: освоение, прогноз, первопричина, what-if, расписание (без БД, тестируются отдельно)
 │   ├── service.py       # состояние ученика (LearnerState), замеры, уведомления, хук после проверки по фото
+│   ├── taskmaps.py      # карты заданий: прототипы, «что нужно знать», задачи с ответами, коды кодификатора 2027
 │   ├── llm.py           # помощник, анализ пробелов, конспект и презентация строго по тексту учебника
 │   └── demo.py          # демо-ученик для «Посмотреть пример»
 ├── api/
 │   ├── router.py        # проверка по фото: REST + WebSocket; фоновая обработка через asyncio.create_task
 │   ├── learning.py      # ученик: профиль, диагностика, главная, расписание, задача дня, звёзды, чат, карта
-│   └── teacher.py       # учитель: классы, обзор, спорные работы, домашние задания, учебники, материалы
+│   ├── teacher.py       # учитель: классы, обзор, спорные работы, домашние задания, учебники, материалы
+│   └── taskmaps.py      # карта задания: проценты по прототипам, проверка ответов, файлы учителя
 └── models/
     └── schemas.py       # Pydantic: TaskResult, AgentVerdict, JudgeDecision, SessionResult
 ```
@@ -88,6 +90,7 @@ frontend/src/
 │   ├── Result.tsx       # итог диагностики; Tour.tsx - тур по главной
 │   ├── Home.tsx         # прогноз, маршрут на сегодня, график, первопричина, задача дня
 │   ├── Plan.tsx         # расписание до экзамена; KnowledgeMap.tsx - карта знаний
+│   ├── TaskMap.tsx      # карта задания (#task/1): прототипы → умения → задание, боковая панель с задачами и файлами
 │   ├── Videos.tsx       # пошаговые разборы (videoData.ts); генерация видео не реализована
 │   ├── Chat.tsx         # помощник ученика и учителя; Stars.tsx - звёзды и высота
 │   ├── Check.tsx        # история проверок по фото; Session.tsx - загрузка 7 заданий
@@ -95,7 +98,8 @@ frontend/src/
 │   └── Trajectory.tsx   # траектория по сессии
 └── components/
     ├── TaskCard.tsx      # Карточка задания: drag-drop + статус + результат
-    └── ResultModal.tsx   # Модальный разбор: судья + 3 эксперта (через portal)
+    ├── ResultModal.tsx   # Модальный разбор: судья + 3 эксперта (через portal)
+    └── GeoFig.tsx        # SVG-чертежи прототипов планиметрии
 ```
 
 ## API endpoints
@@ -127,6 +131,10 @@ frontend/src/
 | POST/DELETE | /api/teacher/assignments | учитель | Домашние задания |
 | GET/POST/DELETE | /api/textbooks | учитель | Учебники (PDF с текстовым слоем → pypdf) |
 | POST/GET | /api/materials/generate, /api/materials | учитель | Конспект / презентация по учебнику (LLM) |
+| GET | /api/taskmaps, /api/taskmaps/{n} | ✓ | Карты заданий; карта с процентами по прототипам и умениям |
+| POST | /api/taskmaps/{n}/answer | ✓ | Ответ на задачу прототипа (в процент идёт первая попытка) |
+| POST | /api/taskmaps/{n}/files | учитель | Прикрепить файл к прототипу (pdf, картинки, docx, pptx до 20 МБ) |
+| GET/DELETE | /api/taskfiles/{id} | ✓ | Скачать (свои файлы и файлы учителей своих классов) / удалить свой |
 
 ## WebSocket события
 
@@ -187,7 +195,11 @@ npm run dev   # vite proxy → localhost:8000
 - Таблицы создаются автоматически при старте через `Base.metadata.create_all`; новые колонки `users`
   (name, role, grade, exam, is_demo) добавляются в существующую БД через `ALTER TABLE … IF NOT EXISTS` в `init_db()`
 - Таблицы нового дизайна: `learner_states` (JSONB-документ ученика), `diagnostics`, `measurements` (история прогноза),
-  `notifications`, `chat_messages`, `class_groups`, `class_members`, `assignments`, `teacher_reviews`, `textbooks`, `materials`
+  `notifications`, `chat_messages`, `class_groups`, `class_members`, `assignments`, `teacher_reviews`, `textbooks`, `materials`,
+  `task_files` (файлы к прототипам, сами файлы в `/app/uploads/taskfiles`)
+- Карта задания: процент прототипа = доля верных первых попыток по его задачам + задание этого номера из диагностик
+  и пробников (`TASK_MAPS[n]["diag"]` связывает вариант диагностики с прототипом). Ответы `state.data["tm"]`.
+  Готова карта задания 1; чтобы добавить задание, допишите его в `learning/taskmaps.py` (и чертежи в `GeoFig.tsx`)
 - Ключи ответов диагностики хранятся только на сервере (`learning/content.py`), клиент получает задания без них
 - После проверки по фото `api/router.py` вызывает `learning.service.on_task_checked`: балл обновляет оценку
   самого задания (`obs`, вес 60% в прогнозе), а через неё прогноз и расписание; освоение тем на карте не меняется.

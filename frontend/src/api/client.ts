@@ -90,6 +90,7 @@ export function openWs(sessionId: string): WebSocket {
 // ---------------- new design: profile, learning model, teacher ----------------
 import type {
   Me, Dashboard, PlanData, DiagRun, DiagResult, NotificationItem, ChatMsg, TeacherOverview, StudentDetail, Textbook, MaterialOut,
+  TaskMapData, TmAnswer, TmFile,
 } from '../types'
 
 export async function registerFull(body: { email: string; password: string; name?: string; role: string; grade?: string | null; exam?: string | null }) {
@@ -160,3 +161,31 @@ export const deleteTextbook = (id: number) => apiFetch(`/textbooks/${id}`, { met
 export const generateMaterial = (body: {
   kind: 'conspect' | 'slides'; topic: string; textbook_id: number; section: string; paragraph: string; who: string; minutes: string
 }): Promise<MaterialOut> => apiFetch('/materials/generate', { method: 'POST', body: JSON.stringify(body) })
+
+// ---------- task maps ----------
+export const listTaskMaps = (): Promise<{ maps: { n: number; name: string }[] }> => apiFetch('/taskmaps')
+export const getTaskMap = (n: number): Promise<TaskMapData> => apiFetch(`/taskmaps/${n}`)
+export const answerTaskMap = (n: number, problem_id: string, answer: string): Promise<TmAnswer> =>
+  apiFetch(`/taskmaps/${n}/answer`, { method: 'POST', body: JSON.stringify({ problem_id, answer }) })
+export async function uploadTaskFile(n: number, proto: string, file: File): Promise<TmFile> {
+  const form = new FormData()
+  form.append('proto', proto)
+  form.append('file', file)
+  const res = await fetch(`${BASE}/taskmaps/${n}/files`, { method: 'POST', headers: authHeader(), body: form })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail ?? 'Не удалось загрузить файл')
+  }
+  return res.json()
+}
+export async function downloadTaskFile(id: number, name: string): Promise<void> {
+  const res = await fetch(`${BASE}/taskfiles/${id}`, { headers: authHeader() })
+  if (!res.ok) throw new Error('Файл недоступен')
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url
+  a.download = name
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+export const deleteTaskFile = (id: number) => apiFetch(`/taskfiles/${id}`, { method: 'DELETE' })
