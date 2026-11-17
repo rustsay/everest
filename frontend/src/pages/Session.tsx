@@ -2,17 +2,20 @@ import { useEffect, useRef, useState } from 'react'
 import { getResults, openWs, uploadTask, downloadReportFile } from '../api/client'
 import TaskCard from '../components/TaskCard'
 import { TaskResult, TASK_INFO, WsEvent } from '../types'
+import NoLlm from '../components/NoLlm'
 
 interface Props {
   sessionId: string
   onBack: () => void
   onOpenTrajectory?: (id: string) => void
+  /** called after each finished check: the dashboard reloads the forecast */
+  onChecked?: () => void
 }
 
 const TASK_IDS = Object.keys(TASK_INFO).map(Number)
 const MAX_TOTAL = 20
 
-export default function Session({ sessionId, onBack, onOpenTrajectory }: Props) {
+export default function Session({ sessionId, onBack, onOpenTrajectory, onChecked }: Props) {
   const [results, setResults] = useState<Record<number, TaskResult>>({})
   const [agentProgress, setAgentProgress] = useState<Record<number, Record<number, number>>>({})
   const [reportLoading, setReportLoading] = useState<'pdf' | 'html' | null>(null)
@@ -47,6 +50,7 @@ export default function Session({ sessionId, onBack, onOpenTrajectory }: Props) 
       }
 
       if (ev.event === 'task_complete') {
+        onChecked?.()
         getResults(sessionId)
           .then((data) => setResults(data.tasks ?? {}))
           .catch(() => {})
@@ -79,7 +83,7 @@ export default function Session({ sessionId, onBack, onOpenTrajectory }: Props) 
     } catch (err) {
       setResults((prev) => ({
         ...prev,
-        [taskId]: { task_id: taskId, status: 'error', error: String(err) },
+        [taskId]: { task_id: taskId, status: 'error', error: String(err).replace('Error: ', '') },
       }))
     }
   }
@@ -92,92 +96,60 @@ export default function Session({ sessionId, onBack, onOpenTrajectory }: Props) 
   const doneCount = TASK_IDS.filter((tid) => results[tid]?.status === 'done').length
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white border-b sticky top-0 z-10">
-        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <button onClick={onBack} className="text-gray-400 hover:text-gray-600 text-lg">←</button>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">ЕГЭ Checker</h1>
-              <p className="text-xs text-gray-400">Сессия: {sessionId.slice(0, 8)}…</p>
-            </div>
-          </div>
-          {doneCount > 0 && (
-            <div className="flex items-center gap-3">
-              <div className="text-right">
-                <div className="text-2xl font-bold text-blue-600">
-                  {totalScore} <span className="text-gray-400 text-lg">/ {MAX_TOTAL}</span>
-                </div>
-                <div className="text-xs text-gray-400">{doneCount} из {TASK_IDS.length} проверено</div>
-              </div>
-              <button
-                onClick={async () => { setReportLoading('pdf'); try { await downloadReportFile(sessionId, 'pdf') } finally { setReportLoading(null) } }}
-                disabled={reportLoading !== null}
-                className="px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 disabled:opacity-50 text-gray-700 text-sm font-medium transition-colors"
-              >
-                {reportLoading === 'pdf' ? '…' : '↓ PDF'}
-              </button>
-              {onOpenTrajectory && (
-                <button
-                  onClick={() => onOpenTrajectory(sessionId)}
-                  className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold transition-colors"
-                >
-                  Траектория →
-                </button>
-              )}
-            </div>
-          )}
+    <>
+      <div className="card-h" style={{ margin: 0 }}>
+        <div>
+          <button className="btn btn-sm btn-ghost" onClick={onBack} style={{ marginBottom: 8 }}>← Все проверки</button>
+          <p className="muted">Проверка второй части · сессия {sessionId.slice(0, 8)}</p>
+          <h1>Проверка решения по фото</h1>
         </div>
-      </header>
-
-      {/* Task grid */}
-      <main className="max-w-5xl mx-auto px-6 py-8">
-        <p className="text-gray-500 text-sm mb-6">
-          Загружайте сканы заданий — проверка запустится автоматически после каждой загрузки.
-        </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {TASK_IDS.map((tid) => (
-            <TaskCard
-              key={tid}
-              taskId={tid}
-              result={results[tid]}
-              agentProgress={agentProgress[tid] ?? {}}
-              onUpload={(files) => handleUpload(tid, files)}
-            />
-          ))}
-        </div>
-
-        {/* Score summary — show when at least one task is done */}
         {doneCount > 0 && (
-          <div className="mt-8 rounded-2xl bg-white border-2 border-blue-100 p-6 text-center shadow-sm">
-            <div className="text-5xl font-bold text-blue-600 mb-1">
-              {totalScore} / {MAX_TOTAL}
-            </div>
-            <div className="text-gray-500">
-              {Math.round((totalScore / MAX_TOTAL) * 100)}% от максимума · {doneCount} из {TASK_IDS.length} заданий
-            </div>
-            <div className="grid grid-cols-7 gap-2 mt-6">
-              {TASK_IDS.map((tid) => {
-                const r = results[tid]
-                const j = r?.judge_decision
-                const pct = j ? j.final_score / j.max_score : 0
-                return (
-                  <div key={tid} className="text-center">
-                    <div className="text-xs text-gray-400 mb-1">№{tid}</div>
-                    <div className={`text-sm font-bold ${
-                      !j ? 'text-gray-300' :
-                      pct === 1 ? 'text-green-600' : pct >= 0.5 ? 'text-yellow-600' : 'text-red-600'
-                    }`}>
-                      {j ? `${j.final_score}/${j.max_score}` : '—'}
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span className="pill p-em num" style={{ fontSize: 14 }}>{totalScore} / {MAX_TOTAL} · {doneCount} из {TASK_IDS.length}</span>
+            <button
+              onClick={async () => { setReportLoading('pdf'); try { await downloadReportFile(sessionId, 'pdf') } finally { setReportLoading(null) } }}
+              disabled={reportLoading !== null}
+              className="btn btn-sm btn-ghost"
+            >
+              {reportLoading === 'pdf' ? '…' : '↓ PDF'}
+            </button>
+            {onOpenTrajectory && (
+              <button onClick={() => onOpenTrajectory(sessionId)} className="btn btn-sm btn-em">Траектория →</button>
+            )}
           </div>
         )}
-      </main>
-    </div>
+      </div>
+      <NoLlm what="Проверка по фото" />
+      <p className="muted">Загружайте фото решений: проверка запустится сразу после загрузки. Три эксперта проверяют независимо по критериям ФИПИ, при расхождении решает судья. Результат обновит прогноз и расписание.</p>
+      <div className="sess-grid">
+        {TASK_IDS.map((tid) => (
+          <TaskCard
+            key={tid}
+            taskId={tid}
+            result={results[tid]}
+            agentProgress={agentProgress[tid] ?? {}}
+            onUpload={(files) => handleUpload(tid, files)}
+          />
+        ))}
+      </div>
+      {doneCount > 0 && (
+        <section className="card" style={{ textAlign: 'center' }}>
+          <div style={{ fontFamily: 'var(--f-display)', fontSize: 44 }} className="num">{totalScore} / {MAX_TOTAL}</div>
+          <p className="muted">{Math.round((totalScore / MAX_TOTAL) * 100)}% от максимума второй части · {doneCount} из {TASK_IDS.length} заданий</p>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7,minmax(0,1fr))', gap: 6, marginTop: 16 }}>
+            {TASK_IDS.map((tid) => {
+              const j = results[tid]?.judge_decision
+              const pct = j ? j.final_score / j.max_score : 0
+              return (
+                <div key={tid}>
+                  <div className="muted" style={{ fontSize: 12 }}>№{tid}</div>
+                  <b className="num" style={{ color: !j ? 'var(--muted)' : pct === 1 ? 'var(--em-ink)' : pct >= 0.5 ? 'var(--gold-ink)' : 'var(--red)' }}>{j ? `${j.final_score}/${j.max_score}` : '-'}</b>
+                </div>
+              )
+            })}
+          </div>
+        </section>
+      )}
+    </>
   )
 }

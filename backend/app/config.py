@@ -2,8 +2,9 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    llm_base_url: str
-    llm_api_key: str
+    # empty or left as in .env.example = no model connected: everything except LLM features still works
+    llm_base_url: str = ""
+    llm_api_key: str = ""
     llm_model: str = "google/gemma-4-26b-a4b-it"
     agent_strategy: str = "temperature"
     uploads_dir: str = "/app/uploads"
@@ -19,5 +20,13 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
 
+    @property
+    def llm_ready(self) -> bool:
+        url, key = self.llm_base_url.strip(), self.llm_api_key.strip()
+        return bool(url and key) and "your-llm-server" not in url and key != "your-api-key"
+
 
 settings = Settings()
+
+NO_LLM = ("Модель пока не подключена: впишите LLM_BASE_URL и LLM_API_KEY в .env и перезапустите сервис. "
+          "Без неё работают диагностика, прогноз, расписание, карта знаний, разборы и кабинет учителя.")

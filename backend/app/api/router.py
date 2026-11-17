@@ -12,6 +12,7 @@ log = logging.getLogger(__name__)
 from app.agents.engine import check_task
 from app.agents.prompts.tasks import MAX_TOTAL, TASK_CONFIGS
 from app.auth.deps import get_current_user
+from app.config import NO_LLM, settings
 from app.db.crud import (
     create_session,
     get_session,
@@ -133,6 +134,8 @@ async def upload_task(
 ):
     if task_id not in VALID_TASK_IDS:
         raise HTTPException(400, f"Допустимые задания: {sorted(VALID_TASK_IDS)}")
+    if not settings.llm_ready:
+        raise HTTPException(503, NO_LLM)
     if not files:
         raise HTTPException(400, "Нет файлов")
     if len(files) > MAX_FILES_PER_TASK:
@@ -232,6 +235,8 @@ async def start_trajectory(
     session = await get_session(db, session_id)
     if not session or session.user_id != current_user.id:
         raise HTTPException(403, "Сессия не найдена")
+    if not settings.llm_ready:
+        raise HTTPException(503, NO_LLM)
     done_tasks = [r for r in session.task_results if r.status == "done"]
     if not done_tasks:
         raise HTTPException(400, "Нет проверенных заданий")
@@ -350,6 +355,14 @@ async def _process_task(session_id: str, task_id: int, file_inputs: list[tuple[b
                 judge_decision=judge,
             )
             await upsert_task_result(db, session_id, final)
+            # feed the learning model: forecast, schedule, stars (new-design)
+            try:
+                from app.learning.service import on_task_checked
+                session_row = await get_session(db, session_id)
+                if session_row is not None:
+                    await on_task_checked(db, session_row.user_id, task_id, judge.final_score, judge.max_score)
+            except Exception as hook_exc:  # never break the check because of the dashboard
+                log.warning("[%s] learning hook failed: %s", tag, hook_exc)
             await emit({
                 "event": "task_complete",
                 "task_id": task_id,

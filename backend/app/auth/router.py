@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.service import create_token, hash_password, verify_password
@@ -14,19 +14,38 @@ class AuthRequest(BaseModel):
     password: str
 
 
+class RegisterRequest(AuthRequest):
+    # profile from the onboarding steps (optional: old clients send only email + password)
+    name: str | None = Field(None, max_length=80)
+    role: str = "student"
+    grade: str | None = None
+    exam: str | None = None
+
+
 class AuthResponse(BaseModel):
     token: str
     email: str
+    name: str | None = None
+    role: str = "student"
 
 
 @router.post("/register", response_model=AuthResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: AuthRequest, db: AsyncSession = Depends(get_db)):
+async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
     if await get_user_by_email(db, body.email):
         raise HTTPException(status.HTTP_409_CONFLICT, "Email уже зарегистрирован")
     if len(body.password) < 6:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Минимум 6 символов")
+    if body.role not in ("student", "teacher", "tutor"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Роль: student, teacher или tutor")
+    if body.grade is not None and body.grade not in {"5", "6", "7", "8", "9", "10", "11"}:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Класс от 5 до 11")
     user = await create_user(db, body.email, hash_password(body.password))
-    return AuthResponse(token=create_token(user.id), email=user.email)
+    user.name = (body.name or "").strip()[:80] or None
+    user.role = body.role
+    user.grade = body.grade if body.role == "student" else None
+    user.exam = body.exam if body.role == "student" else None
+    await db.commit()
+    return AuthResponse(token=create_token(user.id), email=user.email, name=user.name, role=user.role)
 
 
 @router.post("/login", response_model=AuthResponse)
@@ -34,4 +53,13 @@ async def login(body: AuthRequest, db: AsyncSession = Depends(get_db)):
     user = await get_user_by_email(db, body.email)
     if not user or not verify_password(body.password, user.password_hash):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Неверный email или пароль")
-    return AuthResponse(token=create_token(user.id), email=user.email)
+    return AuthResponse(token=create_token(user.id), email=user.email, name=user.name, role=user.role or "student")
+
+
+@router.post("/demo", response_model=AuthResponse)
+async def demo(db: AsyncSession = Depends(get_db)):
+    """«Посмотреть пример»: a throwaway student with preset diagnostic answers.
+    Everything else (forecast, root cause, schedule) is computed by the same model."""
+    from app.learning.demo import create_demo_user
+    user = await create_demo_user(db)
+    return AuthResponse(token=create_token(user.id), email=user.email, name=user.name, role=user.role)
