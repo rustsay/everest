@@ -26,6 +26,21 @@ class User(Base):
     sessions: Mapped[list["Session"]] = relationship("Session", back_populates="user")
 
 
+class GeneratedVideo(Base):
+    __tablename__ = "generated_videos"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    problem: Mapped[str] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(String(200), default="Разбор задачи")
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    stage: Mapped[str] = mapped_column(String(250), default="В очереди")
+    html: Mapped[str | None] = mapped_column(Text)
+    steps: Mapped[list | None] = mapped_column(JSONB)
+    error: Mapped[str | None] = mapped_column(Text)
+    duration: Mapped[float | None] = mapped_column(Float)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class Session(Base):
     __tablename__ = "sessions"
 

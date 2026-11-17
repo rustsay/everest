@@ -6,6 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.learning import router as learning_router
+from app.api.batch import router as batch_router
+from app.api.videos import router as videos_router, recover_videos
 from app.api.router import router
 from app.api.teacher import router as teacher_router
 from app.auth.router import router as auth_router
@@ -22,6 +24,7 @@ logging.basicConfig(
 async def lifespan(app: FastAPI):
     Path(settings.uploads_dir).mkdir(parents=True, exist_ok=True)
     await init_db()
+    await recover_videos()
     # Warm up PaddleOCR in a background thread so models download once, not on the first check.
     # Not awaited: the site answers right away instead of returning 502 while models download.
     # Without a model OCR is not used at all, so the warm-up is skipped.
@@ -50,6 +53,8 @@ app.add_middleware(
 )
 
 app.include_router(auth_router, prefix="/api")
+app.include_router(batch_router, prefix="/api")
+app.include_router(videos_router, prefix="/api")
 app.include_router(router, prefix="/api")
 app.include_router(learning_router, prefix="/api")
 app.include_router(teacher_router, prefix="/api")

@@ -1,5 +1,27 @@
 const BASE = '/api'
 
+export interface GeneratedVideo { id: string; problem: string; title: string; status: 'pending' | 'ready' | 'error'; stage: string; error: string | null; steps: { title: string; lines: string[]; text: string }[]; created_at: string }
+export const listGeneratedVideos = (): Promise<{ videos: GeneratedVideo[] }> => apiFetch('/videos')
+export const generateVideo = (problem: string): Promise<GeneratedVideo> => apiFetch('/videos', { method: 'POST', body: JSON.stringify({ problem }) })
+export const retryVideo = (id: string): Promise<GeneratedVideo> => apiFetch(`/videos/${id}/retry`, { method: 'POST' })
+
+export interface WorkPhoto { id: string; filename: string; task_ids: number[]; warning: string; submitted: boolean }
+export const getWorkPhotos = (sid: string): Promise<{ pages: WorkPhoto[] }> => apiFetch(`/sessions/${sid}/photos`)
+export async function addWorkPhotos(sid: string, files: File[]): Promise<{ pages: WorkPhoto[] }> {
+  const form = new FormData()
+  files.forEach((f) => form.append('files', f))
+  const r = await fetch(`${BASE}/sessions/${sid}/photos`, { method: 'POST', headers: authHeader(), body: form })
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? `Ошибка загрузки (${r.status})`)
+  return r.json()
+}
+export const saveWorkPhotos = (sid: string, pages: WorkPhoto[]) => apiFetch(`/sessions/${sid}/photos`, { method: 'PUT', body: JSON.stringify({ pages: pages.map(({ id, task_ids }) => ({ id, task_ids })) }) })
+export const checkWorkPhotos = (sid: string, retry = false): Promise<{ task_ids: number[] }> => apiFetch(`/sessions/${sid}/photos/check${retry ? '?retry_errors=true' : ''}`, { method: 'POST' })
+export async function workPhotoPreview(sid: string, id: string): Promise<string> {
+  const r = await fetch(`${BASE}/sessions/${sid}/photos/${id}/image`, { headers: authHeader() })
+  if (!r.ok) throw new Error('Превью недоступно')
+  return URL.createObjectURL(await r.blob())
+}
+
 function authHeader(): Record<string, string> {
   const token = localStorage.getItem('token')
   return token ? { Authorization: `Bearer ${token}` } : {}
