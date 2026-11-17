@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date, datetime
+from datetime import date
 
 from json_repair import repair_json
 from openai import AsyncOpenAI
@@ -13,11 +13,18 @@ from app.config import settings
 
 log = logging.getLogger(__name__)
 
-EXAM_DATE = date(datetime.now().year, 6, 5)  # профильная математика ~5 июня
+def _next_exam() -> date:
+    """The nearest 5 June that has not passed yet (профильная математика ~ начало июня)."""
+    today = date.today()
+    d = date(today.year, 6, 5)
+    return d if d >= today else date(today.year + 1, 6, 5)
+
+
+EXAM_DATE = _next_exam()
 
 
 def _days_until_exam() -> int:
-    delta = (EXAM_DATE - date.today()).days
+    delta = (_next_exam() - date.today()).days
     return max(delta, 1)
 
 
@@ -101,7 +108,7 @@ async def generate_trajectory(task_rows: list) -> dict:
     days = _days_until_exam()
     weeks = _weeks_until_exam()
     today_str = date.today().strftime("%d.%m.%Y")
-    exam_str = EXAM_DATE.strftime("%d.%m.%Y")
+    exam_str = _next_exam().strftime("%d.%m.%Y")
     results_summary = _build_results_summary(task_rows)
 
     current_total = sum(

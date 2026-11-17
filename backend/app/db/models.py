@@ -299,3 +299,21 @@ class VariantAttempt(Base):
     score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class LearningPath(Base):
+    """An educational trajectory for one student or for a whole class.
+    status: draft (teacher works on it) | pending (student in a class asked, waits for the teacher) |
+            active (in use) | archived | rejected."""
+    __tablename__ = "learning_paths"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    student_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), index=True)
+    class_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("class_groups.id", ondelete="CASCADE"), index=True)
+    author_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="draft", index=True)
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")  # the teacher's comment
+    approved_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime)

@@ -691,3 +691,30 @@ body.reveal #view>*:nth-child(1){animation-delay:.35s}body.reveal #view>*:nth-ch
 .plan-set .route-note{margin-top:12px}
 .item .t-strong,.pb-main b{overflow-wrap:anywhere;hyphens:auto}
 .item .t-sub,.pb-main small{overflow-wrap:anywhere}
+/* educational trajectory */
+.path-stages{list-style:none;margin:14px 0 0;padding:0;display:grid;gap:0}
+.path-stage{position:relative;display:flex;gap:14px;padding:0 0 18px}
+.path-stage:not(:last-child)::before{content:"";position:absolute;left:15px;top:32px;bottom:2px;width:2px;background:var(--line)}
+.path-dot{flex:none;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;font-weight:800;font-size:14px;background:var(--surface);border:2px solid var(--line);color:var(--muted);position:relative;z-index:1}
+.path-stage.cur .path-dot{background:var(--em);border-color:var(--em);color:#fff}
+.path-stage.past .path-dot{background:var(--bg);color:var(--muted)}
+.path-stage.past .path-title{color:var(--muted)}
+.path-body{flex:1;min-width:0}
+.path-title{font-size:16px}
+.path-tasks{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.path-tasks .chip{height:32px;font-size:12.5px}
+.path-tasks .chip.on,.path-tasks .chip[aria-pressed="true"]{background:var(--em);border-color:var(--em);color:#fff}
+.path-why{margin:0;padding-left:18px;color:var(--muted);font-size:13.5px;display:grid;gap:2px}
+.path-note{background:var(--bg);border-radius:12px;padding:10px 12px;font-size:14px;margin:0 0 8px}
+.path-note.bad{border:1px solid var(--red)}
+.path-follow{display:flex;gap:8px;align-items:center;margin-top:10px;font-weight:700;cursor:pointer}
+.path-follow input{width:18px;height:18px;accent-color:var(--em)}
+.path-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.path-editor{border:2px solid var(--em)}
+.path-row{flex-wrap:wrap}
+.path-row .t-sub{display:block;margin-bottom:4px}
+.path-row-btns{display:flex;gap:6px;flex-wrap:wrap}
+.path-ava{flex:none;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:var(--hero);color:#fff;font-weight:800}
+.p-draft{border:1px dashed var(--line);color:var(--muted)}
+.path-row-txt{flex:1 1 200px;min-width:0}
+.path-row-btns{margin-left:auto}

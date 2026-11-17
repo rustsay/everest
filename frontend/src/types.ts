@@ -152,12 +152,14 @@ export interface PlanBlock {
 }
 export interface PlanDay { date: string; rest?: boolean; past?: boolean; mock?: number; blocks: PlanBlock[] }
 
-export type RouteBasis = 'diag' | 'practice' | 'start'
+export type RouteBasis = 'path' | 'diag' | 'practice' | 'start'
 export interface Dashboard {
   exam: ExamInfo
   diag_done?: boolean
   /** what the schedule rests on: a diagnostic, answers and photo checks, or nothing yet */
   route_basis?: RouteBasis
+  /** the stage of the educational trajectory the schedule follows today */
+  path_stage?: PathStageInfo | null
   forecast: number
   gain: number
   model: { nodes: GraphNode[]; tasks: ExamTask[]; root: string | null; root_tasks: string[]; at_risk: number; weak: string[]; threat: string[] }
@@ -200,6 +202,7 @@ export interface PlanData {
   root: string | null
   root_name: string | null
   route_basis?: RouteBasis
+  path_stage?: PathStageInfo | null
 }
 
 export interface DiagItem {
@@ -261,4 +264,27 @@ export interface VariantFull {
   id: number; title: string; class_id: number | null; due: string | null; owner: boolean; items: PracticeItem[]
   attempt?: { answers: Record<string, string>; results: Record<string, 0 | 1>; score: number; max: number }
   results?: { name: string; score: number; max: number; results: Record<string, 0 | 1> }[]
+}
+
+// ---------- educational trajectory ----------
+export interface PathStageInfo { title: string | null; goal: string | null; index: number | null; count: number; approved: boolean }
+export interface PathStage { title: string; from: string; to: string; goal: string; check: string; tasks: string[]; problems?: string[] }
+export interface PathData {
+  source: 'ai' | 'rules'; fallback?: string; edited?: boolean; summary: string; why: string[]; stages: PathStage[]
+  exam: string; end: string; built: string; labels: Record<string, string>; nums: Record<string, number | string | null>
+}
+export interface PathOut {
+  id: number; status: 'draft' | 'pending' | 'active' | 'archived' | 'rejected'; kind: 'student' | 'class'
+  student_id: number | null; student_name: string | null; class_id: number | null; class_name: string | null
+  author: string | null; approved_by: string | null; note: string; data: PathData; created_at: string | null; approved_at: string | null
+}
+export interface MyPath {
+  mode: 'solo' | 'class'; teachers: string[]; follow: boolean; llm_ready: boolean
+  active: PathOut | null; pending: PathOut | null; rejected: PathOut | null; class_path: PathOut | null
+}
+interface PathRefs { active: number | null; pending: number | null; draft: number | null }
+export interface TeacherPaths {
+  pending: PathOut[]; llm_ready: boolean
+  classes: ({ id: number; name: string; students: number } & PathRefs)[]
+  students: ({ id: number; name: string; exam: string; classes: string[] } & PathRefs)[]
 }

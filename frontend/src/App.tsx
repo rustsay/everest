@@ -19,6 +19,7 @@ import Bank from './pages/Bank'
 import Practice from './pages/Practice'
 import Variants, { VariantPage } from './pages/Variants'
 import TrajectoryPage from './pages/Trajectory'
+import PathPage, { TeacherPaths } from './pages/Path'
 import Videos from './pages/Videos'
 import type { DiagResult, Me } from './types'
 
@@ -123,6 +124,8 @@ function Main() {
     case 'task': page = <TaskMap n={Number(view.id) || 1} />; break
     case 'bank': page = teacher ? <Bank /> : <Practice />; break
     case 'practice': page = <Practice />; break
+    case 'path': page = teacher ? <TeacherPaths /> : <PathPage />; break
+    case 'paths': page = teacher ? <TeacherPaths /> : <PathPage />; break
     case 'variants': page = teacher ? <Variants /> : <Practice />; break
     case 'variant': page = view.id ? <VariantPage id={Number(view.id)} /> : teacher ? <Variants /> : <Practice />; break
     case 'chat': page = teacher ? <Chat teacher /> : <Chat teacher={false} />; break

@@ -5,16 +5,18 @@ import { Icon, Orn, SideMountains, StarBot, StarIcon, Typed, WideMountains, hush
 import { Logo } from '../pages/Onboarding'
 import { useApp, ViewName } from './store'
 
-const NAV_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['plan', 'Расписание', 'cal'], ['check', 'Проверка', 'check'], ['task', 'Карты заданий', 'map'], ['practice', 'Банк задач', 'book'], ['video', 'Разборы', 'play'], ['chat', 'Помощник', 'chat'], ['awards', 'Звёзды', 'star']]
-const BOT_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['plan', 'План', 'cal'], ['check', 'Проверка', 'check'], ['task', 'Карты', 'map'], ['practice', 'Банк', 'book'], ['chat', 'Помощник', 'chat']]
-const NAV_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['materials', 'Конспекты и презентации', 'slides'], ['task', 'Карты заданий', 'map'], ['bank', 'Банк задач', 'book'], ['variants', 'Варианты', 'pen'], ['tchat', 'Помощник учителя', 'chat'], ['check', 'Проверка', 'check']]
-const BOT_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['materials', 'Материалы', 'slides'], ['bank', 'Банк', 'book'], ['variants', 'Варианты', 'pen'], ['tchat', 'Помощник', 'chat'], ['check', 'Проверка', 'check']]
+const NAV_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['path', 'Траектория', 'flag'], ['plan', 'Расписание', 'cal'], ['check', 'Проверка', 'check'], ['task', 'Карты заданий', 'map'], ['practice', 'Банк задач', 'book'], ['video', 'Разборы', 'play'], ['chat', 'Помощник', 'chat'], ['awards', 'Звёзды', 'star']]
+const BOT_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['path', 'Путь', 'flag'], ['plan', 'План', 'cal'], ['check', 'Проверка', 'check'], ['practice', 'Банк', 'book'], ['chat', 'Помощник', 'chat']]
+const NAV_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['paths', 'Траектории', 'flag'], ['materials', 'Конспекты и презентации', 'slides'], ['task', 'Карты заданий', 'map'], ['bank', 'Банк задач', 'book'], ['variants', 'Варианты', 'pen'], ['tchat', 'Помощник учителя', 'chat'], ['check', 'Проверка', 'check']]
+const BOT_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['paths', 'Пути', 'flag'], ['bank', 'Банк', 'book'], ['variants', 'Варианты', 'pen'], ['tchat', 'Помощник', 'chat'], ['check', 'Проверка', 'check']]
 
 const MLINES: Partial<Record<ViewName, string[]>> = {
   check: ['Сфотографируй решение целиком, вместе с номером задания. Чем ровнее фото, тем точнее проверка.', 'Три эксперта проверяют решение независимо, а если они расходятся, решает судья.'],
   bank: ['Загрузите файл с задачами, проверьте условие и ответ, потом опубликуйте.'],
   task: ['Нажми на прототип: там всё, что нужно знать, задачи для проверки и материалы.', 'Процент считается по первой попытке в каждой задаче, поэтому решай честно.'],
   practice: ['Решай задачи из банка: в процент карты задания идёт первая попытка.', 'Варианты от учителя появляются здесь же, сверху.'],
+  path: ['Траектория - это этапы до экзамена с целями. Расписание на каждый день идёт по текущему этапу.', 'Если ты в классе, траекторию утверждает учитель.'],
+  paths: ['Ученики присылают траектории на утверждение: поправьте этапы, если нужно, и утвердите.', 'Траектория класса нужна тем, у кого нет своей.'],
   variants: ['Соберите вариант автоматически или выберите задачи сами, потом выдайте классу.'],
   video: ['Выбери папку с номером задания. Понял разбор, жми «Понял» и иди дальше.', 'Если шаг непонятен, жми «Не понял». Разберём его в чате.'],
   chat: ['Спрашивай. Я не дам сразу ответ, а наведу на него вопросами.'],

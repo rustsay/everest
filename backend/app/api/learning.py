@@ -237,7 +237,9 @@ async def dashboard(user: User = Depends(get_current_user), db: AsyncSession = D
         st["daily"] = {"date": today.isoformat(), "done": False, "tries": 0, "hint": 0}
         service.touch(row)
     model = engine.build_model(st, key)
-    plan = engine.build_plan(st, key, today)
+    path = await service.active_path(db, user, row)
+    stages = path.data.get("stages") if path else None
+    plan = engine.build_plan(st, key, today, stages)
     hist = await service.history(db, user.id)
     deltas = []
     if len(hist) >= 2:
@@ -285,8 +287,19 @@ async def dashboard(user: User = Depends(get_current_user), db: AsyncSession = D
         "vdone": st.get("vdone", {}), "mocks": st.get("mocks", 0), "unread": await crud.unread_count(db, user.id),
         # without a diagnostic the forecast rests on default values: the client shows an invitation instead of a number
         "diag_done": await crud.last_finished_diagnostic(db, user.id) is not None,
-        "route_basis": await service.route_basis(db, user.id, row),
+        "route_basis": await service.route_basis(db, user.id, row, path),
+        "path_stage": _stage_info(path, today),
     }
+
+
+def _stage_info(path, today: date) -> dict | None:
+    if path is None:
+        return None
+    stages = path.data.get("stages") or []
+    i = engine.path_stage(stages, today)
+    s = stages[i] if i is not None else None
+    return {"title": s["title"] if s else None, "goal": s.get("goal") if s else None, "index": i, "count": len(stages),
+            "approved": path.approved_by is not None and path.approved_by != path.student_id}
 
 
 # ---------- schedule ----------
@@ -296,7 +309,8 @@ async def get_plan(user: User = Depends(get_current_user), db: AsyncSession = De
     today = date.today()
     key = service.key_for(user)
     row = await service.get_state(db, user.id)
-    plan = engine.build_plan(row.data, key, today)
+    path = await service.active_path(db, user, row)
+    plan = engine.build_plan(row.data, key, today, path.data.get("stages") if path else None)
     model = engine.build_model(row.data, key)
     done = row.data.get("plan_done", {})
     week = []
@@ -310,7 +324,8 @@ async def get_plan(user: User = Depends(get_current_user), db: AsyncSession = De
         "queue": plan["queue"], "end": plan["end"], "total_days": plan["total_days"],
         "tasks": [{"id": t["id"], "n": t["n"], "name": t["name"], "risk": t["risk"], "from": t.get("from")} for t in model["tasks"]],
         "root": model["root"], "root_name": NODE_BY_ID[model["root"]]["name"] if model["root"] else None,
-        "route_basis": await service.route_basis(db, user.id, row),
+        "route_basis": await service.route_basis(db, user.id, row, path),
+        "path_stage": _stage_info(path, today),
     }
 
 

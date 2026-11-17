@@ -113,6 +113,7 @@ export function openWs(sessionId: string): WebSocket {
 import type {
   Me, Dashboard, PlanData, DiagRun, DiagResult, NotificationItem, ChatMsg, TeacherOverview, StudentDetail, Textbook, MaterialOut,
   TaskMapData, TmAnswer, TmFile, SkillExplain, BankItem, BankTask, PracticeItem, VariantSummary, VariantFull,
+  MyPath, PathOut, PathStage, TeacherPaths,
 } from '../types'
 
 export async function registerFull(body: { email: string; password: string; name?: string; role: string; grade?: string | null; exam?: string | null }) {
@@ -133,6 +134,19 @@ export const skipDiagnostic = () => apiFetch('/diagnostics/skip', { method: 'POS
 
 export const getDashboard = (): Promise<Dashboard> => apiFetch('/dashboard')
 export const getPlan = (): Promise<PlanData> => apiFetch('/plan')
+
+// Educational trajectory
+const post = (body?: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body ?? {}) })
+export const getMyPath = (): Promise<MyPath> => apiFetch('/path')
+export const generateMyPath = (): Promise<PathOut> => apiFetch('/path/generate', post())
+export const followPath = (follow: boolean): Promise<{ follow: boolean }> => apiFetch('/path/follow', post({ follow }))
+export const teacherPaths = (): Promise<TeacherPaths> => apiFetch('/teacher/paths')
+export const teacherPath = (id: number): Promise<PathOut> => apiFetch(`/teacher/paths/${id}`)
+export const teacherGenPath = (target: { student_id?: number; class_id?: number }): Promise<PathOut> => apiFetch('/teacher/paths/generate', post(target))
+export const teacherEditPath = (id: number, body: { stages?: PathStage[]; summary?: string; note?: string }): Promise<PathOut> =>
+  apiFetch(`/teacher/paths/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+export const teacherApprovePath = (id: number): Promise<PathOut> => apiFetch(`/teacher/paths/${id}/approve`, post())
+export const teacherRejectPath = (id: number, note = ''): Promise<{ ok: boolean }> => apiFetch(`/teacher/paths/${id}/reject`, post({ note }))
 export const togglePlanBlock = (key: string): Promise<{ done: boolean; xp: number }> =>
   apiFetch('/plan/done', { method: 'POST', body: JSON.stringify({ key }) })
 export const dailyHint = (): Promise<{ hints: string[] }> => apiFetch('/daily/hint', { method: 'POST' })

@@ -1,17 +1,28 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getPlan, putSettings, togglePlanBlock } from '../api/client'
 import { useApp } from '../app/store'
-import type { ExamInfo, PlanBlock, PlanData, RouteBasis } from '../types'
+import type { ExamInfo, PathStageInfo, PlanBlock, PlanData, RouteBasis } from '../types'
 import { Icon, dkey, fmtD, plural, taskLabel } from '../design/ui'
 
 type App = ReturnType<typeof useApp>
 
-/** Where a schedule block leads. */
-/** An honest line about what the route rests on; nothing once a diagnostic is done. */
-export function RouteNote({ basis, exam }: { basis?: RouteBasis; exam: ExamInfo }) {
+/** An honest line about what the route rests on: a trajectory, answers, or nothing yet; nothing after a diagnostic without a trajectory. */
+export function RouteNote({ basis, exam, stage }: { basis?: RouteBasis; exam: ExamInfo; stage?: PathStageInfo | null }) {
   const app = useApp()
   if (!basis || basis === 'diag') return null
   const tasks = exam.key === 'prof'
+  if (basis === 'path') {
+    return (
+      <div className="route-note">
+        <Icon n="flag" s={16} />
+        <span style={{ flex: 1 }}>
+          <b>Маршрут идёт по траектории{stage?.approved ? ', которую утвердил учитель' : ''}</b>
+          {stage?.title ? <>: этап «{stage.title}» ({(stage.index ?? 0) + 1} из {stage.count}).{stage.goal ? ` Цель: ${stage.goal}` : ''}</> : '.'}
+          <span className="route-note-btns"><button className="btn btn-sm btn-line" onClick={() => app.go('path')}>Траектория</button></span>
+        </span>
+      </div>
+    )
+  }
   return (
     <div className="route-note">
       <Icon n="bulb" s={16} />
@@ -22,12 +33,14 @@ export function RouteNote({ basis, exam }: { basis?: RouteBasis; exam: ExamInfo 
         <span className="route-note-btns">
           <button className="btn btn-sm btn-line" onClick={() => window.dispatchEvent(new Event('everest:diag'))}>Диагностика</button>
           {tasks && basis === 'start' && <button className="btn btn-sm btn-line" onClick={() => app.go('practice')}>Банк задач</button>}
+          <button className="btn btn-sm btn-line" onClick={() => app.go('path')}>Собрать траекторию</button>
         </span>
       </span>
     </div>
   )
 }
 
+/** Where a schedule block leads. */
 export function blockGo(b: PlanBlock, app: App) {
   if (b.k === 'mock') { window.dispatchEvent(new Event('everest:mock')); return }
   const prof = app.me.exam_info.key === 'prof'
@@ -87,7 +100,7 @@ export default function Plan() {
           <div className="field" style={{ flex: '1 1 150px' }}><label htmlFor="plMin">Минут в день</label>
             <select id="plMin" className="input" value={p.settings.min} onChange={(e) => setPlan('min', +e.target.value)}>{[30, 45, 60, 90].map((n) => <option key={n} value={n}>{n}</option>)}</select></div>
         </div>
-        <RouteNote basis={p.route_basis} exam={ex} />
+        <RouteNote basis={p.route_basis} exam={ex} stage={p.path_stage} />
         <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>{ex.date_note}. Воскресенье всегда выходной. Занятия заканчиваются до 21:30, чтобы не сбивать сон.</p>
       </section>
       <section className="card">

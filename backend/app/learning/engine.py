@@ -297,7 +297,14 @@ def task_label(t: dict) -> str:
     return f"№ {t['n']}" if t.get("n") else t["name"]
 
 
-def build_plan(state: dict, key: str, today: date) -> dict:
+def path_stage(stages: list[dict] | None, d: date) -> int | None:
+    """Index of the trajectory stage that covers the date."""
+    ds = d.isoformat()
+    return next((i for i, s in enumerate(stages or []) if s.get("from", "") <= ds <= s.get("to", "")), None)
+
+
+def build_plan(state: dict, key: str, today: date, stages: list[dict] | None = None) -> dict:
+    """stages: the active educational trajectory; during a stage its tasks come three times as often."""
     ex = EXAMS[key]
     ps = state.get("plan") or {}
     model = build_model(state, key)
@@ -314,8 +321,15 @@ def build_plan(state: dict, key: str, today: date) -> dict:
     def w(t):
         return 0.25 + (1 - min(1.0, t["p"])) * t["att"] * min(t["max"], 3)
 
-    pick1 = _Swrr(p1, [w(t) for t in p1]) if p1 else None
-    pick2 = _Swrr(p2, [w(t) for t in p2]) if p2 else None
+    stages = sorted([s for s in (stages or []) if s.get("tasks")], key=lambda s: s.get("from", ""))
+
+    def pickers(si: int | None):
+        focus = set(stages[si]["tasks"]) if si is not None else set()
+        k = lambda t: 3.0 if t["id"] in focus else 1.0  # noqa: E731
+        return (_Swrr(p1, [w(t) * k(t) for t in p1]) if p1 else None, _Swrr(p2, [w(t) * k(t) for t in p2]) if p2 else None)
+
+    cur_si = path_stage(stages, today)
+    pick1, pick2 = pickers(cur_si)
 
     needed: set[str] = set()
 
@@ -335,6 +349,8 @@ def build_plan(state: dict, key: str, today: date) -> dict:
         pr = practice_share(state, t["id"])
         if pr and pr[1] >= 2 and pr[0] < 0.5:
             hot.update(t["need"])
+    if cur_si is not None:  # topics of the current trajectory stage go first too
+        hot.update(k for t in tasks if t["id"] in set(stages[cur_si]["tasks"]) for k in t["need"])
     order = [n for n in NODES if n["id"] in needed and E[n["id"]] < 0.8]
     order.sort(key=lambda n: (0 if n["id"] == model["root"] else 1, 0 if n["id"] in hot else 1, n["col"], E[n["id"]]))
     queue: list[str] = []
@@ -362,6 +378,10 @@ def build_plan(state: dict, key: str, today: date) -> dict:
                          "blocks": [{"k": "mock", "min": mins if ex["pct"] else max(mins, 90), "title": title, "sub": sub}]})
             continue
         studied += 1
+        si = path_stage(stages, d)
+        if si != cur_si:
+            cur_si = si
+            pick1, pick2 = pickers(si)
         blocks: list[dict] = []
         if pick1:
             a = pick1()

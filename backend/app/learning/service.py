@@ -93,9 +93,30 @@ def on_practice(user: User, row: LearnerState, task_n: int, ok: bool) -> None:
         engine.observe_practice(row.data, tid, ok)
 
 
-async def route_basis(db: AsyncSession, user_id: int, row: LearnerState) -> str:
-    """What today's route rests on: 'diag' - a diagnostic, 'practice' - answers and photo checks, 'start' - nothing yet."""
+async def active_path(db: AsyncSession, user: User, row: LearnerState):
+    """The trajectory the schedule follows: the student's own approved one, else the class one;
+    a student on his own can switch his off."""
+    from app.db.crud_learning import student_classes
+    from app.db.models import LearningPath
+    classes = await student_classes(db, user.id)
+    if not classes and not row.data.get("path_follow", True):
+        return None
+    res = await db.execute(select(LearningPath).where(LearningPath.student_id == user.id, LearningPath.status == "active").order_by(LearningPath.id.desc()))
+    p = res.scalars().first()
+    if p is None and classes:
+        res = await db.execute(select(LearningPath).where(LearningPath.class_id.in_([c.id for c in classes]), LearningPath.status == "active")
+                               .order_by(LearningPath.id.desc()))
+        p = res.scalars().first()
+    if p is not None and p.data.get("exam") != key_for(user):
+        return None  # a class path for another exam does not fit
+    return p
+
+
+async def route_basis(db: AsyncSession, user_id: int, row: LearnerState, path=None) -> str:
+    """What today's route rests on: 'path' - a trajectory, 'diag' - a diagnostic, 'practice' - answers and photo checks, 'start' - nothing yet."""
     from app.db.crud_learning import last_finished_diagnostic
+    if path is not None:
+        return "path"
     if await last_finished_diagnostic(db, user_id) is not None:
         return "diag"
     return "practice" if row.data.get("prac") or row.data.get("obs") else "start"
