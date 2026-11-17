@@ -28,7 +28,8 @@ def exam_key(grade: str | None, exam: str | None) -> str:
 
 
 def diag_required(grade: str | None) -> bool:
-    return grade in {"9", "10", "11"}
+    """Since Nov 2026 the entrance diagnostic is optional for everyone: it is offered, not forced."""
+    return False
 
 
 def school_passed(frm: str | None, today: date) -> bool:
@@ -164,6 +165,18 @@ def observe_task(state: dict, task_id: str, fraction: float) -> None:
     so[task_id] = fraction if task_id not in so else (so[task_id] + fraction) / 2
 
 
+def observe_practice(state: dict, task_id: str, ok: bool) -> None:
+    """A first attempt at a problem in the bank, a task map or a teacher's variant: count right / total per task."""
+    c = state.setdefault("prac", {}).setdefault(task_id, [0, 0])
+    c[0] += 1 if ok else 0
+    c[1] += 1
+
+
+def practice_share(state: dict, task_id: str) -> tuple[float, int] | None:
+    c = (state.get("prac") or {}).get(task_id)
+    return (c[0] / c[1], c[1]) if c and c[1] else None
+
+
 def ensure_mastery(state: dict) -> None:
     m = state.setdefault("mastery", {})
     for n in NODES:
@@ -205,9 +218,17 @@ def build_model(state: dict, key: str, mastery: dict | None = None) -> dict:
     for t in exam_tasks(key):
         pm = min(E[k] for k in t["need"])
         o = obs.get(t["id"])
-        p = 0.6 * o + 0.4 * pm if o is not None else pm
+        pr = practice_share(state, t["id"])
+        if o is not None:  # photo check: weight 0.6; practice answers are mixed into it
+            p = 0.6 * ((o + pr[0]) / 2 if pr else o) + 0.4 * pm
+        elif pr:  # only short answers: the more of them, the more they weigh (1 answer 0.2, 4 answers 0.4, max 0.6)
+            w = 0.6 * pr[1] / (pr[1] + 2)
+            p = w * pr[0] + (1 - w) * pm
+        else:
+            p = pm
         risk = any(k in weak or k in threat for k in t["need"])
-        tasks.append({**t, "p": round(p, 4), "exp": round(t["max"] * p, 4), "risk": risk, "obs": o})
+        tasks.append({**t, "p": round(p, 4), "exp": round(t["max"] * p, 4), "risk": risk, "obs": o,
+                      "prac": (state.get("prac") or {}).get(t["id"])})
     primary = sum(t["exp"] for t in tasks)
     roots = [w for w in weak if all(p not in weak for p in NODE_BY_ID[w]["pre"])]
     root = sorted(roots, key=lambda r: E[r])[0] if roots else None
@@ -308,8 +329,14 @@ def build_plan(state: dict, key: str, today: date) -> dict:
             needed.add(k)
             up(k)
     E = model["E"]
+    # topics behind tasks that go badly in practice (2+ answers, under half right) come first after the root cause
+    hot: set[str] = set()
+    for t in tasks:
+        pr = practice_share(state, t["id"])
+        if pr and pr[1] >= 2 and pr[0] < 0.5:
+            hot.update(t["need"])
     order = [n for n in NODES if n["id"] in needed and E[n["id"]] < 0.8]
-    order.sort(key=lambda n: (0 if n["id"] == model["root"] else 1, n["col"], E[n["id"]]))
+    order.sort(key=lambda n: (0 if n["id"] == model["root"] else 1, 0 if n["id"] in hot else 1, n["col"], E[n["id"]]))
     queue: list[str] = []
     for n in order:
         k = max(1, min(4, math.ceil((0.8 - E[n["id"]]) / 0.12)))

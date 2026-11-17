@@ -283,6 +283,9 @@ async def dashboard(user: User = Depends(get_current_user), db: AsyncSession = D
         "xp": int(st.get("xp", 0)), "stage": {"current": cur, "next": nxt, "left": left},
         "streak": engine.streak(st.get("active_days", []), today), "chest": bool(st.get("chest")), "hunt": bool(st.get("hunt")),
         "vdone": st.get("vdone", {}), "mocks": st.get("mocks", 0), "unread": await crud.unread_count(db, user.id),
+        # without a diagnostic the forecast rests on default values: the client shows an invitation instead of a number
+        "diag_done": await crud.last_finished_diagnostic(db, user.id) is not None,
+        "route_basis": await service.route_basis(db, user.id, row),
     }
 
 
@@ -307,6 +310,7 @@ async def get_plan(user: User = Depends(get_current_user), db: AsyncSession = De
         "queue": plan["queue"], "end": plan["end"], "total_days": plan["total_days"],
         "tasks": [{"id": t["id"], "n": t["n"], "name": t["name"], "risk": t["risk"], "from": t.get("from")} for t in model["tasks"]],
         "root": model["root"], "root_name": NODE_BY_ID[model["root"]]["name"] if model["root"] else None,
+        "route_basis": await service.route_basis(db, user.id, row),
     }
 
 

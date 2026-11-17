@@ -152,8 +152,12 @@ export interface PlanBlock {
 }
 export interface PlanDay { date: string; rest?: boolean; past?: boolean; mock?: number; blocks: PlanBlock[] }
 
+export type RouteBasis = 'diag' | 'practice' | 'start'
 export interface Dashboard {
   exam: ExamInfo
+  diag_done?: boolean
+  /** what the schedule rests on: a diagnostic, answers and photo checks, or nothing yet */
+  route_basis?: RouteBasis
   forecast: number
   gain: number
   model: { nodes: GraphNode[]; tasks: ExamTask[]; root: string | null; root_tasks: string[]; at_risk: number; weak: string[]; threat: string[] }
@@ -195,6 +199,7 @@ export interface PlanData {
   tasks: { id: string; n: number | string | null; name: string; risk: boolean; from?: string | null }[]
   root: string | null
   root_name: string | null
+  route_basis?: RouteBasis
 }
 
 export interface DiagItem {
@@ -226,3 +231,34 @@ export interface StudentDetail {
 export interface Textbook { id: number; title: string; authors: string; grade: string; filename: string | null; chars: number }
 export interface Slide { title: string; bullets: string[]; note: string }
 export interface MaterialOut { id: number; kind: 'conspect' | 'slides'; topic: string; text?: string; slides?: Slide[] }
+
+// ---------- task maps (knowledge map of one exam task) ----------
+export interface TmStat { pct: number | null; ok: number; count: number }
+export interface TmProblem { id: string; q: string; done: 0 | 1 | null; sol: string | null; src: string; check: 'answer' | 'photo' }
+export interface TmFile { id: number; name: string; size: number; mine: boolean }
+export interface TmProto extends TmStat {
+  id: string; name: string; fig: string | null; skills: string[]; know: string[]; added: string | null
+  links: { title: string; url: string }[]; from_diag: number; problems: TmProblem[]; files: TmFile[]
+}
+export interface TmSkill extends TmStat { id: string; name: string; short: string; know: string[]; fig: string | null }
+export interface TaskMapData {
+  n: number; name: string; part: 1 | 2
+  skills: TmSkill[]; protos: TmProto[]
+  total: TmStat & { covered: number; of: number }
+  can_upload: boolean
+}
+export interface TmAnswer { ok: boolean; first: boolean; answer: string; sol: string }
+export interface SkillExplain { text: string | null; book: { id: number; title: string; authors: string }; pages: string[]; cached?: boolean; message?: string }
+
+// ---------- task bank ----------
+export interface BankItem { id: number; task: number; proto: string; text: string; answer: string | null; solution: string; source: string; status: 'draft' | 'approved'; mine: boolean }
+export interface BankTask { n: number; name: string; protos: { id: string; name: string }[] }
+
+// ---------- practice bank and variants ----------
+export interface PracticeItem { ref: string; pid: string; task: number; proto: string; proto_name: string; q: string; src: string; check: 'answer' | 'photo'; done: 0 | 1 | null; sol: string | null; answer?: string | null }
+export interface VariantSummary { id: number; title: string; count: number; class_id: number | null; class_name: string | null; due: string | null; attempt: { score: number; max: number } | null }
+export interface VariantFull {
+  id: number; title: string; class_id: number | null; due: string | null; owner: boolean; items: PracticeItem[]
+  attempt?: { answers: Record<string, string>; results: Record<string, 0 | 1>; score: number; max: number }
+  results?: { name: string; score: number; max: number; results: Record<string, 0 | 1> }[]
+}

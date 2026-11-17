@@ -105,3 +105,48 @@ async def slides(topic: str, book: dict, section: str, who: str, minutes: str, t
             out.append({"title": str(s["title"])[:140], "bullets": [str(b)[:240] for b in (s.get("bullets") or [])[:6]],
                         "note": str(s.get("note") or "")[:400]})
     return out
+
+
+# ---------- task bank: problems out of a document ----------
+
+async def extract_problems(text: str, task_n: int, protos: list[dict]) -> list[dict]:
+    """Split a document (variant, collection, open bank export) into problems of one exam task.
+    The model copies, it does not invent: an answer only if the document states it."""
+    plist = "\n".join(f"- {p['id']}: {p['name']}" for p in protos)
+    prompt = f"""Перед тобой текст документа с задачами по математике (вариант, сборник или выгрузка открытого банка заданий).
+Найди в нём задачи, которые подходят к заданию № {task_n} профильного ЕГЭ, и отнеси каждую к прототипу из списка:
+{plist}
+Правила:
+1) Условие переписывай дословно, ничего не меняй и не дополняй. Формулы обычным текстом.
+2) Ответ пиши только если он есть в документе (строка «Ответ: …», ключ ответов). Иначе answer = null. Не решай задачи сам.
+3) Решение переписывай только если оно есть в документе, иначе solution = "".
+4) Если задача не подходит ни к одному прототипу, пропусти её. Если в тексте нет подходящих задач, верни пустой список.
+Ответь только JSON: {{"problems":[{{"text":"...","answer":"..." или null,"proto":"id","solution":"..."}}]}}
+ТЕКСТ:
+\"\"\"{text}\"\"\""""
+    data = parse_json(await complete([{"role": "user", "content": prompt}], 0.0))
+    ids = {p["id"] for p in protos}
+    out = []
+    for it in (data.get("problems") or []):
+        if not isinstance(it, dict) or not str(it.get("text") or "").strip():
+            continue
+        ans = it.get("answer")
+        out.append({"text": str(it["text"]).strip()[:4000], "answer": (str(ans).strip()[:80] or None) if ans not in (None, "") else None,
+                    "proto": it.get("proto") if it.get("proto") in ids else "", "solution": str(it.get("solution") or "")[:6000]})
+    return out
+
+
+# ---------- explanation of a cross-cutting skill from a textbook ----------
+
+async def explain_skill(skill_name: str, book: dict, fragments: str) -> str:
+    prompt = f"""Ты помощник ученика при подготовке к ЕГЭ по математике. Объясни умение «{skill_name}» СТРОГО по фрагментам учебника ниже.
+Учебник: «{book.get('title', '')}», {book.get('authors', '')}.
+Правила:
+1) Определения, формулы и теоремы переписывай дословно из фрагментов и после каждой ставь страницу в скобках, например (стр. 12). Страница указана в метках [[стр. N]].
+2) Пример бери только из фрагментов, с его номером. Новых фактов, формул и примеров от себя не добавляй.
+3) Если во фрагментах нет нужного, так и напиши: «В этих страницах учебника этого нет». Не дополняй из памяти.
+4) Пиши просто, на «ты», по-русски, до 220 слов. Формулы обычным текстом (sin²x, π/6, log₂x).
+Структура: **Коротко** (1-2 предложения), **Что запомнить** (определения и формулы со страницами), **Пример из учебника**, **Где пригодится на ЕГЭ** (одно предложение).
+ФРАГМЕНТЫ:
+\"\"\"{fragments}\"\"\""""
+    return await complete([{"role": "user", "content": prompt}], 0.2)

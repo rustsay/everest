@@ -201,7 +201,8 @@ def _extract_text(name: str, data: bytes) -> str:
         try:
             from pypdf import PdfReader
             reader = PdfReader(io.BytesIO(data))
-            return "\n".join((p.extract_text() or "") for p in reader.pages)
+            # page markers let explanations cite pages: [[стр. 12]]
+            return "\n".join(f"\n[[стр. {i}]]\n" + (p.extract_text() or "") for i, p in enumerate(reader.pages, 1))
         except Exception as exc:  # scanned PDF without a text layer, broken file
             log.warning("pdf text extraction failed: %s", exc)
             return ""
@@ -240,6 +241,9 @@ async def delete_textbook(book_id: int, teacher: User = Depends(require_teacher)
     b = await db.get(Textbook, book_id)
     if b is None or b.owner_id != teacher.id:
         raise HTTPException(404, "Учебник не найден")
+    from sqlalchemy import delete as sql_delete
+    from app.db.models import SkillExplanation
+    await db.execute(sql_delete(SkillExplanation).where(SkillExplanation.textbook_id == b.id))
     await db.delete(b)
     await db.commit()
     return {"ok": True}

@@ -1,1 +1,1 @@
-"""Video explanation pipeline adapted from AiEGEVideoGenerator."""
+"""Generated step-by-step solutions for the shared green board."""
