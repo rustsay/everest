@@ -1,9 +1,10 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
-import { clearChat, getChat, postChat } from '../api/client'
+import { clearChat, getChat, postChat, listReviewChats, ReviewChatSummary } from '../api/client'
 import { useApp } from '../app/store'
 import type { ChatMsg } from '../types'
 import { Icon, Md } from '../design/ui'
 import NoLlm from '../components/NoLlm'
+import ReviewConversation from '../components/ReviewConversation'
 
 const CHIPS_S = ['Не понимаю, как отбирать корни на отрезке', 'Дай подсказку к задаче дня', 'Почему у меня проседает первопричина?', 'Объясни единичную окружность простыми словами']
 const CHIPS_T = ['План урока на 45 минут по отбору корней', 'Кому из класса нужна помощь в первую очередь?', 'Объясните критерии задания 13', 'Подберите 5 задач на единичную окружность']
@@ -18,6 +19,31 @@ function toB64(f: File): Promise<string> {
 }
 
 export default function Chat({ teacher }: { teacher: boolean }) {
+  const app = useApp()
+  const [chats, setChats] = useState<ReviewChatSummary[]>([])
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const reviewId = app.view.id?.startsWith('review:') ? app.view.id.slice(7) : undefined
+  const refresh = () => listReviewChats().then((r) => { setChats(r.chats); setError('') }).catch((e: Error) => setError(e.message)).finally(() => setLoading(false))
+  useEffect(() => { void refresh() }, [app.view.id])
+  return <div className="assistant-layout">
+    <aside className="assistant-dialogs" aria-label="Диалоги помощника">
+      <button className={`assistant-thread ${!reviewId ? 'active' : ''}`} aria-current={!reviewId ? 'page' : undefined} onClick={() => app.go(teacher ? 'tchat' : 'chat')}><b>Общий диалог</b><small>Вопросы по математике</small></button>
+      <h2>По проверкам</h2>
+      {loading && <p className="muted" role="status">Загружаем диалоги…</p>}
+      {!loading && !chats.length && !error && <p className="muted">Нажми «?» в подробном разборе задания — здесь появится диалог по этой проверке.</p>}
+      {error && <div role="alert"><p>{error}</p><button className="btn btn-sm btn-ghost" onClick={() => void refresh()}>Повторить загрузку</button></div>}
+      {chats.map((c) => <button key={c.id} className={`assistant-thread ${reviewId === c.id ? 'active' : ''}`} aria-current={reviewId === c.id ? 'page' : undefined} onClick={() => app.go({ v: teacher ? 'tchat' : 'chat', id: `review:${c.id}` })}>
+        <b>{c.title}</b><small>{new Date(c.created_at + 'Z').toLocaleString('ru-RU')}</small><span>{c.last_message || 'Задай первый вопрос по проверке'}</span>
+      </button>)}
+    </aside>
+    <div className="assistant-content">
+      {reviewId ? <><h1>Помощник по проверке</h1><ReviewConversation key={reviewId} chatId={reviewId} onUpdated={() => void refresh()} /></> : <GeneralChat teacher={teacher} />}
+    </div>
+  </div>
+}
+
+function GeneralChat({ teacher }: { teacher: boolean }) {
   const app = useApp()
   const kind = teacher ? 'teacher' : 'student'
   const [list, setList] = useState<ChatMsg[]>([])

@@ -10,6 +10,9 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from openai import AsyncOpenAI
 from PIL import Image, ImageOps, UnidentifiedImageError
+from pillow_heif import register_heif_opener
+from pdf2image import convert_from_bytes, pdfinfo_from_bytes
+from pdf2image.exceptions import PDFPageCountError, PDFPopplerTimeoutError, PDFSyntaxError
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +29,7 @@ _locks: dict[str, asyncio.Lock] = {}
 _checks = asyncio.Semaphore(2)
 _classification = asyncio.Semaphore(2)
 TASKS = set(range(13, 20))
+register_heif_opener(thumbnails=False)
 
 
 async def folder(sid: uuid.UUID, user: User, db: AsyncSession) -> Path:
@@ -48,18 +52,53 @@ def write_pages(path: Path, pages: list[dict]) -> None:
     temp.replace(path / 'pages.json')
 
 
+def image_jpeg(im: Image.Image) -> bytes:
+    if im.width * im.height > 40_000_000:
+        raise ValueError()
+    im = ImageOps.exif_transpose(im).convert('RGB')
+    im.thumbnail((2200, 2200))
+    out = io.BytesIO()
+    im.save(out, 'JPEG', quality=92)
+    return out.getvalue()
+
+
 def normalize(data: bytes) -> bytes:
     try:
         with Image.open(io.BytesIO(data)) as im:
-            if im.format not in ('JPEG', 'PNG', 'WEBP') or im.width * im.height > 40_000_000:
+            if im.format not in ('JPEG', 'PNG', 'WEBP', 'HEIF'):
                 raise ValueError()
-            im = ImageOps.exif_transpose(im).convert('RGB')
-            im.thumbnail((2200, 2200))
-            out = io.BytesIO()
-            im.save(out, 'JPEG', quality=92)
-            return out.getvalue()
+            return image_jpeg(im)
     except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
-        raise HTTPException(400, 'Не удалось прочитать фото. Выберите JPG, PNG или WebP до 40 мегапикселей.')
+        raise HTTPException(400, 'Не удалось прочитать фото. Выберите JPG, JPEG, PNG, WebP или HEIC до 40 мегапикселей.')
+
+
+def file_pages(data: bytes, filename: str, remaining: int) -> list[tuple[bytes, str]]:
+    """Decode all pages before saving anything; reject PDFs that exceed the page budget."""
+    name = Path(filename).name[:180]
+    ext = Path(filename).suffix.lower()
+    if ext not in {'.pdf', '.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'}:
+        raise HTTPException(400, 'Выберите PDF, JPG, JPEG, PNG, WebP или HEIC.')
+    if remaining < 1:
+        raise HTTPException(400, 'В одной работе можно разместить до 30 страниц, включая страницы PDF.')
+    if ext != '.pdf':
+        return [(normalize(data), name)]
+    try:
+        count = int(pdfinfo_from_bytes(data, timeout=15)['Pages'])
+        if count < 1:
+            raise ValueError()
+        if count > remaining:
+            raise HTTPException(400, 'В одной работе можно разместить до 30 страниц, включая страницы PDF.')
+        result = []
+        for number in range(1, count + 1):
+            images = convert_from_bytes(data, dpi=200, first_page=number, last_page=number,
+                                        size=2200, timeout=30)
+            if len(images) != 1:
+                raise ValueError()
+            with images[0] as im:
+                result.append((image_jpeg(im), f'{name} · стр. {number}'))
+        return result
+    except (PDFPageCountError, PDFSyntaxError, PDFPopplerTimeoutError, OSError, ValueError):
+        raise HTTPException(400, 'Не удалось прочитать PDF. Проверьте, что файл не повреждён и не защищён паролем.')
 
 
 async def suggest(data: bytes) -> tuple[list[int], str]:
@@ -97,27 +136,27 @@ async def image(sid: uuid.UUID, page_id: uuid.UUID, user: User = Depends(get_cur
 async def upload_photos(sid: uuid.UUID, files: list[UploadFile] = File(...), user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     path = await folder(sid, user, db)
     if not 1 <= len(files) <= 30:
-        raise HTTPException(400, 'Выберите от 1 до 30 фотографий.')
+        raise HTTPException(400, 'Выберите от 1 до 30 файлов.')
     lock = _locks.setdefault(str(sid), asyncio.Lock())
     async with lock:
         pages = read_pages(path)
         if len(pages) + len(files) > 30:
-            raise HTTPException(400, 'В одной работе можно разместить до 30 фотографий.')
+            raise HTTPException(400, 'В одной работе можно разместить до 30 страниц, включая страницы PDF.')
         inputs = []
         total = sum((path / f"{p['id']}.jpg").stat().st_size for p in pages)
         for file in files:
             data = await file.read(15 * 1024 * 1024 + 1)
             if len(data) > 15 * 1024 * 1024:
-                raise HTTPException(400, 'Одно фото должно занимать не более 15 МБ.')
+                raise HTTPException(400, 'Один файл должен занимать не более 15 МБ.')
             total += len(data)
             if total > 80 * 1024 * 1024:
-                raise HTTPException(400, 'Общий размер фотографий — не более 80 МБ.')
-            inputs.append(await asyncio.to_thread(normalize, data))
-        suggestions = await asyncio.gather(*(suggest(data) for data in inputs))
-        for file, data, (ids, warning) in zip(files, inputs, suggestions):
+                raise HTTPException(400, 'Общий размер файлов — не более 80 МБ.')
+            inputs.extend(await asyncio.to_thread(file_pages, data, file.filename or 'Фото.jpg', 30 - len(pages) - len(inputs)))
+        suggestions = await asyncio.gather(*(suggest(data) for data, _ in inputs))
+        for (data, filename), (ids, warning) in zip(inputs, suggestions):
             pid = str(uuid.uuid4())
             (path / f'{pid}.jpg').write_bytes(data)
-            pages.append({'id': pid, 'filename': Path(file.filename or 'Фото').name[:200], 'task_ids': ids, 'warning': warning, 'submitted': False})
+            pages.append({'id': pid, 'filename': filename, 'task_ids': ids, 'warning': warning, 'submitted': False})
         write_pages(path, pages)
     return {'pages': pages}
 

@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.learning import router as learning_router
 from app.api.batch import router as batch_router
+from app.api.review_chats import router as review_chats_router
 from app.api.videos import router as videos_router, recover_videos
 from app.api.router import router
 from app.api.taskmaps import router as taskmaps_router
@@ -58,6 +59,7 @@ app.add_middleware(
 
 app.include_router(auth_router, prefix="/api")
 app.include_router(batch_router, prefix="/api")
+app.include_router(review_chats_router, prefix="/api")
 app.include_router(videos_router, prefix="/api")
 app.include_router(router, prefix="/api")
 app.include_router(learning_router, prefix="/api")

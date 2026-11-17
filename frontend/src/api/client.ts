@@ -161,6 +161,15 @@ export const getNotifications = (): Promise<{ notifications: NotificationItem[] 
 export const readNotifications = (id?: number) => apiFetch('/notifications/read', { method: 'POST', body: JSON.stringify({ id: id ?? null }) })
 
 export const getChat = (kind: 'student' | 'teacher'): Promise<{ messages: ChatMsg[] }> => apiFetch(`/chat/${kind}`)
+export interface ReviewChatSummary {
+  id: string; session_id: string; task_id: number; title: string
+  created_at: string; updated_at: string; checked_at: string; message_count: number; last_message: string
+}
+export interface ReviewChatDetail extends ReviewChatSummary { messages: ChatMsg[]; score: number; max_score: number }
+export const listReviewChats = (): Promise<{ chats: ReviewChatSummary[] }> => apiFetch('/review-chats')
+export const openReviewChat = (sid: string, task: number): Promise<ReviewChatDetail> => apiFetch(`/sessions/${sid}/tasks/${task}/chat`, { method: 'POST' })
+export const getReviewChat = (id: string): Promise<ReviewChatDetail> => apiFetch(`/review-chats/${id}`)
+export const askReviewChat = (id: string, text: string): Promise<ReviewChatDetail> => apiFetch(`/review-chats/${id}/messages`, { method: 'POST', body: JSON.stringify({ text }) })
 export const postChat = (kind: 'student' | 'teacher', text: string, image?: string): Promise<{ reply: string }> =>
   apiFetch(`/chat/${kind}`, { method: 'POST', body: JSON.stringify({ text, image: image ?? null }) })
 export const clearChat = (kind: 'student' | 'teacher') => apiFetch(`/chat/${kind}`, { method: 'DELETE' })

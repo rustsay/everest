@@ -3,6 +3,7 @@ import { TaskResult, TaskStatus, TASK_INFO } from '../types'
 import ResultModal from './ResultModal'
 
 interface Props {
+  sessionId: string
   taskId: number
   result?: TaskResult
   agentProgress: Record<number, number>
@@ -30,7 +31,7 @@ function ProgressDots({ agentProgress }: { agentProgress: Record<number, number>
   )
 }
 
-export default function TaskCard({ taskId, result, agentProgress, onUpload }: Props) {
+export default function TaskCard({ sessionId, taskId, result, agentProgress, onUpload }: Props) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [showModal, setShowModal] = useState(false)
   const [dragging, setDragging] = useState(false)
@@ -96,11 +97,12 @@ export default function TaskCard({ taskId, result, agentProgress, onUpload }: Pr
         />
       </div>
 
-      {showModal && judge && result?.agent_verdicts && (
+      {showModal && judge && (
         <ResultModal
+          sessionId={sessionId}
           taskId={taskId}
           judge={judge}
-          verdicts={result.agent_verdicts}
+          verdicts={result?.agent_verdicts ?? []}
           onClose={() => setShowModal(false)}
         />
       )}

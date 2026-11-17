@@ -157,6 +157,22 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class ReviewChat(Base):
+    __tablename__ = "review_chats"
+    __table_args__ = (UniqueConstraint("user_id", "session_id", "task_id", "revision"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id"), index=True)
+    task_id: Mapped[int] = mapped_column(Integer)
+    revision: Mapped[str] = mapped_column(String(40))
+    title: Mapped[str] = mapped_column(String(200))
+    context: Mapped[dict] = mapped_column(JSONB)
+    messages: Mapped[list] = mapped_column(JSONB, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class ClassGroup(Base):
     """A teacher's class or a tutor's group; students join by code."""
     __tablename__ = "class_groups"
