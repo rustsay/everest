@@ -283,6 +283,8 @@ async def dashboard(user: User = Depends(get_current_user), db: AsyncSession = D
         "xp": int(st.get("xp", 0)), "stage": {"current": cur, "next": nxt, "left": left},
         "streak": engine.streak(st.get("active_days", []), today), "chest": bool(st.get("chest")), "hunt": bool(st.get("hunt")),
         "vdone": st.get("vdone", {}), "mocks": st.get("mocks", 0), "unread": await crud.unread_count(db, user.id),
+        # without a diagnostic the forecast rests on default values: the client shows an invitation instead of a number
+        "diag_done": await crud.last_finished_diagnostic(db, user.id) is not None,
     }
 
 

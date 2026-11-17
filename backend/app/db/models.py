@@ -257,3 +257,30 @@ class SkillExplanation(Base):
     text: Mapped[str] = mapped_column(Text, nullable=False)
     pages: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class Variant(Base):
+    """A variant a teacher or tutor composed from the task bank; can be given to a class with a deadline."""
+    __tablename__ = "variants"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    owner_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    title: Mapped[str] = mapped_column(String(200), nullable=False)
+    items: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)  # problem refs: "b12" (bank) or "s1:r2" (built-in)
+    class_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("class_groups.id"), index=True)
+    due: Mapped[datetime | None] = mapped_column(Date)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class VariantAttempt(Base):
+    __tablename__ = "variant_attempts"
+    __table_args__ = (UniqueConstraint("variant_id", "user_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    variant_id: Mapped[int] = mapped_column(Integer, ForeignKey("variants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    answers: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    results: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)  # ref -> 0/1 for problems with a short answer
+    score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

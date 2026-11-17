@@ -98,7 +98,7 @@ async def on_task_checked(db: AsyncSession, user_id: int, task_id: int, score: i
         engine.observe_task(row.data, tid, score / max_score)
         # before the first diagnostic the forecast rests on default values, so no point on the chart yet
         from app.db.crud_learning import last_finished_diagnostic
-        if row.data.get("onb") == "skipped" or await last_finished_diagnostic(db, user_id) is not None:
+        if await last_finished_diagnostic(db, user_id) is not None:
             await add_measurement(db, user, row, f"проверка задания {task_id}")
     unlock(row, "first_check")
     gain(row, 80)

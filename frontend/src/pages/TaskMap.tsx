@@ -40,7 +40,6 @@ export default function TaskMap({ n }: { n: number }) {
     <>
       <div className="card-h" style={{ margin: 0, alignItems: 'flex-end' }}>
         <div>
-          {!teacher && <button className="btn btn-sm btn-ghost" style={{ marginBottom: 8 }} onClick={() => app.go('map')}><Icon n="prev" s={16} />Карта знаний</button>}
           <p className="muted">Карта задания · {d.part === 2 ? 'вторая часть' : 'первая часть'} · {d.protos.length} прототипов</p>
           <h1>Задание № {d.n} · {d.name}</h1>
         </div>
@@ -287,7 +286,7 @@ function ProtoPanel({ d, p, onChanged, onPick }: { d: TaskMapData; p: TmProto; o
   )
 }
 
-function Problem({ n, i, q, onDone }: { n: number; i: number; q: TmProblem; onDone: () => void }) {
+export function Problem({ n, i, q, onDone }: { n: number; i: number; q: TmProblem; onDone: () => void }) {
   const app = useApp()
   const [v, setV] = useState('')
   const [res, setRes] = useState<TmAnswer | null>(null)

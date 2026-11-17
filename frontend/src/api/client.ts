@@ -90,7 +90,7 @@ export function openWs(sessionId: string): WebSocket {
 // ---------------- new design: profile, learning model, teacher ----------------
 import type {
   Me, Dashboard, PlanData, DiagRun, DiagResult, NotificationItem, ChatMsg, TeacherOverview, StudentDetail, Textbook, MaterialOut,
-  TaskMapData, TmAnswer, TmFile, SkillExplain, BankItem, BankTask,
+  TaskMapData, TmAnswer, TmFile, SkillExplain, BankItem, BankTask, PracticeItem, VariantSummary, VariantFull,
 } from '../types'
 
 export async function registerFull(body: { email: string; password: string; name?: string; role: string; grade?: string | null; exam?: string | null }) {
@@ -221,3 +221,17 @@ export async function downloadBankTemplate(): Promise<void> {
   a.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
+
+// ---------- practice bank and variants ----------
+export const getPractice = (task?: number, proto?: string): Promise<{ items: PracticeItem[]; counts: Record<string, number>; tasks: BankTask[] }> =>
+  apiFetch(`/practice?${task ? `task=${task}` : ''}${proto ? `&proto=${proto}` : ''}`)
+export const variantCandidates = (task: number): Promise<{ items: PracticeItem[] }> => apiFetch(`/variants/candidates?task=${task}`)
+export const listVariants = (): Promise<{ variants: VariantSummary[] }> => apiFetch('/variants')
+export const getVariant = (id: number): Promise<VariantFull> => apiFetch(`/variants/${id}`)
+export const createVariant = (body: { title: string; items?: string[]; auto_tasks?: number[]; class_id?: number | null; due?: string | null }): Promise<{ id: number; items: number; missing: number[] }> =>
+  apiFetch('/variants', { method: 'POST', body: JSON.stringify(body) })
+export const editVariant = (id: number, body: { title?: string; items?: string[]; class_id?: number | null; due?: string | null; unassign?: boolean }) =>
+  apiFetch(`/variants/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+export const deleteVariant = (id: number) => apiFetch(`/variants/${id}`, { method: 'DELETE' })
+export const submitVariant = (id: number, answers: Record<string, string>): Promise<{ score: number; max: number }> =>
+  apiFetch(`/variants/${id}/submit`, { method: 'POST', body: JSON.stringify({ answers }) })

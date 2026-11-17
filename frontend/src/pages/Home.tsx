@@ -1,8 +1,8 @@
 import { FormEvent, useEffect, useRef, useState } from 'react'
-import { assignmentDone, dailyAnswer, dailyHint, sendEvent, togglePlanBlock } from '../api/client'
+import { assignmentDone, dailyAnswer, dailyHint, mapAnalysis, sendEvent, togglePlanBlock } from '../api/client'
 import { useApp } from '../app/store'
 import type { Dashboard, PlanBlock } from '../types'
-import { Icon, Orn, STAR_D, StarBot, Typed, fmt1, fmtD, plural, reduceMotion, taskLabel } from '../design/ui'
+import { Icon, Md, Orn, STAR_D, StarBot, Typed, fmt1, fmtD, plural, reduceMotion, taskLabel } from '../design/ui'
 import { blockGo } from './Plan'
 
 const hello = () => { const h = new Date().getHours(); return h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер' }
@@ -40,7 +40,7 @@ export default function Home() {
       </div>
       <Rises d={d} />
       <div className="grid2 stagger">
-        <RootCard d={d} />
+        {d.diag_done === false ? <DiagOffer /> : <RootCard d={d} />}
         <Daily d={d} />
       </div>
       <div className="grid2 stagger">
@@ -112,11 +112,21 @@ function Hero({ d }: { d: Dashboard }) {
       <div className="snow" aria-hidden="true">{Array.from({ length: 16 }, (_, i) => <i key={i} style={{ left: `${(i * 61) % 100}%`, animationDuration: `${6 + (i % 5) * 1.7}s`, animationDelay: `-${(i * 1.3) % 7}s`, opacity: 0.3 + (i % 4) * 0.15 }} />)}</div>
       <div className="cloud" style={{ top: 30, width: 90, animationDuration: '28s' }} aria-hidden="true" />
       <div style={{ position: 'relative', display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-        <div><p className="muted">{ex.label}</p>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 4 }}><span className="hero-score num">{n}</span><span className="muted">{ex.pct ? '%' : `из ${ex.max}`}</span></div></div>
+        {d.diag_done === false ? (
+          <div><p className="muted">{ex.label}</p>
+            <p style={{ fontSize: 18, fontWeight: 800, marginTop: 6, maxWidth: 360 }}>Прогноз появится после диагностики</p>
+            <p className="muted" style={{ fontSize: 13.5, marginTop: 4, maxWidth: 380 }}>Без неё нам не на чем его посчитать. Это около 40 минут, можно с паузами.</p></div>
+        ) : (
+          <div><p className="muted">{ex.label}</p>
+            <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, marginTop: 4 }}><span className="hero-score num">{n}</span><span className="muted">{ex.pct ? '%' : `из ${ex.max}`}</span></div></div>
+        )}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-          <button className="btn btn-sm btn-gold" onClick={() => app.openModal('Как считается прогноз', <Forecast d={d} />, true)}>Как считается</button>
-          <button className="btn btn-sm" style={{ background: 'rgba(255,255,255,.1)', color: 'var(--on-em)' }} onClick={() => app.go('map')}>Что поднимет балл</button>
+          {d.diag_done === false
+            ? <button className="btn btn-sm btn-gold" onClick={() => dispatchEvent(new Event('everest:diag'))}>Пройти диагностику</button>
+            : <>
+              <button className="btn btn-sm btn-gold" onClick={() => app.openModal('Как считается прогноз', <Forecast d={d} />, true)}>Как считается</button>
+              <button className="btn btn-sm" style={{ background: 'rgba(255,255,255,.1)', color: 'var(--on-em)' }} onClick={() => app.go({ v: 'task', id: String(rootTaskN(d) ?? 1) })}>Что поднимет балл</button>
+            </>}
         </div>
       </div>
       <div className="ridge-wrap">
@@ -245,6 +255,35 @@ function Rises({ d }: { d: Dashboard }) {
   )
 }
 
+/** The exam task that suffers most from the root cause (for the task map link); only for the profile exam. */
+function rootTaskN(d: Dashboard): number | null {
+  if (d.exam.key !== 'prof') return null
+  const t = d.model.tasks.find((x) => d.model.root_tasks.includes(x.id) && typeof x.n === 'number')
+    ?? [...d.model.tasks].filter((x) => typeof x.n === 'number').sort((a, b) => a.p - b.p)[0]
+  return t && typeof t.n === 'number' ? t.n : null
+}
+
+function DiagOffer() {
+  return (
+    <section className="card" aria-label="Диагностика" style={{ borderColor: 'var(--gold)', borderWidth: 1.5 }}>
+      <span className="pill p-gold">Диагностика</span>
+      <h2 style={{ fontSize: 19, marginTop: 10 }}>Узнай свой прогноз и слабое место</h2>
+      <p className="muted" style={{ marginTop: 8 }}>Задания из демоверсии: по ответам посчитаем прогноз, найдём, где теряются баллы, и подстроим расписание. Её можно поставить на паузу.</p>
+      <button className="btn btn-em" style={{ marginTop: 14 }} onClick={() => dispatchEvent(new Event('everest:diag'))}>Начать диагностику</button>
+    </section>
+  )
+}
+
+function Analysis() {
+  const app = useApp()
+  const [text, setText] = useState('')
+  const [busy, setBusy] = useState(true)
+  useEffect(() => {
+    mapAnalysis().then((r) => { setText(r.text); app.reload() }).catch((e) => setText(String(e).replace('Error: ', ''))).finally(() => setBusy(false))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  return busy ? <div className="typing" aria-label="Думаю"><i /><i /><i /></div> : <div className="ai-out"><Md text={text} /></div>
+}
+
 function RootCard({ d }: { d: Dashboard }) {
   const app = useApp()
   const M = d.model, ex = d.exam, nodes = Object.fromEntries(M.nodes.map((n) => [n.id, n]))
@@ -262,8 +301,8 @@ function RootCard({ d }: { d: Dashboard }) {
         : 'Продолжай по расписанию: оно уже чередует задания так, чтобы ничего не забылось.'}</p>
       {root && <p style={{ marginTop: 10, fontWeight: 700 }}>Закрыть пробел: примерно <span style={{ color: 'var(--em-ink)' }}>+{ex.pct ? Math.round((d.gain / ex.max) * 100) + '%' : fmt1(d.gain)}</span> к прогнозу</p>}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
-        <button className="btn btn-em" onClick={() => { sendEvent('ach', 'root').catch(() => null); app.go({ v: 'map', id: M.root ?? undefined }) }}>Показать на карте</button>
-        <button className="btn btn-line" onClick={() => app.go({ v: 'map', id: 'analysis' })}>Подробный разбор</button>
+        {rootTaskN(d) != null && <button className="btn btn-em" onClick={() => { sendEvent('ach', 'root').catch(() => null); app.go({ v: 'task', id: String(rootTaskN(d)) }) }}>Карта задания № {rootTaskN(d)}</button>}
+        <button className="btn btn-line" onClick={() => app.openModal('Подробный разбор пробелов', <Analysis />, true)}>Подробный разбор</button>
       </div>
     </section>
   )

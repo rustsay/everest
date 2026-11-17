@@ -9,11 +9,17 @@ type App = ReturnType<typeof useApp>
 /** Where a schedule block leads. */
 export function blockGo(b: PlanBlock, app: App) {
   if (b.k === 'mock') { window.dispatchEvent(new Event('everest:mock')); return }
-  if (b.k === 'topic' && b.node) { app.go({ v: 'map', id: b.node }); return }
-  if (b.k === 'school') { app.go('map'); return }
+  const prof = app.me.exam_info.key === 'prof'
+  if (b.k === 'topic' && b.node) {
+    // the topic opens the map of the first exam task that needs it
+    const t = app.dash?.model.tasks.find((x) => x.need.includes(b.node!) && typeof x.n === 'number')
+    if (prof && t) { app.go({ v: 'task', id: String(t.n) }); return }
+    app.go({ v: 'chat', id: `Объясни тему «${b.title}» с примером. Начни с вопроса ко мне.` }); return
+  }
+  if (b.k === 'school') { app.go({ v: 'chat', id: `Объясни тему «${b.title}» с примером. Начни с вопроса ко мне.` }); return }
   const t = b.tasks?.[0]
   if (t && typeof t.n === 'number' && app.me.exam_info.key === 'prof') { app.go({ v: 'video', id: String(t.n) }); return }
-  if (t) { app.go({ v: 'map', id: t.id }); return }
+  if (t) { app.go({ v: 'chat', id: `Задание «${t.name}»: с чего начать? Начни с вопроса ко мне.` }); return }
   app.go('check')
 }
 

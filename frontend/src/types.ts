@@ -154,6 +154,7 @@ export interface PlanDay { date: string; rest?: boolean; past?: boolean; mock?: 
 
 export interface Dashboard {
   exam: ExamInfo
+  diag_done?: boolean
   forecast: number
   gain: number
   model: { nodes: GraphNode[]; tasks: ExamTask[]; root: string | null; root_tasks: string[]; at_risk: number; weak: string[]; threat: string[] }
@@ -248,3 +249,12 @@ export interface SkillExplain { text: string | null; book: { id: number; title: 
 // ---------- task bank ----------
 export interface BankItem { id: number; task: number; proto: string; text: string; answer: string | null; solution: string; source: string; status: 'draft' | 'approved'; mine: boolean }
 export interface BankTask { n: number; name: string; protos: { id: string; name: string }[] }
+
+// ---------- practice bank and variants ----------
+export interface PracticeItem { ref: string; pid: string; task: number; proto: string; proto_name: string; q: string; src: string; check: 'answer' | 'photo'; done: 0 | 1 | null; sol: string | null; answer?: string | null }
+export interface VariantSummary { id: number; title: string; count: number; class_id: number | null; class_name: string | null; due: string | null; attempt: { score: number; max: number } | null }
+export interface VariantFull {
+  id: number; title: string; class_id: number | null; due: string | null; owner: boolean; items: PracticeItem[]
+  attempt?: { answers: Record<string, string>; results: Record<string, 0 | 1>; score: number; max: number }
+  results?: { name: string; score: number; max: number; results: Record<string, 0 | 1> }[]
+}

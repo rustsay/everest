@@ -5,16 +5,17 @@ import { Icon, Orn, SideMountains, StarBot, StarIcon, Typed, WideMountains, hush
 import { Logo } from '../pages/Onboarding'
 import { useApp, ViewName } from './store'
 
-const NAV_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['plan', 'Расписание', 'cal'], ['check', 'Проверка', 'check'], ['map', 'Карта знаний', 'map'], ['video', 'Разборы', 'play'], ['chat', 'Помощник', 'chat'], ['awards', 'Звёзды', 'star']]
-const BOT_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['plan', 'План', 'cal'], ['check', 'Проверка', 'check'], ['map', 'Карта', 'map'], ['video', 'Разборы', 'play'], ['chat', 'Помощник', 'chat']]
-const NAV_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['materials', 'Конспекты и презентации', 'slides'], ['task', 'Карты заданий', 'map'], ['bank', 'Банк задач', 'book'], ['tchat', 'Помощник учителя', 'chat'], ['check', 'Проверка', 'check']]
-const BOT_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['materials', 'Материалы', 'slides'], ['bank', 'Банк', 'book'], ['tchat', 'Помощник', 'chat'], ['check', 'Проверка', 'check']]
+const NAV_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['plan', 'Расписание', 'cal'], ['check', 'Проверка', 'check'], ['task', 'Карты заданий', 'map'], ['practice', 'Банк задач', 'book'], ['video', 'Разборы', 'play'], ['chat', 'Помощник', 'chat'], ['awards', 'Звёзды', 'star']]
+const BOT_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['plan', 'План', 'cal'], ['check', 'Проверка', 'check'], ['task', 'Карты', 'map'], ['practice', 'Банк', 'book'], ['chat', 'Помощник', 'chat']]
+const NAV_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['materials', 'Конспекты и презентации', 'slides'], ['task', 'Карты заданий', 'map'], ['bank', 'Банк задач', 'book'], ['variants', 'Варианты', 'pen'], ['tchat', 'Помощник учителя', 'chat'], ['check', 'Проверка', 'check']]
+const BOT_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['materials', 'Материалы', 'slides'], ['bank', 'Банк', 'book'], ['variants', 'Варианты', 'pen'], ['tchat', 'Помощник', 'chat'], ['check', 'Проверка', 'check']]
 
 const MLINES: Partial<Record<ViewName, string[]>> = {
   check: ['Сфотографируй решение целиком, вместе с номером задания. Чем ровнее фото, тем точнее проверка.', 'Три эксперта проверяют решение независимо, а если они расходятся, решает судья.'],
   bank: ['Загрузите файл с задачами, проверьте условие и ответ, потом опубликуйте.'],
   task: ['Нажми на прототип: там всё, что нужно знать, задачи для проверки и материалы.', 'Процент считается по первой попытке в каждой задаче, поэтому решай честно.'],
-  map: ['Красные темы тянут вниз всё, что над ними. Начинай с самой нижней красной.', 'Нажми на тему, и я покажу, какие задания от неё зависят.'],
+  practice: ['Решай задачи из банка: в процент карты задания идёт первая попытка.', 'Варианты от учителя появляются здесь же, сверху.'],
+  variants: ['Соберите вариант автоматически или выберите задачи сами, потом выдайте классу.'],
   video: ['Выбери папку с номером задания. Понял разбор, жми «Понял» и иди дальше.', 'Если шаг непонятен, жми «Не понял». Разберём его в чате.'],
   chat: ['Спрашивай. Я не дам сразу ответ, а наведу на него вопросами.'],
   plan: ['Каждый день: разминка, главная тема и шаг второй части. Слабые задания выпадают чаще, но ни одно не пропадает.', 'Каждая четвёртая неделя заканчивается пробником. После него я пересоберу расписание.', 'Воскресенье всегда выходной. Отдых тоже часть подготовки.'],
@@ -115,7 +116,7 @@ export default function Shell({ children }: { children: ReactNode }) {
         <Orn style={{ margin: '-8px 0 -6px' }} />
         <nav className="nav" aria-label="Разделы">
           {nav.map(([v, l, i]) => (
-            <button key={v} data-v={v} onClick={() => go(v)} aria-current={view.v === v || (v === 'check' && view.v === 'session') || (v === 'map' && view.v === 'task') ? 'page' : undefined}><Icon n={i} />{l}</button>
+            <button key={v} data-v={v} onClick={() => go(v)} aria-current={view.v === v || (v === 'check' && view.v === 'session') || (v === 'practice' && view.v === 'variant') || (v === 'variants' && view.v === 'variant') ? 'page' : undefined}><Icon n={i} />{l}</button>
           ))}
         </nav>
         <div className="side-foot">
@@ -155,7 +156,7 @@ export default function Shell({ children }: { children: ReactNode }) {
 
       <nav className="bottom" aria-label="Разделы">
         {bot.map(([v, l, i]) => (
-          <button key={v} data-v={v} onClick={() => go(v)} aria-current={view.v === v || (v === 'map' && view.v === 'task') ? 'page' : undefined}><Icon n={i} s={22} />{l}</button>
+          <button key={v} data-v={v} onClick={() => go(v)} aria-current={view.v === v || (v === 'practice' && view.v === 'variant') || (v === 'variants' && view.v === 'variant') ? 'page' : undefined}><Icon n={i} s={22} />{l}</button>
         ))}
       </nav>
 

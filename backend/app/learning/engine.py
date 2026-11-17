@@ -28,7 +28,8 @@ def exam_key(grade: str | None, exam: str | None) -> str:
 
 
 def diag_required(grade: str | None) -> bool:
-    return grade in {"9", "10", "11"}
+    """Since Nov 2026 the entrance diagnostic is optional for everyone: it is offered, not forced."""
+    return False
 
 
 def school_passed(frm: str | None, today: date) -> bool:
