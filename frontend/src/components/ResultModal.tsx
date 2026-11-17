@@ -1,3 +1,4 @@
+import { createPortal } from 'react-dom'
 import { AgentVerdict, JudgeDecision, TASK_INFO } from '../types'
 
 interface Props {
@@ -11,16 +12,14 @@ const CONSENSUS_LABEL: Record<string, string> = {
   full: 'Единогласно',
   majority: 'Большинство',
   judge_decision: 'Решение судьи',
+  teacher: 'Решение учителя',
 }
 
 function ScoreBadge({ score, max }: { score: number; max: number }) {
   const pct = score / max
-  const cls =
-    pct === 1 ? 'bg-green-100 text-green-800' :
-    pct >= 0.5 ? 'bg-yellow-100 text-yellow-800' :
-    'bg-red-100 text-red-800'
+  const cls = pct === 1 ? 'p-em' : pct >= 0.5 ? 'p-gold' : 'p-bad'
   return (
-    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-semibold ${cls}`}>
+    <span className={`pill ${cls} num`} style={{ fontSize: 13 }}>
       {score}/{max}
     </span>
   )
@@ -29,58 +28,54 @@ function ScoreBadge({ score, max }: { score: number; max: number }) {
 export default function ResultModal({ taskId, judge, verdicts, onClose }: Props) {
   const info = TASK_INFO[taskId]
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-6 border-b">
+  // portal: the page wrapper is animated (transform), which would trap a fixed overlay inside it
+  return createPortal(
+    <div className="scrim" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" role="dialog" aria-modal="true" style={{ maxWidth: 720 }}>
+        <div className="modal-h">
           <div>
-            <h2 className="text-xl font-bold">Задание {taskId} — {info.topic}</h2>
-            <div className="flex items-center gap-2 mt-1">
+            <h2>Задание {taskId}: {info.topic}</h2>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
               <ScoreBadge score={judge.final_score} max={judge.max_score} />
-              <span className="text-sm text-gray-500">{CONSENSUS_LABEL[judge.consensus_level]}</span>
+              <span className="muted" style={{ fontSize: 13 }}>{CONSENSUS_LABEL[judge.consensus_level] ?? judge.consensus_level}</span>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600 text-2xl leading-none"
-          >
-            ×
-          </button>
+          <button onClick={onClose} className="iconbtn" aria-label="Закрыть">×</button>
         </div>
 
-        <div className="p-6 space-y-6">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
           {/* Judge reasoning */}
           <section>
-            <h3 className="font-semibold text-gray-700 mb-2">Итоговый вердикт</h3>
-            <p className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap">{judge.reasoning}</p>
+            <h3 style={{ marginBottom: 6 }}>Итоговый вердикт</h3>
+            <p style={{ whiteSpace: 'pre-wrap' }}>{judge.reasoning}</p>
           </section>
 
           {/* Agent scores */}
           <section>
-            <h3 className="font-semibold text-gray-700 mb-3">Оценки экспертов</h3>
-            <div className="space-y-3">
+            <h3 style={{ marginBottom: 8 }}>Оценки экспертов</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {verdicts.map((v) => (
-                <div key={v.agent_id} className="border rounded-lg p-4 bg-gray-50">
-                  <div className="flex items-center gap-3 mb-2">
-                    <span className="font-medium text-sm">Эксперт {v.agent_id}</span>
+                <div key={v.agent_id} className="crit" style={{ flexDirection: 'column' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <span style={{ fontWeight: 700 }}>Эксперт {v.agent_id}</span>
                     <ScoreBadge score={v.score} max={v.max_score} />
-                    <span className="text-xs text-gray-400 ml-auto">
+                    <span className="muted" style={{ marginLeft: 'auto', fontSize: 12 }}>
                       уверенность {Math.round(v.confidence * 100)}%
                     </span>
                   </div>
-                  <p className="text-sm text-gray-600 whitespace-pre-wrap mb-2">{v.reasoning}</p>
+                  <p style={{ whiteSpace: 'pre-wrap', fontSize: 14 }}>{v.reasoning}</p>
                   {v.errors_found.length > 0 && (
-                    <div className="mt-2">
-                      <span className="text-xs font-medium text-red-600">Ошибки:</span>
-                      <ul className="list-disc list-inside text-xs text-red-600 mt-1">
+                    <div>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--red)' }}>Ошибки:</span>
+                      <ul style={{ fontSize: 12.5, color: 'var(--red)', paddingLeft: 18, listStyle: 'disc' }}>
                         {v.errors_found.map((e, i) => <li key={i}>{e}</li>)}
                       </ul>
                     </div>
                   )}
                   {v.correct_steps.length > 0 && (
-                    <div className="mt-2">
-                      <span className="text-xs font-medium text-green-600">Верно:</span>
-                      <ul className="list-disc list-inside text-xs text-green-600 mt-1">
+                    <div>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--em-ink)' }}>Верно:</span>
+                      <ul style={{ fontSize: 12.5, color: 'var(--em-ink)', paddingLeft: 18, listStyle: 'disc' }}>
                         {v.correct_steps.map((s, i) => <li key={i}>{s}</li>)}
                       </ul>
                     </div>
@@ -93,5 +88,5 @@ export default function ResultModal({ taskId, judge, verdicts, onClose }: Props)
         </div>
       </div>
     </div>
-  )
+  , document.body)
 }

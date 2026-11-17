@@ -19,12 +19,12 @@ const STATUS_LABEL: Record<TaskStatus, string> = {
 
 function ProgressDots({ agentProgress }: { agentProgress: Record<number, number> }) {
   return (
-    <div className="flex gap-2 mt-2">
+    <div className="dots">
       {[1, 2, 3].map((id) => (
-        <div key={id} className="flex items-center gap-1 text-xs text-gray-500">
-          <span className={`w-2 h-2 rounded-full ${id in agentProgress ? 'bg-blue-500' : 'bg-gray-300'}`} />
-          {id in agentProgress ? `Эксп. ${id}: ${agentProgress[id]}б` : `Эксп. ${id}`}
-        </div>
+        <span key={id}>
+          <i className={id in agentProgress ? 'on' : ''} />
+          {id in agentProgress ? `эксперт ${id}: ${agentProgress[id]} б.` : `эксперт ${id}`}
+        </span>
       ))}
     </div>
   )
@@ -46,18 +46,13 @@ export default function TaskCard({ taskId, result, agentProgress, onUpload }: Pr
   const scoreColor = () => {
     if (!judge) return ''
     const pct = judge.final_score / judge.max_score
-    return pct === 1 ? 'text-green-600' : pct >= 0.5 ? 'text-yellow-600' : 'text-red-600'
+    return pct === 1 ? 'var(--em-ink)' : pct >= 0.5 ? 'var(--gold-ink)' : 'var(--red)'
   }
 
   return (
     <>
       <div
-        className={`rounded-xl border-2 bg-white p-5 transition-all ${
-          dragging ? 'border-blue-400 bg-blue-50' :
-          status === 'done' ? 'border-green-200' :
-          status === 'error' ? 'border-red-200' :
-          'border-gray-200'
-        }`}
+        className={`tcard ${dragging ? 'drag' : status === 'done' ? 'done' : status === 'error' ? 'err' : ''}`}
         onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
         onDragLeave={() => setDragging(false)}
         onDrop={(e) => {
@@ -66,64 +61,37 @@ export default function TaskCard({ taskId, result, agentProgress, onUpload }: Pr
           handleFiles(e.dataTransfer.files)
         }}
       >
-        {/* Header */}
-        <div className="flex items-start justify-between mb-3">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 }}>
           <div>
-            <span className="text-xs font-bold text-gray-400 uppercase tracking-wide">
-              Задание {taskId}
-            </span>
-            <h3 className="font-semibold text-gray-800">{info.topic}</h3>
-            <span className="text-xs text-gray-400">макс. {info.max_score} б</span>
+            <span className="label">Задание {taskId}</span>
+            <h3 style={{ marginTop: 2 }}>{info.topic}</h3>
+            <span className="muted" style={{ fontSize: 12 }}>максимум {info.max_score} б.</span>
           </div>
           {judge && (
-            <button
-              onClick={() => setShowModal(true)}
-              className={`text-2xl font-bold ${scoreColor()} hover:scale-110 transition-transform`}
-              title="Подробнее"
-            >
+            <button onClick={() => setShowModal(true)} className="score num" style={{ border: 0, background: 'none', cursor: 'pointer', color: scoreColor() }} title="Подробнее">
               {judge.final_score}/{judge.max_score}
             </button>
           )}
         </div>
-
-        {/* Status */}
-        <p className="text-sm text-gray-500 mb-3">{STATUS_LABEL[status]}</p>
-
-        {/* Agent progress while checking */}
+        <p className="muted" style={{ fontSize: 13.5 }}>{STATUS_LABEL[status]}</p>
+        {(status === 'ocr' || status === 'checking') && <div className="phase run" style={{ alignSelf: 'flex-start' }}>{status === 'ocr' ? 'Распознаём почерк' : 'Проверяем по критериям'}</div>}
         {status === 'checking' && <ProgressDots agentProgress={agentProgress} />}
-
-        {/* Error */}
-        {status === 'error' && result?.error && (
-          <p className="text-xs text-red-500 mt-1 break-words">{result.error}</p>
-        )}
-
-        {/* Upload button — show when pending or to re-upload */}
+        {status === 'error' && result?.error && <p style={{ fontSize: 12.5, color: 'var(--red)', wordBreak: 'break-word' }}>{result.error}</p>}
         {(status === 'pending' || status === 'error') && (
-          <button
-            onClick={() => inputRef.current?.click()}
-            className="mt-3 w-full py-2 rounded-lg border-2 border-dashed border-gray-300 text-sm text-gray-500 hover:border-blue-400 hover:text-blue-500 transition-colors"
-          >
-            Нажмите или перетащите сканы
-            <span className="block text-xs text-gray-400 mt-0.5">можно несколько фото</span>
+          <button onClick={() => inputRef.current?.click()} className="drop" style={{ padding: 14, cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
+            <b>Сфотографируйте или перетащите сюда</b>
+            <span className="muted" style={{ fontSize: 12 }}>можно несколько фото, jpg, png или pdf</span>
           </button>
         )}
-
-        {/* Show result link when done */}
-        {status === 'done' && (
-          <button
-            onClick={() => setShowModal(true)}
-            className="mt-3 w-full py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-sm text-gray-600 transition-colors"
-          >
-            Подробный разбор →
-          </button>
-        )}
-
+        {status === 'done' && <button onClick={() => setShowModal(true)} className="btn btn-sm btn-ghost">Подробный разбор →</button>}
         <input
           ref={inputRef}
           type="file"
           accept=".jpg,.jpeg,.png,.pdf"
+          capture="environment"
           multiple
           className="hidden"
+          hidden
           onChange={(e) => { handleFiles(e.target.files); e.target.value = '' }}
         />
       </div>

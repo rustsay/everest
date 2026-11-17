@@ -350,6 +350,14 @@ async def _process_task(session_id: str, task_id: int, file_inputs: list[tuple[b
                 judge_decision=judge,
             )
             await upsert_task_result(db, session_id, final)
+            # feed the learning model: forecast, schedule, stars (new-design)
+            try:
+                from app.learning.service import on_task_checked
+                session_row = await get_session(db, session_id)
+                if session_row is not None:
+                    await on_task_checked(db, session_row.user_id, task_id, judge.final_score, judge.max_score)
+            except Exception as hook_exc:  # never break the check because of the dashboard
+                log.warning("[%s] learning hook failed: %s", tag, hook_exc)
             await emit({
                 "event": "task_complete",
                 "task_id": task_id,

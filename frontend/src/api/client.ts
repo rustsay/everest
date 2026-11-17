@@ -86,3 +86,77 @@ export function openWs(sessionId: string): WebSocket {
   const proto = location.protocol === 'https:' ? 'wss' : 'ws'
   return new WebSocket(`${proto}://${location.host}/api/ws/${sessionId}`)
 }
+
+// ---------------- new design: profile, learning model, teacher ----------------
+import type {
+  Me, Dashboard, PlanData, DiagRun, DiagResult, NotificationItem, ChatMsg, TeacherOverview, StudentDetail, Textbook, MaterialOut,
+} from '../types'
+
+export async function registerFull(body: { email: string; password: string; name?: string; role: string; grade?: string | null; exam?: string | null }) {
+  return apiFetch('/auth/register', { method: 'POST', body: JSON.stringify(body) })
+}
+export const demoLogin = () => apiFetch('/auth/demo', { method: 'POST' })
+export const getMe = (): Promise<Me> => apiFetch('/me')
+export const putProfile = (body: Partial<Pick<Me, 'name' | 'role' | 'grade' | 'exam'>>): Promise<Me> =>
+  apiFetch('/me/profile', { method: 'PUT', body: JSON.stringify(body) })
+export const putSettings = (body: Record<string, unknown>) => apiFetch('/me/settings', { method: 'PUT', body: JSON.stringify(body) })
+
+export const startDiagnostic = (mode: 'first' | 'mock'): Promise<DiagRun> =>
+  apiFetch('/diagnostics', { method: 'POST', body: JSON.stringify({ mode }) })
+export const saveAnswer = (id: number, item_id: string, answer: string, position: number) =>
+  apiFetch(`/diagnostics/${id}/answer`, { method: 'PUT', body: JSON.stringify({ item_id, answer, position }) })
+export const finishDiagnostic = (id: number): Promise<DiagResult> => apiFetch(`/diagnostics/${id}/finish`, { method: 'POST' })
+export const skipDiagnostic = () => apiFetch('/diagnostics/skip', { method: 'POST' })
+
+export const getDashboard = (): Promise<Dashboard> => apiFetch('/dashboard')
+export const getPlan = (): Promise<PlanData> => apiFetch('/plan')
+export const togglePlanBlock = (key: string): Promise<{ done: boolean; xp: number }> =>
+  apiFetch('/plan/done', { method: 'POST', body: JSON.stringify({ key }) })
+export const dailyHint = (): Promise<{ hints: string[] }> => apiFetch('/daily/hint', { method: 'POST' })
+export const dailyAnswer = (answer: string): Promise<{ ok: boolean; message: string; sol: string | null; xp: number }> =>
+  apiFetch('/daily/answer', { method: 'POST', body: JSON.stringify({ answer }) })
+export const sendEvent = (event: string, id?: string): Promise<{ xp: number; new_ach: boolean; fresh_egg: boolean; stars: number }> =>
+  apiFetch('/events', { method: 'POST', body: JSON.stringify({ event, id }) })
+export const nodeQuiz = (node: string, ok: number, total: number): Promise<{ before: number; after: number }> =>
+  apiFetch(`/nodes/${node}/quiz`, { method: 'POST', body: JSON.stringify({ ok, total }) })
+
+export const getNotifications = (): Promise<{ notifications: NotificationItem[] }> => apiFetch('/notifications')
+export const readNotifications = (id?: number) => apiFetch('/notifications/read', { method: 'POST', body: JSON.stringify({ id: id ?? null }) })
+
+export const getChat = (kind: 'student' | 'teacher'): Promise<{ messages: ChatMsg[] }> => apiFetch(`/chat/${kind}`)
+export const postChat = (kind: 'student' | 'teacher', text: string, image?: string): Promise<{ reply: string }> =>
+  apiFetch(`/chat/${kind}`, { method: 'POST', body: JSON.stringify({ text, image: image ?? null }) })
+export const clearChat = (kind: 'student' | 'teacher') => apiFetch(`/chat/${kind}`, { method: 'DELETE' })
+export const mapAnalysis = (): Promise<{ text: string }> => apiFetch('/map/analysis', { method: 'POST' })
+
+export const joinClass = (code: string): Promise<{ id: number; name: string }> =>
+  apiFetch('/classes/join', { method: 'POST', body: JSON.stringify({ code }) })
+export const assignmentDone = (id: number) => apiFetch(`/assignments/${id}/done`, { method: 'POST' })
+
+export const teacherOverview = (): Promise<TeacherOverview> => apiFetch('/teacher/overview')
+export const teacherStudent = (id: number): Promise<StudentDetail> => apiFetch(`/teacher/students/${id}`)
+export const createClass = (name: string): Promise<{ id: number; name: string; code: string }> =>
+  apiFetch('/teacher/classes', { method: 'POST', body: JSON.stringify({ name }) })
+export const reviewTask = (id: number, score: number) => apiFetch(`/teacher/reviews/${id}`, { method: 'POST', body: JSON.stringify({ score }) })
+export const createAssignment = (body: { class_id: number; topic: string; count: number; due: string; task_id?: number | null }) =>
+  apiFetch('/teacher/assignments', { method: 'POST', body: JSON.stringify(body) })
+export const deleteAssignment = (id: number) => apiFetch(`/teacher/assignments/${id}`, { method: 'DELETE' })
+
+export const listTextbooks = (): Promise<{ textbooks: Textbook[] }> => apiFetch('/textbooks')
+export async function addTextbook(title: string, authors: string, grade: string, file?: File): Promise<Textbook> {
+  const form = new FormData()
+  form.append('title', title)
+  form.append('authors', authors)
+  form.append('grade', grade)
+  if (file) form.append('file', file)
+  const res = await fetch(`${BASE}/textbooks`, { method: 'POST', headers: authHeader(), body: form })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}))
+    throw new Error(err.detail ?? 'Не удалось загрузить учебник')
+  }
+  return res.json()
+}
+export const deleteTextbook = (id: number) => apiFetch(`/textbooks/${id}`, { method: 'DELETE' })
+export const generateMaterial = (body: {
+  kind: 'conspect' | 'slides'; topic: string; textbook_id: number; section: string; paragraph: string; who: string; minutes: string
+}): Promise<MaterialOut> => apiFetch('/materials/generate', { method: 'POST', body: JSON.stringify(body) })

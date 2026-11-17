@@ -1,59 +1,119 @@
-import { useState } from 'react'
-import Auth from './pages/Auth'
-import History from './pages/History'
+import { useCallback, useEffect, useState } from 'react'
+import { getMe, putSettings } from './api/client'
+import Shell from './app/Shell'
+import { AppProvider, useApp, viewHash } from './app/store'
+import Chat from './pages/Chat'
+import Check from './pages/Check'
+import Diagnostic from './pages/Diagnostic'
+import Home from './pages/Home'
+import KnowledgeMap from './pages/KnowledgeMap'
+import Materials from './pages/Materials'
+import Onboarding from './pages/Onboarding'
+import Plan from './pages/Plan'
+import Result from './pages/Result'
 import Session from './pages/Session'
+import Stars from './pages/Stars'
+import Teacher from './pages/Teacher'
+import Tour from './pages/Tour'
 import TrajectoryPage from './pages/Trajectory'
+import Videos from './pages/Videos'
+import type { DiagResult, Me } from './types'
 
-type View = { page: 'history' } | { page: 'session'; id: string } | { page: 'trajectory'; id: string }
+type Stage = 'loading' | 'onb' | 'profile' | 'diag' | 'result' | 'app'
 
 export default function App() {
   const [token, setToken] = useState<string | null>(() => localStorage.getItem('token'))
-  const [email, setEmail] = useState<string>(() => localStorage.getItem('email') ?? '')
-  const [view, setView] = useState<View>(() => {
-    const sid = new URLSearchParams(location.search).get('session')
-    return sid ? { page: 'session', id: sid } : { page: 'history' }
-  })
+  const [me, setMe] = useState<Me | null>(null)
+  const [stage, setStage] = useState<Stage>(token ? 'loading' : 'onb')
+  const [result, setResult] = useState<DiagResult | null>(null)
+  const [tour, setTour] = useState(false)
 
-  const handleAuth = (t: string, e: string) => {
-    localStorage.setItem('token', t)
-    localStorage.setItem('email', e)
-    setToken(t)
-    setEmail(e)
-  }
-
-  const handleLogout = () => {
+  const logout = useCallback(() => {
     localStorage.removeItem('token')
     localStorage.removeItem('email')
     setToken(null)
-    setEmail('')
-    setView({ page: 'history' })
-    history.pushState({}, '', '/')
+    setMe(null)
+    setStage('onb')
+    history.replaceState(null, '', '/')
+  }, [])
+
+  const route = useCallback((m: Me) => {
+    setMe(m)
+    if (m.role === 'student' && m.needs_profile) return setStage('profile')
+    if (m.role === 'student' && !m.diag_done && (m.diag_required || m.settings.onb === 'new')) return setStage('diag')
+    setStage('app')
+    if (m.settings.onb !== 'done') reveal(m)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!token) return
+    getMe().then(route).catch(() => logout())
+  }, [token, route, logout])
+
+  const reveal = (m: Me) => {
+    history.replaceState(null, '', viewHash({ v: m.role === 'student' ? 'home' : 'teacher' }))
+    document.body.classList.add('reveal')
+    setTimeout(() => document.body.classList.remove('reveal'), 2400)
+    setTimeout(() => setTour(true), 1700)
   }
 
-  const openSession = (id: string) => {
-    history.pushState({}, '', `?session=${id}`)
-    setView({ page: 'session', id })
+  const onToken = (t: string, email: string) => {
+    localStorage.setItem('token', t)
+    localStorage.setItem('email', email)
+    setStage('loading')
+    setToken(t)
   }
 
-  const openTrajectory = (id: string) => {
-    history.pushState({}, '', `?session=${id}&trajectory=1`)
-    setView({ page: 'trajectory', id })
+  if (stage === 'loading') return <div className="ob"><div className="ob-screen"><p className="ob-sub">Загружаю…</p></div></div>
+  if (stage === 'onb' || !me) return <Onboarding onToken={onToken} />
+  if (stage === 'profile') return <Onboarding me={me} onToken={onToken} onProfile={route} />
+  if (stage === 'diag') {
+    return (
+      <Diagnostic mode="first" required={me.diag_required} exam={me.exam_info}
+        onFinished={(r) => { setResult(r); setStage('result') }}
+        onSkip={() => { const m = { ...me, settings: { ...me.settings, onb: 'skipped' } }; setMe(m); setStage('app'); reveal(m) }} />
+    )
   }
-
-  const goHistory = () => {
-    history.pushState({}, '', '/')
-    setView({ page: 'history' })
+  if (stage === 'result' && result) {
+    return <Result r={result} name={me.name || 'друг'} sound={me.settings.sound !== false} onGo={() => { const m = { ...me, diag_done: true }; setMe(m); setStage('app'); reveal(m) }} />
   }
+  return (
+    <AppProvider me={me} onLogout={logout}>
+      <Main />
+      {tour && <Tour teacher={me.role !== 'student'} onEnd={() => { setTour(false); putSettings({ onb: 'done' }).catch(() => null) }} />}
+    </AppProvider>
+  )
+}
 
-  if (!token) return <Auth onAuth={handleAuth} />
+function Main() {
+  const app = useApp()
+  const { view, me } = app
+  const [mock, setMock] = useState(false)
+  const [mockRes, setMockRes] = useState<DiagResult | null>(null)
+  useEffect(() => {
+    const on = () => setMock(true)
+    addEventListener('everest:mock', on)
+    return () => removeEventListener('everest:mock', on)
+  }, [])
+  const teacher = me.role !== 'student'
 
-  if (view.page === 'trajectory') {
-    return <TrajectoryPage sessionId={view.id} onBack={() => openSession(view.id)} />
+  if (mockRes) return <Result r={mockRes} name={me.name} sound={me.settings.sound !== false} onGo={() => { setMockRes(null); app.reload(); app.go('home') }} />
+  if (mock) return <Diagnostic mode="mock" required={false} exam={me.exam_info} onFinished={(r) => { setMock(false); setMockRes(r) }} onPause={() => { setMock(false); app.toast('Пробник на паузе. Продолжишь из расписания') }} />
+
+  let page
+  switch (view.v) {
+    case 'session': page = view.id ? <Session sessionId={view.id} onBack={() => app.go('check')} onOpenTrajectory={(id) => app.go({ v: 'trajectory', id })} onChecked={app.reload} /> : <Check />; break
+    case 'trajectory': page = view.id ? <TrajectoryPage sessionId={view.id} onBack={() => app.go({ v: 'session', id: view.id })} /> : <Check />; break
+    case 'check': page = <Check />; break
+    case 'teacher': page = teacher ? <Teacher /> : <Home />; break
+    case 'materials': page = teacher ? <Materials /> : <Home />; break
+    case 'tchat': page = teacher ? <Chat teacher /> : <Chat teacher={false} />; break
+    case 'plan': page = teacher ? <Teacher /> : <Plan />; break
+    case 'map': page = teacher ? <Teacher /> : <KnowledgeMap />; break
+    case 'video': page = <Videos />; break
+    case 'chat': page = teacher ? <Chat teacher /> : <Chat teacher={false} />; break
+    case 'awards': page = teacher ? <Teacher /> : <Stars />; break
+    default: page = teacher ? <Teacher /> : <Home />
   }
-
-  if (view.page === 'session') {
-    return <Session sessionId={view.id} onBack={goHistory} onOpenTrajectory={openTrajectory} />
-  }
-
-  return <History email={email} onOpenSession={openSession} onLogout={handleLogout} />
+  return <Shell>{page}</Shell>
 }

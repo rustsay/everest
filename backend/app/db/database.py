@@ -21,3 +21,15 @@ async def init_db() -> None:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        # create_all does not add columns to an existing table: add the profile columns by hand
+        if conn.dialect.name == "postgresql":
+            from sqlalchemy import text
+
+            for ddl in (
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(80)",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'student'",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS grade VARCHAR(4)",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS exam VARCHAR(10)",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT false",
+            ):
+                await conn.execute(text(ddl))

@@ -1,7 +1,9 @@
 # ЕГЭ Checker — Project Guide
 
-Сервис автоматической проверки 2 части ЕГЭ по профильной математике (задания 13–19).
-Мультиагентная проверка через OpenAI-совместимый LLM API.
+«Эверест» - подготовка к экзаменам по математике (ЕГЭ профиль и база, ОГЭ, школьная программа 5-10 классов).
+Ядро - автоматическая проверка 2 части ЕГЭ профиль (задания 13–19) по фото: мультиагентная проверка через OpenAI-совместимый LLM API.
+Вокруг неё (ветка `new-design`): входная диагностика, прогноз балла, карта знаний с первопричиной, расписание до экзамена,
+задача дня, звёзды и высота, помощник, разборы заданий, кабинет учителя, конспекты и презентации по учебникам.
 
 ## Быстрый старт
 
@@ -33,14 +35,16 @@ backend/app/
 ├── main.py              # FastAPI app + lifespan (init DB)
 ├── config.py            # Settings из env (pydantic-settings)
 ├── storage.py           # Файловые операции (сканы на диск)
+├── report.py            # PDF-отчёт по сессии (fpdf)
 ├── auth/
 │   ├── service.py       # bcrypt + JWT (python-jose)
-│   ├── router.py        # POST /auth/register, /auth/login
+│   ├── router.py        # POST /auth/register (+ имя, роль, класс, экзамен), /auth/login, /auth/demo
 │   └── deps.py          # get_current_user dependency
 ├── db/
 │   ├── database.py      # async SQLAlchemy engine + init_db()
-│   ├── models.py        # ORM: User, Session, TaskResult
-│   └── crud.py          # CRUD операции
+│   ├── models.py        # ORM: User, Session, TaskResult, Trajectory + таблицы нового дизайна (см. ниже)
+│   ├── crud.py          # CRUD проверки по фото
+│   └── crud_learning.py # CRUD нового дизайна: диагностики, классы, задания, чат, учебники, материалы
 ├── ocr/
 │   ├── preprocessor.py  # OpenCV: deskew, контраст, удаление линовки
 │   ├── paddle_ocr.py    # PaddleOCR singleton wrapper
@@ -49,9 +53,18 @@ backend/app/
 │   ├── prompts/tasks.py # Критерии для каждого задания (13–19)
 │   ├── checker.py       # Один агент → AgentVerdict (JSON)
 │   ├── judge.py         # Судья → JudgeDecision; при консенсусе LLM не вызывается
+│   ├── trajectory.py    # LLM-траектория по результатам сессии
 │   └── engine.py        # asyncio.gather(3 агента) → judge
+├── learning/            # модель ученика (новый дизайн)
+│   ├── content.py       # граф тем NODES, экзамены EXAMS, задания диагностики с ключами, звёзды, этапы
+│   ├── engine.py        # чистые функции: освоение, прогноз, первопричина, what-if, расписание (без БД, тестируются отдельно)
+│   ├── service.py       # состояние ученика (LearnerState), замеры, уведомления, хук после проверки по фото
+│   ├── llm.py           # помощник, анализ пробелов, конспект и презентация строго по тексту учебника
+│   └── demo.py          # демо-ученик для «Посмотреть пример»
 ├── api/
-│   └── router.py        # REST + WebSocket; фоновая обработка через asyncio.create_task
+│   ├── router.py        # проверка по фото: REST + WebSocket; фоновая обработка через asyncio.create_task
+│   ├── learning.py      # ученик: профиль, диагностика, главная, расписание, задача дня, звёзды, чат, карта
+│   └── teacher.py       # учитель: классы, обзор, спорные работы, домашние задания, учебники, материалы
 └── models/
     └── schemas.py       # Pydantic: TaskResult, AgentVerdict, JudgeDecision, SessionResult
 ```
@@ -60,16 +73,29 @@ backend/app/
 
 ```
 frontend/src/
-├── App.tsx              # Auth state + routing (history / session)
+├── App.tsx              # стадии: онбординг → профиль → диагностика → результат → приложение (+ тур)
 ├── types.ts             # TypeScript типы + TASK_INFO
-├── api/client.ts        # fetch wrapper с JWT header
+├── api/client.ts        # fetch wrapper с JWT header, все эндпоинты
+├── design/
+│   ├── everest.css      # дизайн-система: токены, компоненты, анимации, тёмная тема (Tailwind оставлен, но почти не нужен)
+│   └── ui.tsx           # Icon, StarBot (Звёздочка), Typed, горы, орнамент, звук
+├── app/
+│   ├── store.tsx        # AppProvider: me, dashboard, hash-роутинг (#home, #plan, #map, #video/13…), модалка, тосты
+│   └── Shell.tsx        # сайдбар, верхняя панель, нижнее меню на телефоне, уведомления, перерывы
 ├── pages/
-│   ├── Auth.tsx         # Login / Register (toggle)
-│   ├── History.tsx      # Список прошлых сессий + "Новая проверка"
-│   └── Session.tsx      # Upload 7 заданий + прогресс агентов в реальном времени
+│   ├── Onboarding.tsx   # «привет», роль, имя, класс, экзамен, аккаунт; вход; демо
+│   ├── Diagnostic.tsx   # входная диагностика и пробники (ответы проверяет сервер)
+│   ├── Result.tsx       # итог диагностики; Tour.tsx - тур по главной
+│   ├── Home.tsx         # прогноз, маршрут на сегодня, график, первопричина, задача дня
+│   ├── Plan.tsx         # расписание до экзамена; KnowledgeMap.tsx - карта знаний
+│   ├── Videos.tsx       # пошаговые разборы (videoData.ts); генерация видео не реализована
+│   ├── Chat.tsx         # помощник ученика и учителя; Stars.tsx - звёзды и высота
+│   ├── Check.tsx        # история проверок по фото; Session.tsx - загрузка 7 заданий
+│   ├── Teacher.tsx      # кабинет учителя; Materials.tsx - конспекты и презентации
+│   └── Trajectory.tsx   # траектория по сессии
 └── components/
     ├── TaskCard.tsx      # Карточка задания: drag-drop + статус + результат
-    └── ResultModal.tsx   # Модальный разбор: судья + 3 эксперта + OCR-текст
+    └── ResultModal.tsx   # Модальный разбор: судья + 3 эксперта (через portal)
 ```
 
 ## API endpoints
@@ -84,6 +110,23 @@ frontend/src/
 | GET | /api/sessions/{id}/tasks/{n}/status | ✓ | Статус задания |
 | GET | /api/sessions/{id}/results | ✓ | Полные результаты сессии |
 | WS | /api/ws/{session_id} | — | Real-time события обработки |
+| POST | /api/auth/demo | — | Демо-ученик |
+| GET/PUT | /api/me, /api/me/profile, /api/me/settings | ✓ | Профиль и настройки (расписание, перерывы, звук) |
+| POST | /api/diagnostics (`first`/`mock`) | ✓ | Начать или продолжить диагностику / пробник |
+| PUT | /api/diagnostics/{id}/answer | ✓ | Сохранить ответ |
+| POST | /api/diagnostics/{id}/finish, /api/diagnostics/skip | ✓ | Итог (прогноз, первопричина, план); пропуск для 5-8 классов |
+| GET | /api/dashboard, /api/plan | ✓ | Главная и расписание |
+| POST | /api/plan/done, /api/daily/hint, /api/daily/answer | ✓ | Блоки расписания, задача дня |
+| POST | /api/events, /api/nodes/{id}/quiz | ✓ | Звёзды, секреты, разборы; мини-проверка темы |
+| GET/POST | /api/notifications, /api/notifications/read | ✓ | Уведомления |
+| GET/POST/DELETE | /api/chat/{student\|teacher} | ✓ | Помощник (LLM) |
+| POST | /api/map/analysis | ✓ | Разбор пробелов (LLM) |
+| POST | /api/classes/join, /api/assignments/{id}/done | ✓ | Ученик: вступить в класс, сдать ДЗ |
+| GET | /api/teacher/overview, /api/teacher/students/{id} | учитель | Обзор класса, карточка ученика |
+| POST | /api/teacher/classes, /api/teacher/reviews/{task_result_id} | учитель | Класс с кодом; балл учителя за спорную работу |
+| POST/DELETE | /api/teacher/assignments | учитель | Домашние задания |
+| GET/POST/DELETE | /api/textbooks | учитель | Учебники (PDF с текстовым слоем → pypdf) |
+| POST/GET | /api/materials/generate, /api/materials | учитель | Конспект / презентация по учебнику (LLM) |
 
 ## WebSocket события
 
@@ -141,5 +184,12 @@ npm run dev   # vite proxy → localhost:8000
 - OCR (PaddleOCR) — синхронный, запускается в thread pool через `run_in_executor`
 - Сканы хранятся в Docker volume `/app/uploads` (не в БД — слишком большие)
 - Результаты в PostgreSQL: таблицы `users`, `sessions`, `task_results` (JSONB для вердиктов)
-- Таблицы создаются автоматически при старте через `Base.metadata.create_all`
+- Таблицы создаются автоматически при старте через `Base.metadata.create_all`; новые колонки `users`
+  (name, role, grade, exam, is_demo) добавляются в существующую БД через `ALTER TABLE … IF NOT EXISTS` в `init_db()`
+- Таблицы нового дизайна: `learner_states` (JSONB-документ ученика), `diagnostics`, `measurements` (история прогноза),
+  `notifications`, `chat_messages`, `class_groups`, `class_members`, `assignments`, `teacher_reviews`, `textbooks`, `materials`
+- Ключи ответов диагностики хранятся только на сервере (`learning/content.py`), клиент получает задания без них
+- После проверки по фото `api/router.py` вызывает `learning.service.on_task_checked`: балл обновляет освоение тем,
+  прогноз и расписание (точка на графике появляется только после диагностики)
+- Логика модели в `learning/engine.py` без БД и сети: её удобно проверять обычными вызовами функций
 - JWT токен живёт 30 дней, хранится в localStorage
