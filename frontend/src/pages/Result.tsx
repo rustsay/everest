@@ -65,6 +65,12 @@ export default function Result({ r, name, sound, onGo }: { r: DiagResult; name: 
             <div className="rc"><span className="label">Начнём с</span><b>{r.root_name ?? (r.weak[0] || 'закрепления')}</b>{r.root_name && <small>{r.basics ? 'начинаем с основ' : 'первопричина ошибок'}</small>}</div>
             <div className="rc"><span className="label">Расписание</span><b>{r.plan.studied} занятий</b><small>{r.plan.days} дней в неделю по {r.plan.min} минут</small></div>
           </div>
+          {r.analytics && <div className={`res-an ${cards ? 'on' : ''}`}>
+            <p className="res-label on">Где теряются баллы</p>
+            {r.analytics.summary && <p className="res-an-say">{r.analytics.summary}</p>}
+            {r.analytics.gains.length > 0 && <ul>{r.analytics.gains.slice(0, 3).map((g) => <li key={g.task}><b>{g.task}</b> {g.name}: {g.why}</li>)}</ul>}
+            {r.id && (!needGoal || target) && <button className="ob-link light" onClick={() => { onGo(); setTimeout(() => { location.hash = '#diag/' + r.id }, 50) }}>Подробный разбор каждого задания</button>}
+          </div>}
           {needGoal && <div className={`res-goal ${go ? 'on' : ''}`}>
             <p className="res-label on">На сколько баллов хочешь сдать?</p>
             <TargetPick value={target} onSaved={setTargetV} />

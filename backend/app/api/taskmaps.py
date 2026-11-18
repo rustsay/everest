@@ -162,13 +162,19 @@ async def answer(n: int, body: AnswerIn, user: User = Depends(get_current_user),
     row = await service.get_state(db, user.id)
     done = row.data.setdefault("tm", {})
     first = pid not in done
+    redo = None
     if first:  # the percentage counts the first attempt only: after it the solution is shown
         done[pid] = 1 if ok else 0
         service.on_practice(user, row, n, ok)
         service.gain(row, 30 if ok else 5)
+        if not ok and user.role == "student":
+            service.redo_add(row, service.redo_ref(n, pid), n)
+            redo = "added"
+    else:
+        redo = service.redo_answer(row, service.redo_ref(n, pid), ok)
     service.touch(row)
     await db.commit()
-    return {"ok": ok, "first": first, "answer": right, "sol": sol or "Решение к этой задаче не добавлено."}
+    return {"ok": ok, "first": first, "answer": right, "sol": sol or "Решение к этой задаче не добавлено.", "redo": redo}
 
 
 # ---------- explanation of a skill from the textbook ----------

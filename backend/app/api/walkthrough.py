@@ -64,6 +64,7 @@ async def walkthrough(body: RefIn, user: User = Depends(get_current_user), db: A
         tm = st.data.setdefault("tm", {})
         if p["pid"] not in tm:
             tm[p["pid"]] = 0
+            service.redo_add(st, body.ref, p["task"])  # watched first: it comes back to be solved alone
             service.touch(st)
             await db.commit()
     row = (await db.execute(select(ProblemWalkthrough).where(ProblemWalkthrough.ref == body.ref))).scalars().first()

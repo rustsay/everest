@@ -190,8 +190,10 @@ async def _diag_detail(db: AsyncSession, s: User) -> dict | None:
                     "answer": None if it["t"] != "num" else (d.answers or {}).get(it["id"]), "right": it.get("a"),
                     "photo": w.get("mode") == "photo"})
     good = {"верно", "верно, решение спорное"}
+    an = (d.result or {}).get("analytics") or {}
     return {"date": d.created_at.date().isoformat() if d.created_at else None, "mode": d.mode, "items": out,
-            "right": sum(1 for x in out if x["status"] in good), "count": len(out)}
+            "right": sum(1 for x in out if x["status"] in good), "count": len(out),
+            "summary": an.get("summary"), "facts": an.get("facts") or [], "blocks": an.get("blocks") or [], "gains": an.get("gains") or []}
 
 
 def _checks_detail(results: list) -> list[dict]:

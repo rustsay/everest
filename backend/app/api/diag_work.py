@@ -59,8 +59,8 @@ def _set_work(d: Diagnostic, item_id: str, work: dict | None, answer: str | None
 
 
 def public_work(answers: dict) -> dict:
-    return {k: {"mode": v.get("mode"), "status": v.get("status"), "files": v.get("files", 0),
-                "comment": (v.get("result") or {}).get("comment") or v.get("error") or ""}
+    """What the student sees while solving: the verdict on the photo is shown only in the analytics at the end."""
+    return {k: {"mode": v.get("mode"), "status": v.get("status"), "files": v.get("files", 0), "comment": v.get("error") or ""}
             for k, v in (answers.get("_work") or {}).items()}
 
 
@@ -111,6 +111,8 @@ async def upload_work(diag_id: int, item_id: str, files: list[UploadFile] = File
                       user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     from app.api.batch import file_pages
     d = await _own(db, diag_id, user)
+    from app.api.learning import exam_guard
+    exam_guard(d)
     item = _items(d, user).get(item_id)
     if item is None:
         raise HTTPException(404, "Нет такого задания")
@@ -144,6 +146,8 @@ class ModeIn(BaseModel):
 @router.put("/diagnostics/{diag_id}/items/{item_id}/mode")
 async def set_mode(diag_id: int, item_id: str, body: ModeIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     d = await _own(db, diag_id, user)
+    from app.api.learning import exam_guard
+    exam_guard(d)
     item = _items(d, user).get(item_id)
     if item is None:
         raise HTTPException(404, "Нет такого задания")

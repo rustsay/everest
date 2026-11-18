@@ -45,6 +45,26 @@ async def practice(task: int | None = None, proto: str | None = None, user: User
             "tasks": [{"n": n, "name": m["name"], "protos": [{"id": p["id"], "name": p["name"]} for p in m["protos"]]} for n, m in TASK_MAPS.items()]}
 
 
+# ---------- «Работа над ошибками» ----------
+
+@router.get("/redo")
+async def redo_list(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Problems due again today (without answers), and how many wait for later."""
+    row = await service.get_state(db, user.id)
+    redo = row.data.get("redo") or {}
+    due = service.redo_due(row)
+    found = await problems.resolve(db, due)
+    items = []
+    for ref in due:
+        p = found.get(ref)
+        if p is None:
+            continue
+        r = redo[ref]
+        items.append({**_public(p), "done": None, "sol": None, "step": r["step"], "added": r["added"], "tries": r.get("tries", 0)})
+    later = sorted((r["due"] for ref, r in redo.items() if ref not in due))
+    return {"items": items, "later": len(later), "next": later[0] if later else None, "done": int(row.data.get("redo_done", 0))}
+
+
 # ---------- teacher: variants ----------
 
 class VariantIn(BaseModel):
@@ -200,6 +220,10 @@ async def submit_variant(vid: int, body: SubmitIn, user: User = Depends(get_curr
         if p["pid"] not in tm:  # the first attempt counts: for the task maps and for the schedule
             tm[p["pid"]] = results[r]
             service.on_practice(user, row, p["task"], ok)
+            if not ok:
+                service.redo_add(row, p["ref"], p["task"])
+        else:
+            service.redo_answer(row, p["ref"], ok)
     answers = {k: str(val)[:40] for k, val in body.answers.items() if k in (v.items or [])}
     db.add(VariantAttempt(variant_id=v.id, user_id=user.id, answers=answers, results=results, score=score, max_score=mx))
     service.gain(row, 20 * score)

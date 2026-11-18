@@ -16,6 +16,8 @@ from app.api.practice import router as practice_router
 from app.api.paths import router as paths_router
 from app.api.diag_work import router as diag_work_router
 from app.api.walkthrough import router as walkthrough_router
+from app.api.check1 import router as check1_router
+from app.api.report import router as report_router, weekly_loop
 from app.api.teacher import router as teacher_router
 from app.auth.router import router as auth_router
 from app.config import settings
@@ -32,6 +34,8 @@ async def lifespan(app: FastAPI):
     Path(settings.uploads_dir).mkdir(parents=True, exist_ok=True)
     await init_db()
     await recover_videos()
+    import asyncio
+    weekly = asyncio.create_task(weekly_loop())  # weekly reports: notifications and parent emails
     # Warm up PaddleOCR in a background thread so models download once, not on the first check.
     # Not awaited: the site answers right away instead of returning 502 while models download.
     # Without a model OCR is not used at all, so the warm-up is skipped.
@@ -39,6 +43,7 @@ async def lifespan(app: FastAPI):
         import asyncio
         asyncio.get_running_loop().run_in_executor(None, _warmup_ocr)
     yield
+    weekly.cancel()
 
 
 def _warmup_ocr() -> None:
@@ -72,3 +77,5 @@ app.include_router(practice_router, prefix="/api")
 app.include_router(paths_router, prefix="/api")
 app.include_router(diag_work_router, prefix="/api")
 app.include_router(walkthrough_router, prefix="/api")
+app.include_router(check1_router, prefix="/api")
+app.include_router(report_router, prefix="/api")

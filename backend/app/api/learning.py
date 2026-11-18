@@ -7,6 +7,7 @@ from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user
@@ -132,16 +133,46 @@ async def put_settings(body: SettingsIn, user: User = Depends(get_current_user),
 
 # ---------- diagnostics ----------
 
+EXAM_MINUTES = {"prof": 235, "oge": 235, "base": 180}  # 3 h 55 min, 3 h 55 min, 3 h
+
+
+def exam_left(d: Diagnostic) -> int | None:
+    """Seconds left in a mock taken in exam conditions (None: not such a mock)."""
+    ex = (d.answers or {}).get("_exam")
+    if not ex:
+        return None
+    start = datetime.fromisoformat(ex["start"])
+    return int(ex["limit"] * 60 - (datetime.utcnow() - start).total_seconds())
+
+
+def exam_guard(d: Diagnostic) -> None:
+    left = exam_left(d)
+    if left is not None and left < -90:  # a short grace for the last answer in flight
+        raise HTTPException(400, "Время экзамена вышло: можно только завершить пробник")
+
+
 def _diag_view(d: Diagnostic, items: list[dict]) -> dict:
     from app.api.diag_work import public_work
     ans = dict(d.answers or {})
+    left = exam_left(d)
     return {"id": d.id, "mode": d.mode, "variant": d.variant, "position": d.position, "work": public_work(ans),
-            "answers": {k: v for k, v in ans.items() if k != "_work"}, "llm_ready": settings.llm_ready,
-            "items": [engine.public_item(i) for i in items], "exam": exam_info(d.exam_key)}
+            "answers": {k: v for k, v in ans.items() if not k.startswith("_")}, "llm_ready": settings.llm_ready,
+            "items": [engine.public_item(i) for i in items], "exam": exam_info(d.exam_key),
+            "exam_mode": {"limit": ans["_exam"]["limit"], "left": left} if left is not None else None}
 
 
 class DiagStart(BaseModel):
     mode: str = "first"
+    exam: bool = False  # a mock in exam conditions: one timer, no hints, any order, blanks allowed
+
+
+@router.get("/diagnostics/open/{mode}")
+async def open_diag(mode: str, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """An unfinished diagnostic or mock to continue (or {"open": false}): the client asks before creating a new mock."""
+    d = await crud.open_diagnostic(db, user.id, mode)
+    if d is None:
+        return {"open": False}
+    return {"open": True, **_diag_view(d, engine.diag_items(d.exam_key, user.grade, d.variant, date.today()))}
 
 
 @router.post("/diagnostics")
@@ -154,7 +185,13 @@ async def start_diagnostic(body: DiagStart, user: User = Depends(get_current_use
     if d is None:
         row = await service.get_state(db, user.id)
         variant = int(row.data.get("mocks", 0)) + 1 if body.mode == "mock" else 0
-        d = Diagnostic(user_id=user.id, mode=body.mode, exam_key=service.key_for(user), variant=variant, answers={})
+        key = service.key_for(user)
+        answers: dict = {}
+        if body.mode == "mock" and body.exam:
+            if key not in EXAM_MINUTES:
+                raise HTTPException(400, "Пробник в условиях экзамена есть для ЕГЭ и ОГЭ")
+            answers["_exam"] = {"start": datetime.utcnow().isoformat(), "limit": EXAM_MINUTES[key]}
+        d = Diagnostic(user_id=user.id, mode=body.mode, exam_key=key, variant=variant, answers=answers)
         db.add(d)
         await db.commit()
         await db.refresh(d)
@@ -174,6 +211,7 @@ async def save_answer(diag_id: int, body: AnswerIn, user: User = Depends(get_cur
     d = await db.get(Diagnostic, diag_id)
     if d is None or d.user_id != user.id or d.finished:
         raise HTTPException(404, "Диагностика не найдена")
+    exam_guard(d)
     async with _lock(diag_id):  # photo checks write into the same answers in the background
         await db.refresh(d)
         d.answers = {**(d.answers or {}), body.item_id: body.answer}
@@ -196,6 +234,8 @@ async def finish_diagnostic(diag_id: int, user: User = Depends(get_current_user)
         return d.result
     from app.api.diag_work import missing
     gaps, pending = missing(d, user)
+    if exam_left(d) is not None:
+        gaps = []  # in exam conditions a blank is allowed: it counts as not solved
     if pending:
         raise HTTPException(409, f"Ещё проверяем решения: {pending}. Подождите немного")
     if gaps:
@@ -213,11 +253,12 @@ async def finish_diagnostic(diag_id: int, user: User = Depends(get_current_user)
     strong, weak = engine.strong_weak(model)
     plan = engine.build_plan(row.data, key, date.today())
     result = {
-        **r, "mode": d.mode, "value": value, "prev": prev[-1].value if prev else None, "exam": exam_info(key),
+        **r, "id": d.id, "mode": d.mode, "value": value, "prev": prev[-1].value if prev else None, "exam": exam_info(key),
         "strong": [NODE_BY_ID[n]["name"] for n in strong], "weak": [NODE_BY_ID[n]["name"] for n in weak],
         "root": model["root"], "root_name": NODE_BY_ID[model["root"]]["name"] if model["root"] else None, "basics": model["basics"],
         "plan": {"studied": plan["studied"], "days": plan["days_per_week"], "min": plan["minutes"]}, "mocks": row.data.get("mocks", 0),
     }
+    result["analytics"] = await _analytics(items, d.answers or {}, model, key, row.data.get("target"), d.mode)
     d.finished, d.result = True, result
     service.gain(row, 150 if not blend else 120)
     service.touch(row)
@@ -228,6 +269,48 @@ async def finish_diagnostic(diag_id: int, user: User = Depends(get_current_user)
         from app.api.paths import auto_build
         asyncio.create_task(auto_build(user.id))
     return result
+
+
+async def _analytics(items: list[dict], answers: dict, model: dict, key: str, target: dict | None, mode: str) -> dict:
+    from app.learning import analytics
+    a = analytics.build(items, answers, model, key, target)
+    a["summary"] = None
+    if settings.llm_ready:
+        rows = [f"{(('№ ' + str(r['n'])) if r['n'] else r['name'])} ({r['name']}): {r['label']}{(' - ' + r['note']) if r['note'] else ''}"
+                for r in a["rows"]]
+        try:
+            import asyncio
+            a["summary"] = await asyncio.wait_for(llm.diag_summary(a["facts"], rows, "пробника" if mode == "mock" else "диагностики"), 40)
+        except Exception as exc:  # noqa: BLE001 - the analytics stands without the conclusion
+            log.warning("diag summary failed: %s", exc)
+    return a
+
+
+@router.get("/diagnostics/{diag_id}/analytics")
+async def diag_analytics(diag_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Analytics of a finished diagnostic; older ones (before analytics) are rebuilt from their answers."""
+    d = await db.get(Diagnostic, diag_id)
+    if d is None or d.user_id != user.id or not d.finished:
+        raise HTTPException(404, "Диагностика не найдена")
+    res = dict(d.result or {})
+    if "analytics" not in res:
+        row = await service.get_state(db, user.id)
+        items = engine.diag_items(d.exam_key, user.grade, d.variant, (d.created_at or datetime.now()).date())
+        from app.learning import analytics
+        res["analytics"] = {**analytics.build(items, d.answers or {}, engine.build_model(row.data, d.exam_key), d.exam_key,
+                                              row.data.get("target")), "summary": None}
+        d.result = res
+        await db.commit()
+    return {"id": d.id, "mode": d.mode, "date": d.created_at.date().isoformat() if d.created_at else None, **res}
+
+
+@router.get("/diagnostics")
+async def list_diagnostics(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Finished diagnostics and mocks of the student, newest first (for «Мои диагностики»)."""
+    res = await db.execute(select(Diagnostic).where(Diagnostic.user_id == user.id, Diagnostic.finished.is_(True)).order_by(Diagnostic.id.desc()))
+    return {"items": [{"id": x.id, "mode": x.mode, "date": x.created_at.date().isoformat() if x.created_at else None,
+                       "value": (x.result or {}).get("value"), "right": (x.result or {}).get("right"), "of": (x.result or {}).get("of")}
+                      for x in res.scalars()]}
 
 
 class TargetIn(BaseModel):
@@ -330,6 +413,8 @@ async def dashboard(user: User = Depends(get_current_user), db: AsyncSession = D
         "diag_done": await crud.last_finished_diagnostic(db, user.id) is not None,
         "route_basis": await service.route_basis(db, user.id, row, path),
         "path_stage": _stage_info(path, today), "target": st.get("target"), "part2": plan["part2"],
+        "redo": {"due": sum(1 for r in (st.get("redo") or {}).values() if r["due"] <= today.isoformat()),
+                 "total": len(st.get("redo") or {}), "done": int(st.get("redo_done", 0))},
     }
 
 
@@ -572,9 +657,78 @@ async def get_chat(kind: str, user: User = Depends(get_current_user), db: AsyncS
     return {"messages": [{"role": m.role, "content": m.content} for m in msgs]}
 
 
+class FileIn(BaseModel):
+    name: str = Field(..., max_length=200)
+    data: str  # base64
+
+
 class ChatIn(BaseModel):
     text: str = Field(..., min_length=1, max_length=2000)
-    image: str | None = None  # base64 JPEG/PNG without data: prefix
+    image: str | None = None  # base64 JPEG/PNG without data: prefix (old clients)
+    images: list[str] = Field(default_factory=list, max_length=5)
+    files: list[FileIn] = Field(default_factory=list, max_length=3)
+
+
+MAX_ATTACH = 10 * 1024 * 1024
+
+
+def _attachments(body: ChatIn) -> tuple[list[str], str, list[str]]:
+    """(images as base64 JPEG, text of the files, names for the history line). PDF without a text layer -> page pictures."""
+    from app.api.batch import image_jpeg, normalize
+    from app.api.teacher import docx_text
+    imgs: list[str] = []
+    texts: list[str] = []
+    names: list[str] = []
+
+    def raw(b64: str) -> bytes:
+        try:
+            data = base64.b64decode(b64, validate=True)
+        except (ValueError, base64.binascii.Error):
+            raise HTTPException(400, "Файл не читается")
+        if len(data) > MAX_ATTACH:
+            raise HTTPException(400, "Файл больше 10 МБ")
+        return data
+
+    def add_image(data: bytes) -> None:
+        try:
+            imgs.append(base64.b64encode(normalize(data)).decode())
+        except HTTPException:
+            raise
+        except Exception:  # noqa: BLE001
+            raise HTTPException(400, "Картинка не читается")
+
+    for b64 in ([body.image] if body.image else []) + body.images:
+        add_image(raw(b64))
+    if imgs:
+        names.append(f"{len(imgs)} фото")
+    for f in body.files:
+        data, ext = raw(f.data), (f.name.rsplit(".", 1)[-1].lower() if "." in f.name else "")
+        names.append(f.name)
+        if ext in ("jpg", "jpeg", "png", "webp", "heic", "heif"):
+            add_image(data)
+        elif ext == "pdf":
+            import io
+            from pypdf import PdfReader
+            try:
+                reader = PdfReader(io.BytesIO(data))
+                text = "\n".join((p.extract_text() or "") for p in reader.pages[:30])
+            except Exception:  # noqa: BLE001
+                raise HTTPException(400, f"PDF «{f.name}» не читается")
+            if len(text.strip()) > 40 * min(len(reader.pages), 30) * 0.5:
+                texts.append(f"[{f.name}]\n{text}")
+            else:  # a scan: the pages go as pictures
+                from pdf2image import convert_from_bytes
+                for im in convert_from_bytes(data, dpi=150, first_page=1, last_page=5, size=1800, timeout=30):
+                    imgs.append(base64.b64encode(image_jpeg(im)).decode())
+        elif ext == "docx":
+            texts.append(f"[{f.name}]\n{docx_text(data)}")
+        elif ext in ("txt", "md", "csv"):
+            texts.append(f"[{f.name}]\n{data.decode('utf-8', 'ignore')}")
+        else:
+            raise HTTPException(400, "Можно прислать фото, PDF, Word (.docx) или TXT")
+    if len(imgs) > 8:
+        raise HTTPException(400, "Не больше 8 картинок и страниц за раз")
+    return imgs, "\n\n".join(texts)[:20000], names
 
 
 @router.post("/chat/{kind}")
@@ -583,18 +737,13 @@ async def post_chat(kind: str, body: ChatIn, user: User = Depends(get_current_us
         raise HTTPException(404, "Нет такого чата")
     if not settings.llm_ready:
         raise HTTPException(503, NO_LLM)
-    if body.image:
-        try:
-            if len(base64.b64decode(body.image, validate=True)) > 8 * 1024 * 1024:
-                raise HTTPException(400, "Фото больше 8 МБ")
-        except (ValueError, base64.binascii.Error):
-            raise HTTPException(400, "Фото не читается")
-    db.add(ChatMessage(user_id=user.id, kind=kind, role="user", content=body.text + (" [приложено фото решения]" if body.image else "")))
+    imgs, attached, names = _attachments(body)
+    db.add(ChatMessage(user_id=user.id, kind=kind, role="user", content=body.text + (f" [приложено: {', '.join(names)}]" if names else "")))
     await db.commit()
     hist = [{"role": m.role, "content": m.content} for m in await crud.chat_history(db, user.id, kind)]
     ctx = await (_teacher_context(db, user, body.text) if kind == "teacher" else _student_context(db, user))
     try:
-        reply = await llm.chat(kind, ctx, hist, body.image)
+        reply = await llm.chat(kind, ctx, hist, imgs, attached)
     except Exception as exc:  # LLM down: keep the question, tell the user
         log.exception("chat failed: %s", exc)
         raise HTTPException(502, "Помощник сейчас недоступен. Попробуйте через минуту.")

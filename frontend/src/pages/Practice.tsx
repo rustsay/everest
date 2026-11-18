@@ -4,6 +4,7 @@ import { useApp } from '../app/store'
 import type { BankTask, PracticeItem, VariantSummary } from '../types'
 import { Icon, fmtD } from '../design/ui'
 import { Problem } from './TaskMap'
+import Redo from '../components/Redo'
 
 /** The task bank for students: published problems by task and prototype, plus variants from the teacher. */
 export default function Practice() {
@@ -24,6 +25,8 @@ export default function Practice() {
         <div><p className="muted">Задачи открытого банка и подборки учителей</p><h1>Банк задач</h1></div>
         <button className="btn btn-line" onClick={() => app.go({ v: 'task', id: String(task) })}><Icon n="map" s={18} />Карта задания № {task}</button>
       </div>
+
+      {app.me.role === 'student' && <Redo />}
 
       {vars.length > 0 && (
         <section className="card">

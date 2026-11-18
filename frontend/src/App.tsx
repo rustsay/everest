@@ -20,6 +20,8 @@ import Practice from './pages/Practice'
 import Variants, { VariantPage } from './pages/Variants'
 import TrajectoryPage from './pages/Trajectory'
 import PathPage, { TeacherPaths } from './pages/Path'
+import DiagReport from './pages/DiagReport'
+import WeekPage, { ClassReport } from './pages/Week'
 import Videos from './pages/Videos'
 import type { DiagResult, Me } from './types'
 
@@ -121,6 +123,8 @@ function Main() {
     case 'tchat': page = teacher ? <Chat teacher /> : <Chat teacher={false} />; break
     case 'plan': page = teacher ? <Teacher /> : <Plan />; break
     case 'video': page = <Videos />; break
+    case 'diag': page = <DiagReport />; break
+    case 'report': page = teacher ? <ClassReport /> : <WeekPage />; break
     case 'task': page = <TaskMap n={Number(view.id) || 1} />; break
     case 'bank': page = teacher ? <Bank /> : <Practice />; break
     case 'practice': page = <Practice />; break

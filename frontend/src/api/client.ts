@@ -113,7 +113,7 @@ export function openWs(sessionId: string): WebSocket {
 import type {
   Me, Dashboard, PlanData, DiagRun, DiagResult, NotificationItem, ChatMsg, TeacherOverview, StudentDetail, Textbook, MaterialOut,
   TaskMapData, TmAnswer, TmFile, SkillExplain, BankItem, BankTask, PracticeItem, VariantSummary, VariantFull,
-  MyPath, PathOut, PathStage, TeacherPaths, DiagWork, Target, Walkthrough,
+  MyPath, PathOut, PathStage, TeacherPaths, DiagWork, Target, Walkthrough, DiagListItem, DiagAnalytics, Check1Result, Check1Item, RedoItem, WeekReport, ClassWeek,
 } from '../types'
 
 export const authConfig = (): Promise<{ email_confirm: boolean }> => apiFetch('/auth/config')
@@ -130,8 +130,9 @@ export const putProfile = (body: Partial<Pick<Me, 'name' | 'role' | 'grade' | 'e
   apiFetch('/me/profile', { method: 'PUT', body: JSON.stringify(body) })
 export const putSettings = (body: Record<string, unknown>) => apiFetch('/me/settings', { method: 'PUT', body: JSON.stringify(body) })
 
-export const startDiagnostic = (mode: 'first' | 'mock'): Promise<DiagRun> =>
-  apiFetch('/diagnostics', { method: 'POST', body: JSON.stringify({ mode }) })
+export const startDiagnostic = (mode: 'first' | 'mock', exam = false): Promise<DiagRun> =>
+  apiFetch('/diagnostics', { method: 'POST', body: JSON.stringify({ mode, exam }) })
+export const openDiagnostic = (mode: 'first' | 'mock'): Promise<({ open: true } & DiagRun) | { open: false }> => apiFetch(`/diagnostics/open/${mode}`)
 export const saveAnswer = (id: number, item_id: string, answer: string, position: number) =>
   apiFetch(`/diagnostics/${id}/answer`, { method: 'PUT', body: JSON.stringify({ item_id, answer, position }) })
 export const finishDiagnostic = (id: number): Promise<DiagResult> => apiFetch(`/diagnostics/${id}/finish`, { method: 'POST' })
@@ -186,8 +187,8 @@ export const listReviewChats = (): Promise<{ chats: ReviewChatSummary[] }> => ap
 export const openReviewChat = (sid: string, task: number): Promise<ReviewChatDetail> => apiFetch(`/sessions/${sid}/tasks/${task}/chat`, { method: 'POST' })
 export const getReviewChat = (id: string): Promise<ReviewChatDetail> => apiFetch(`/review-chats/${id}`)
 export const askReviewChat = (id: string, text: string): Promise<ReviewChatDetail> => apiFetch(`/review-chats/${id}/messages`, { method: 'POST', body: JSON.stringify({ text }) })
-export const postChat = (kind: 'student' | 'teacher', text: string, image?: string): Promise<{ reply: string }> =>
-  apiFetch(`/chat/${kind}`, { method: 'POST', body: JSON.stringify({ text, image: image ?? null }) })
+export const postChat = (kind: 'student' | 'teacher', text: string, images: string[] = [], files: { name: string; data: string }[] = []): Promise<{ reply: string }> =>
+  apiFetch(`/chat/${kind}`, { method: 'POST', body: JSON.stringify({ text, images, files }) })
 export const clearChat = (kind: 'student' | 'teacher') => apiFetch(`/chat/${kind}`, { method: 'DELETE' })
 export const mapAnalysis = (): Promise<{ text: string }> => apiFetch('/map/analysis', { method: 'POST' })
 
@@ -284,6 +285,24 @@ export async function downloadBankTemplate(): Promise<void> {
 }
 
 // ---------- practice bank and variants ----------
+export const listDiagnostics = (): Promise<{ items: DiagListItem[] }> => apiFetch('/diagnostics')
+export const getDiagAnalytics = (id: number): Promise<DiagResult & { date: string | null; analytics: DiagAnalytics }> => apiFetch(`/diagnostics/${id}/analytics`)
+export async function checkFirstPart(body: { task: number; answer: string; ref?: string; problem?: string; files: File[] }): Promise<Check1Result> {
+  const fd = new FormData()
+  fd.append('task', String(body.task)); fd.append('answer', body.answer)
+  if (body.ref) fd.append('ref', body.ref)
+  if (body.problem) fd.append('problem', body.problem)
+  body.files.forEach((f) => fd.append('files', f))
+  const res = await fetch(`${BASE}/check1`, { method: 'POST', headers: authHeader(), body: fd })
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(typeof e.detail === 'string' ? e.detail : `HTTP ${res.status}`) }
+  return res.json()
+}
+export const check1History = (): Promise<{ items: Check1Item[] }> => apiFetch('/check1')
+export const getRedo = (): Promise<{ items: RedoItem[]; later: number; next: string | null; done: number }> => apiFetch('/redo')
+export const weekReport = (): Promise<WeekReport> => apiFetch('/report/week')
+export const classWeek = (): Promise<ClassWeek> => apiFetch('/teacher/report/week')
+export const setParentEmail = (email: string | null): Promise<{ parent_email: string | null; smtp: boolean }> =>
+  apiFetch('/me/parent', { method: 'PUT', body: JSON.stringify({ email }) })
 export const getWalkthrough = (ref: string): Promise<Walkthrough> =>
   apiFetch('/walkthrough', { method: 'POST', body: JSON.stringify({ ref }) })
 export const getPractice = (task?: number, proto?: string): Promise<{ items: PracticeItem[]; counts: Record<string, number>; tasks: BankTask[] }> =>

@@ -4,6 +4,7 @@ import { useApp } from '../app/store'
 import { SessionSummary, TASK_INFO } from '../types'
 import { Icon, StarBot } from '../design/ui'
 import NoLlm from '../components/NoLlm'
+import Check1 from '../components/Check1'
 
 const TASK_IDS = Object.keys(TASK_INFO).map(Number)
 
@@ -20,14 +21,18 @@ export default function Check() {
   return (
     <>
       <div className="card-h" style={{ margin: 0 }}>
-        <div><p className="muted">Вторая часть ЕГЭ · задания 13-19</p><h1>Проверка решения по фото</h1></div>
+        <div><p className="muted">Первая часть · 1-12 и вторая часть · 13-19</p><h1>Проверка решения по фото</h1></div>
         <button className="btn btn-gold" onClick={startNew} disabled={creating}><Icon n="check" s={18} c="#16231F" />{creating ? 'Создаю…' : 'Новая проверка'}</button>
       </div>
       <NoLlm what="Проверка по фото" />
+      {(() => {
+        const m = (app.view.id ?? '').match(/^1-(\d+)-(.+)$/)  // #check/1-6-f300: a first-part problem opened from the bank
+        return <Check1 key={app.view.id ?? ''} presetTask={m ? Number(m[1]) : undefined} preset={m?.[2]} />
+      })()}
       <section className="card check-intro">
         <StarBot size={64} />
         <div style={{ flex: '1 1 260px' }}>
-          <b>Как проверяем</b>
+          <b>Вторая часть: как проверяем</b>
           <p className="muted" style={{ marginTop: 4 }}>Сфотографируй решение целиком. Почерк распознаётся, затем три эксперта независимо ставят баллы по критериям ФИПИ. Если они расходятся, решает судья, а спорные работы видит учитель.</p>
         </div>
       </section>

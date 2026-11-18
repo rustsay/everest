@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date, timedelta, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -86,11 +86,68 @@ async def notify(db: AsyncSession, user_id: int, text: str, go: str | None = Non
     db.add(Notification(user_id=user_id, text=text[:300], go=go))
 
 
+def count(row: LearnerState, k: str, n: int = 1) -> None:
+    """Daily counters for the weekly report: solved, ok, checks, checks1, fixed, diag (kept 70 days)."""
+    days = row.data.setdefault("days", {})
+    today = date.today().isoformat()
+    d = days.setdefault(today, {})
+    d[k] = int(d.get(k, 0)) + n
+    if len(days) > 70:
+        for old in sorted(days)[:-70]:
+            days.pop(old)
+
+
 def on_practice(user: User, row: LearnerState, task_n: int, ok: bool) -> None:
     """First attempt at a short-answer problem: feeds the forecast and the schedule of this exam (task maps are ЕГЭ профиль)."""
+    if user.role == "student":
+        count(row, "solved")
+        if ok:
+            count(row, "ok")
     tid = f"T{task_n}"
     if user.role == "student" and any(t["id"] == tid for t in EXAMS[key_for(user)]["tasks"]):
         engine.observe_practice(row.data, tid, ok)
+
+
+# ---------- «Работа над ошибками»: a wrong problem comes back in 3 days, then in 7, until it is solved twice ----------
+
+REDO_STEPS = (3, 7)
+
+
+def redo_ref(task_n: int, pid: str) -> str:
+    """The address of a problem from its id on the task map."""
+    return pid if (pid[:1] in ("f", "b") and pid[1:].isdigit()) else f"s{task_n}:{pid}"
+
+
+def redo_add(row: LearnerState, ref: str, task_n: int) -> None:
+    redo = row.data.setdefault("redo", {})
+    redo[ref] = {"task": task_n, "step": 0, "due": (date.today() + timedelta(days=REDO_STEPS[0])).isoformat(),
+                 "added": date.today().isoformat(), "tries": 0}
+
+
+def redo_answer(row: LearnerState, ref: str, ok: bool) -> str | None:
+    """A later answer to a problem from the list: right -> the next interval or done; wrong -> again in 3 days.
+    Returns "next", "done", "again" or None (not in the list)."""
+    redo = row.data.get("redo") or {}
+    r = redo.get(ref)
+    if r is None:
+        return None
+    r["tries"] = int(r.get("tries", 0)) + 1
+    if not ok:
+        r.update(step=0, due=(date.today() + timedelta(days=REDO_STEPS[0])).isoformat())
+        return "again"
+    if r["step"] + 1 >= len(REDO_STEPS):
+        redo.pop(ref)
+        row.data["redo_done"] = int(row.data.get("redo_done", 0)) + 1
+        count(row, "fixed")
+        gain(row, 40)
+        return "done"
+    r.update(step=r["step"] + 1, due=(date.today() + timedelta(days=REDO_STEPS[r["step"] + 1])).isoformat())
+    return "next"
+
+
+def redo_due(row: LearnerState, today: date | None = None) -> list[str]:
+    t = (today or date.today()).isoformat()
+    return sorted((ref for ref, r in (row.data.get("redo") or {}).items() if r["due"] <= t), key=lambda ref: row.data["redo"][ref]["due"])
 
 
 async def active_path(db: AsyncSession, user: User, row: LearnerState):
@@ -137,6 +194,7 @@ async def on_task_checked(db: AsyncSession, user_id: int, task_id: int, score: i
         if await last_finished_diagnostic(db, user_id) is not None:
             await add_measurement(db, user, row, f"проверка задания {task_id}")
     unlock(row, "first_check")
+    count(row, "checks")
     gain(row, 80)
     touch(row)
     await notify(db, user_id, f"Проверка задания {task_id}: {score} из {max_score}. Прогноз и расписание обновлены", "home")

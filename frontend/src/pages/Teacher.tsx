@@ -167,6 +167,12 @@ function Student({ id }: { id: number }) {
         ))}</div>
       </>)}
 
+      {s.diag && (s.diag.summary || (s.diag.gains?.length ?? 0) > 0) && (<>
+        <h3 className="stu-h">Итог диагностики</h3>
+        {s.diag.summary ? <p>{s.diag.summary}</p> : <ul className="da-facts">{(s.diag.facts ?? []).map((f, i) => <li key={i}>{f}</li>)}</ul>}
+        {(s.diag.blocks?.length ?? 0) > 0 && <p className="muted" style={{ fontSize: 13 }}>По блокам: {s.diag.blocks!.map((b) => `${b.name} ${b.pct}%`).join(' · ')}</p>}
+        {(s.diag.gains?.length ?? 0) > 0 && <p style={{ fontSize: 14 }}><b>Быстрее всего баллы:</b> {s.diag.gains!.slice(0, 4).map((g) => `${g.task} (${g.why})`).join('; ')}</p>}
+      </>)}
       {s.diag && (
         <details className="stu-d"><summary>Ответы диагностики{s.diag.mode === 'mock' ? ' (пробник)' : ''}</summary>
           <div className="stu-list">{s.diag.items.map((x) => (

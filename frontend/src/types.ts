@@ -157,6 +157,7 @@ export interface PlanDay { date: string; rest?: boolean; past?: boolean; mock?: 
 export type RouteBasis = 'path' | 'diag' | 'practice' | 'start'
 export interface Dashboard {
   exam: ExamInfo
+  redo?: { due: number; total: number; done: number }
   diag_done?: boolean
   /** what the schedule rests on: a diagnostic, answers and photo checks, or nothing yet */
   route_basis?: RouteBasis
@@ -225,12 +226,26 @@ export interface DiagWork { mode: 'photo' | 'dont_know' | 'oral' | null; status:
 export interface DiagRun {
   id: number; mode: 'first' | 'mock'; variant: number; position: number; answers: Record<string, string>; items: DiagItem[]; exam: ExamInfo
   work: Record<string, DiagWork>; llm_ready: boolean
+  /** a mock in exam conditions: minutes in all and seconds left */
+  exam_mode?: { limit: number; left: number } | null
 }
 export interface DiagResult {
   pts: number; right: number; of: number; mode: 'first' | 'mock'; value: number; prev: number | null; exam: ExamInfo
   strong: string[]; weak: string[]; root: string | null; root_name: string | null; basics?: boolean
   plan: { studied: number; days: number; min: number }; mocks: number
+  id?: number; analytics?: DiagAnalytics
 }
+export interface DiagRow {
+  id: string; n: number | null; task: string; name: string; part: number; block: string; kind: string; label: string; note: string
+  errors: string[]; pts: number; max: number; answer: string | null; right: string | null; photo: boolean; topics: string[]
+}
+export interface DiagAnalytics {
+  rows: DiagRow[]; counts: Record<string, number>; blocks: { name: string; pts: number; max: number; pct: number }[]
+  part1: { pts: number; max: number }; part2: { pts: number; max: number } | null
+  gains: { task: string; name: string; why: string; pts: number; kind: string; part: number }[]
+  advice: { kind: string; text: string; tasks: string[] }[]; facts: string[]; summary: string | null
+}
+export interface DiagListItem { id: number; mode: 'first' | 'mock'; date: string | null; value: number | null; right: number | null; of: number | null }
 
 export interface NotificationItem { id: number; text: string; go: string | null; read: boolean; created_at: string | null }
 export interface ChatMsg { role: 'user' | 'assistant'; content: string }
@@ -249,7 +264,8 @@ export interface StudentDetail {
     prac?: { ok: number; all: number } | null; check?: { score: number; max: number; date: string | null } | null; diag?: string | null }[]
   history: { date: string | null; value: number; source: string }[]
   target?: Target | null
-  diag?: { date: string | null; mode: string; right: number; count: number
+  diag?: { date: string | null; mode: string; right: number; count: number; summary?: string | null; facts?: string[]
+    blocks?: { name: string; pts: number; max: number; pct: number }[]; gains?: { task: string; name: string; why: string; pts: number }[]
     items: { id: string; task: string; n: number | null; q: string; status: string; note: string; answer: string | null; right: string | null; photo: boolean }[] } | null
   checks?: { id: number; n: number; score: number; max: number; date: string | null; errors: string[]; teacher: boolean }[]
   variants?: { title: string; score: number; max: number; date: string | null }[]
@@ -275,7 +291,7 @@ export interface TaskMapData {
   total: TmStat & { covered: number; of: number }
   can_upload: boolean
 }
-export interface TmAnswer { ok: boolean; first: boolean; answer: string; sol: string }
+export interface TmAnswer { ok: boolean; first: boolean; answer: string; sol: string; redo?: 'added' | 'next' | 'done' | 'again' | null }
 export interface SkillExplain { text: string | null; book: { id: number; title: string; authors: string }; pages: string[]; cached?: boolean; message?: string }
 
 // ---------- task bank ----------
@@ -318,4 +334,25 @@ export interface TeacherPaths {
 export interface Walkthrough {
   ref: string; task: number; q: string; title: string; proto_name: string; fig: string | null; source: 'ai' | 'solution'
   steps: { title: string; lines: string[]; text: string }[]; img?: string | null
+}
+
+// ---------- photo check of the first part ----------
+export interface Check1Result {
+  ok: boolean; right: string | null; keyed: boolean; method_ok: boolean; error: string; comment: string
+  kind: 'ok' | 'ok_doubt' | 'slip' | 'method'; first?: boolean; sol?: string
+}
+export interface Check1Item extends Check1Result { at: string; task: number; ref: string | null; problem: string; answer: string }
+export interface RedoItem extends PracticeItem { step: number; added: string; tries: number }
+
+// ---------- weekly report ----------
+export interface WeekReport {
+  from: string; to: string; active: number; active_days: string[]; solved: number; ok: number; checks: number; checks1: number; fixed: number
+  acc: number | null; forecast: number; delta: number | null; pct: boolean; max: number; target: Target | null; gap: number | null
+  redo_due: number; redo_total: number; focus: { task: string; name: string; p: number }[]; lines: string[]
+  parent_email?: string | null; smtp?: boolean
+}
+export interface ClassWeek {
+  from: string; to: string
+  classes: { id: number; name: string; students: { id: number; name: string; active: number; solved: number; ok: number; acc: number | null; checks: number; checks1: number
+    fixed: number; forecast: number; delta: number | null; pct: boolean; max: number; gap: number | null; redo_due: number; flag: string | null }[] }[]
 }

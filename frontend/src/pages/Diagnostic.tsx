@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useRef, useState } from 'react'
-import { finishDiagnostic, getDiagWork, saveAnswer, setDiagMode, skipDiagnostic, startDiagnostic, uploadDiagWork } from '../api/client'
+import { finishDiagnostic, getDiagWork, openDiagnostic, saveAnswer, setDiagMode, skipDiagnostic, startDiagnostic, uploadDiagWork } from '../api/client'
 import type { DiagItem, DiagResult, DiagRun, DiagWork, ExamInfo } from '../types'
 import { Icon, plural } from '../design/ui'
 
@@ -14,19 +14,32 @@ interface Props {
 
 export default function Diagnostic({ mode, required, exam, onFinished, onSkip, onPause }: Props) {
   const [run, setRun] = useState<DiagRun | null>(null)
-  const [phase, setPhase] = useState<'intro' | 'q' | 'finishing'>(mode === 'mock' ? 'q' : 'intro')
+  const [phase, setPhase] = useState<'intro' | 'mockintro' | 'q' | 'finishing'>(mode === 'mock' ? 'q' : 'intro')
   const [i, setI] = useState(0)
   const [err, setErr] = useState('')
+  const [deadline, setDeadline] = useState<number | null>(null)
 
+  const begin = (r: DiagRun) => {
+    setRun(r); setI(Math.min(r.position, r.items.length - 1))
+    if (r.exam_mode) setDeadline(Date.now() + r.exam_mode.left * 1000)
+  }
   useEffect(() => {
-    startDiagnostic(mode).then((r) => { setRun(r); setI(Math.min(r.position, r.items.length - 1)) }).catch((e) => setErr(String(e).replace('Error: ', '')))
-  }, [mode])
+    const fail = (e: unknown) => setErr(String(e).replace('Error: ', ''))
+    if (mode === 'mock') {
+      // an unfinished mock goes on; a new one: choose between a usual mock and exam conditions
+      openDiagnostic('mock').then((o) => { if (o.open) begin(o); else setPhase('mockintro') }).catch(fail)
+    } else startDiagnostic(mode).then(begin).catch(fail)
+  }, [mode]) // eslint-disable-line react-hooks/exhaustive-deps
+  const startMock = (examMode: boolean) => {
+    setErr('')
+    startDiagnostic('mock', examMode).then((r) => { begin(r); setPhase('q') }).catch((e) => setErr(String(e).replace('Error: ', '')))
+  }
 
   const [waitMsg, setWaitMsg] = useState('')
   const finish = async (r: DiagRun) => {
     setPhase('finishing'); setErr('')
     try {
-      await Promise.all(Object.entries(r.answers).map(([k, v], idx) => saveAnswer(r.id, k, v, idx + 1)))
+      await Promise.all(Object.entries(r.answers).map(([k, v], idx) => saveAnswer(r.id, k, v, idx + 1).catch(() => null)))
       // photos are checked in the background: wait until every check is done
       for (let k = 0; k < 120; k++) {
         const w = (await getDiagWork(r.id)).work
@@ -47,8 +60,17 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
   /** Answer saved, photo / «не знаю» set: go to the next task or finish. */
   const next = (r: DiagRun) => {
     if (i + 1 < r.items.length) { setI(i + 1); setErr(''); return }
+    if (r.exam_mode && !window.confirm('Завершить пробник? Пустые задания засчитаются как нерешённые.')) return
     finish(r)
   }
+  // exam conditions: when the time is over the mock is handed in as it is
+  const runRef = useRef(run)
+  runRef.current = run
+  useEffect(() => {
+    if (!deadline || phase !== 'q') return
+    const t = window.setInterval(() => { if (Date.now() >= deadline && runRef.current) { clearInterval(t); finish(runRef.current) } }, 1000)
+    return () => clearInterval(t)
+  }, [deadline, phase]) // eslint-disable-line react-hooks/exhaustive-deps
   const setAnswer = (value: string) => {
     if (!run) return
     const it = run.items[i]
@@ -59,6 +81,25 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
   }
   const setWork = (work: Record<string, DiagWork>) => setRun((r) => (r ? { ...r, work } : r))
 
+  if (phase === 'mockintro') {
+    const mins = exam.key === 'base' ? 180 : 235
+    return (
+      <Frame top={<button className="ob-link" onClick={() => onPause?.()}>Назад</button>}>
+        <div className="ob-intro">
+          <span className="ob-badge"><Icon n="flag" s={18} />Пробник</span>
+          <h1 className="ob-h">Как пишем пробник?</h1>
+          <div className="mock-pick">
+            <button className="mock-opt" onClick={() => startMock(false)}>
+              <b>Обычный</b><span>Как диагностика: к каждому заданию фото решения или «Не знаю», можно с паузами.</span></button>
+            {exam.key !== 'g10' && exam.key !== 'g58' && <button className="mock-opt gold" onClick={() => startMock(true)}>
+              <b>Как на экзамене · {Math.floor(mins / 60)} ч {mins % 60 ? `${mins % 60} мин` : ''}</b>
+              <span>Один таймер на всё, задания в любом порядке, можно оставить пустыми. Подсказок и пауз нет: время идёт, даже если выйти. В первой части достаточно ответа, во второй - фото решения. Разбор после конца.</span></button>}
+          </div>
+          {err && <p className="auth-msg">{err}</p>}
+        </div>
+      </Frame>
+    )
+  }
   if (err && !run) return <Frame><p className="auth-msg">{err}</p></Frame>
   if (!run) return <Frame><p className="ob-sub">Готовлю задания…</p></Frame>
 
@@ -91,20 +132,37 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
   if (phase === 'finishing') return <Frame><p className="ob-sub">{waitMsg || 'Считаю результат…'}</p></Frame>
 
   const it = run.items[i], n = run.items.length
+  const ex = !!run.exam_mode
+  const filled = (x: DiagItem) => (x.t === 'num' ? !!run.answers[x.id] && run.answers[x.id] !== '?' : run.work[x.id]?.mode === 'photo')
   return (
-    <Frame top={<button className="ob-link" onClick={() => { if (mode === 'mock') onPause?.(); else setPhase('intro') }}>Пауза</button>}>
+    <Frame top={<>
+      {ex && deadline && <Timer deadline={deadline} />}
+      {ex && <button className="ob-link" onClick={() => { if (window.confirm('Сдать пробник сейчас? Пустые задания засчитаются как нерешённые.')) finish(run) }}>Сдать</button>}
+      <button className="ob-link" onClick={() => { if (mode === 'mock') onPause?.(); else setPhase('intro') }}>{ex ? 'Выйти (время идёт)' : 'Пауза'}</button>
+    </>}>
       <div className="q-prog"><span style={{ width: `${(i / n) * 100}%` }} /></div>
+      {ex && <div className="q-grid" aria-label="Задания">{run.items.map((x, k) => (
+        <button key={x.id} className={`${k === i ? 'on' : ''} ${filled(x) ? 'done' : ''}`} onClick={() => { setI(k); setErr('') }} aria-label={`Задание ${x.n ?? k + 1}${filled(x) ? ', есть ответ' : ''}`}>{x.n ?? k + 1}</button>
+      ))}</div>}
       <p className="q-meta">{mode === 'mock' ? 'Пробник' : 'Диагностика'} · {i + 1} из {n}{it.n ? ` · ${it.t === 'self' ? 'часть 2' : 'часть 1'}, задание № ${it.n}` : ''}</p>
       <div className="q-text">{it.q.split('\n').map((l, k) => <span key={k}>{l}<br /></span>)}</div>
       {it.fig && <Figure k={it.fig} />}
       <p className="q-src">{it.src}</p>
       {it.t === 'self'
         ? <SelfAssess item={it} value={run.answers[it.id]} onPick={(v) => { const r = setAnswer(v); if (r) next(r) }} />
-        : <ItemWork key={it.id} run={run} item={it} llm={run.llm_ready} onAnswer={setAnswer} onWork={setWork} onNext={() => next(run)} />}
+        : <ItemWork key={it.id} run={run} item={it} llm={run.llm_ready} exam={ex} onAnswer={setAnswer} onWork={setWork} onNext={() => next(run)} />}
       {i > 0 && <button className="ob-link" onClick={() => { setI(i - 1); setErr('') }}>Назад</button>}
       {err && <p className="auth-msg">{err}</p>}
     </Frame>
   )
+}
+
+function Timer({ deadline }: { deadline: number }) {
+  const [now, setNow] = useState(Date.now())
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t) }, [])
+  const left = Math.max(0, Math.round((deadline - now) / 1000))
+  const h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60), sec = left % 60
+  return <span className={`q-timer ${left < 900 ? 'low' : ''}`} role="timer" aria-label={`Осталось ${h} ч ${m} мин`}>{h}:{String(m).padStart(2, '0')}:{String(sec).padStart(2, '0')}</span>
 }
 
 function Frame({ children, top }: { children: ReactNode; top?: ReactNode }) {
@@ -121,8 +179,8 @@ const STATUS: Record<string, string> = {
 }
 
 /** Answer (first part) + the photo of the solution, «решил устно» (task 8) or «не знаю». */
-function ItemWork({ run, item, llm, onAnswer, onWork, onNext }: {
-  run: DiagRun; item: DiagItem; llm: boolean
+function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext }: {
+  run: DiagRun; item: DiagItem; llm: boolean; exam?: boolean
   onAnswer: (v: string) => DiagRun | undefined; onWork: (w: Record<string, DiagWork>) => void; onNext: () => void
 }) {
   const num = item.t === 'num'
@@ -133,7 +191,8 @@ function ItemWork({ run, item, llm, onAnswer, onWork, onNext }: {
   const fileRef = useRef<HTMLInputElement>(null)
   const w = run.work[item.id]
   const mode = w?.mode && w.mode !== 'dont_know' ? w.mode : null
-  const ready = (!num || ans.trim() !== '') && (mode === 'photo' || mode === 'oral')
+  // in exam conditions any task can be left (blank = not solved), and the first part needs only the answer
+  const ready = exam || ((!num || ans.trim() !== '') && (mode === 'photo' || mode === 'oral'))
 
   const upload = async (files: FileList | null) => {
     if (!files?.length) return
@@ -151,7 +210,7 @@ function ItemWork({ run, item, llm, onAnswer, onWork, onNext }: {
     } catch (e) { setMsg(String(e).replace('Error: ', '')) }
     setBusy(false)
   }
-  const go = () => { if (num) onAnswer(ans.trim()); onNext() }
+  const go = () => { if (num && (ans.trim() || !exam)) onAnswer(ans.trim()); onNext() }
 
   return (
     <div className="dw">
@@ -162,7 +221,7 @@ function ItemWork({ run, item, llm, onAnswer, onWork, onNext }: {
         </form>
       )}
       <div className="dw-box">
-        <p className="dw-h">{num ? 'Решение' : `Решение (максимум ${item.max} б.)`}</p>
+        <p className="dw-h">{num ? (exam ? 'Решение (по желанию: по фото найдём, где ошибка)' : 'Решение') : `Решение (максимум ${item.max} б.)`}</p>
         <input ref={fileRef} type="file" accept="image/*,.pdf,.heic,.heif" multiple hidden onChange={(e) => upload(e.target.files)} />
         <div className="dw-btns">
           <button className={`btn ${mode === 'photo' ? 'btn-line' : 'btn-em'}`} disabled={busy} onClick={() => fileRef.current?.click()}>
@@ -177,8 +236,9 @@ function ItemWork({ run, item, llm, onAnswer, onWork, onNext }: {
       </div>
       <div className="dw-go">
         <button className="btn btn-em" disabled={!ready || busy} onClick={go}>Дальше</button>
-        <button className="ob-link" disabled={busy} onClick={() => pick('dont_know')}>{num ? 'Не знаю' : 'Не знаю, как решать'}</button>
+        {!exam && <button className="ob-link" disabled={busy} onClick={() => pick('dont_know')}>{num ? 'Не знаю' : 'Не знаю, как решать'}</button>}
       </div>
+      {exam && <p className="dw-hint">Можно пропустить и вернуться: номера заданий сверху.</p>}
       {!ready && <p className="dw-hint">{(num && !ans.trim() ? 'Впиши ответ и п' : 'П') + (item.oral ? 'рикрепи решение или отметь «Решил устно».' : 'рикрепи фото решения.')} Или нажми «Не знаю».</p>}
     </div>
   )

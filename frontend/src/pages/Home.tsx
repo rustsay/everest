@@ -39,6 +39,13 @@ export default function Home() {
         <Route d={d} />
       </div>
       <Rises d={d} />
+      {(d.redo?.due ?? 0) > 0 && (
+        <section className="card redo-cta" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 240px' }}><b>Работа над ошибками: {d.redo!.due} {plural(d.redo!.due, 'задача', 'задачи', 'задач')} на сегодня</b>
+            <p className="muted" style={{ fontSize: 13.5 }}>Задачи, где была ошибка. Реши заново: две верные подряд, и ошибка исправлена.</p></div>
+          <button className="btn btn-gold" onClick={() => { app.go('practice'); setTimeout(() => document.getElementById('redo')?.scrollIntoView({ behavior: 'smooth' }), 400) }}>Исправить</button>
+        </section>
+      )}
       <div className="grid2 stagger">
         {d.diag_done === false ? <DiagOffer /> : <RootCard d={d} />}
         <Daily d={d} />
@@ -126,6 +133,7 @@ function Hero({ d }: { d: Dashboard }) {
             : <>
               <button className="btn btn-sm btn-gold" onClick={() => app.openModal('Как считается прогноз', <Forecast d={d} />, true)}>Как считается</button>
               <button className="btn btn-sm" style={{ background: 'rgba(255,255,255,.1)', color: 'var(--on-em)' }} onClick={() => app.go({ v: 'task', id: String(rootTaskN(d) ?? 1) })}>Что поднимет балл</button>
+              <button className="btn btn-sm" style={{ background: 'rgba(255,255,255,.1)', color: 'var(--on-em)' }} onClick={() => app.go('diag')}>Разбор диагностики</button>
             </>}
         </div>
       </div>

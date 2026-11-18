@@ -306,13 +306,19 @@ export function Problem({ n, i, q, onDone }: { n: number; i: number; q: TmProble
       {q.check === 'photo' && !res && was == null ? (
         <><button className="btn btn-sm btn-line" style={{ marginTop: 10 }} onClick={() => app.go('check')}><Icon n="check" s={16} />Решить и проверить по фото</button><AnswerPic src={q.ans_img} /></>
       ) : res ? (
-        <p className="tm-res"><b>{res.ok ? 'Верно.' : `Неверно, ответ ${res.answer}.`}</b> {res.sol}{!res.first && <span className="muted"> В процент идёт первая попытка.</span>}</p>
+        <p className="tm-res"><b>{res.ok ? 'Верно.' : `Неверно, ответ ${res.answer}.`}</b> {res.sol}{!res.first && !res.redo && <span className="muted"> В процент идёт первая попытка.</span>}
+          {res.redo === 'added' && <span className="muted"> Задача вернётся в «Работе над ошибками» через 3 дня.</span>}
+          {res.redo === 'next' && <span className="muted"> Исправлено! Ещё раз через 7 дней, чтобы закрепить.</span>}
+          {res.redo === 'done' && <span className="muted"> Ошибка исправлена окончательно: +40 м.</span>}
+          {res.redo === 'again' && <span className="muted"> Пока не вышло: задача вернётся через 3 дня.</span>}</p>
       ) : was != null ? (
         <p className="tm-res"><b>{was ? 'Решено с первой попытки.' : 'С первой попытки не получилось.'}</b> {q.sol}</p>
       ) : (
         <form className="tm-ans" onSubmit={submit}>
           <input className="input" inputMode="decimal" placeholder="Ответ" value={v} onChange={(e) => setV(e.target.value)} aria-label={`Ответ к задаче ${i + 1}`} />
           <button className="btn btn-em" type="submit" disabled={busy || !v.trim()}>Проверить</button>
+          {n <= 12 && <button type="button" className="btn btn-ghost" title="Ответ и фото решения: найдём ошибку"
+            onClick={() => app.go({ v: 'check', id: `1-${n}-${/^[fb]\d+$/.test(q.id) ? q.id : `s${n}:${q.id}`}` })}><Icon n="check" s={16} />По фото</button>}
         </form>
       )}
     </div>
