@@ -745,3 +745,76 @@ body.reveal #view>*:nth-child(1){animation-delay:.35s}body.reveal #view>*:nth-ch
 .p-draft{border:1px dashed var(--line);color:var(--muted)}
 .path-row-txt{flex:1 1 200px;min-width:0}
 .path-row-btns{margin-left:auto}
+/* diagnostic: photo of the solution */
+.dw{display:grid;gap:12px;margin-top:6px}
+.dw-box{border:1px dashed var(--line);border-radius:14px;padding:12px 14px;background:var(--surface)}
+.dw-h{font-weight:800;margin:0 0 8px}
+.dw-btns{display:flex;gap:8px;flex-wrap:wrap}
+.dw-st{margin:8px 0 0;font-size:13.5px;color:var(--muted)}
+.dw-st.pend{color:var(--em)}
+.dw-go{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+.dw-hint{margin:0;font-size:13px;color:var(--muted)}
+/* goal and day blocks */
+.tgt{display:grid;gap:6px}
+.tgt-row{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.tgt .chip{height:38px;min-width:52px;justify-content:center}
+.tgt .chip.on{background:var(--em);border-color:var(--em);color:var(--on-em,#fff)}
+.tgt-in{width:96px;height:38px}
+.tgt-note{font-size:12.5px;margin:0}
+.wd-blk{display:inline-block;font-size:11px;font-weight:800;color:var(--em);background:var(--bg);border-radius:999px;padding:2px 8px;margin:0 0 6px}
+.res .tgt{justify-items:center}
+.res .tgt-note{color:rgba(255,255,255,.75)}
+.res .tgt .chip{background:rgba(255,255,255,.08);color:#fff;border-color:rgba(255,255,255,.25)}
+.res .tgt .chip.on{background:var(--gold);color:#16231F;border-color:var(--gold)}
+.res-goal{display:grid;gap:8px;justify-items:center;opacity:0;transition:opacity .5s;margin:6px 0 10px;text-align:center}
+.res-goal.on{opacity:1}
+.res-goal small{color:rgba(255,255,255,.7);max-width:440px}
+.path-steps{margin:8px 0 0;padding-left:20px;display:grid;gap:3px;font-size:13.5px}
+.path-steps li::marker{color:var(--muted)}
+/* board: drawing next to the lines */
+.board-mid{display:flex;gap:14px;align-items:flex-start}
+.board-mid .board-lines{flex:1;min-width:0}
+.board-fig{flex:none;width:min(38%,210px);height:auto;margin-top:4px}
+.board-fig.geo{display:grid;place-items:center}
+@media (max-width:640px){.board-mid{flex-direction:column-reverse}.board-fig{width:62%;align-self:center}}
+
+/* walkthroughs: typical card and bank problems */
+.vt-typ{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:14px;padding:14px;border-radius:14px;background:var(--em-soft)}
+.vt-typ b{display:block;margin:2px 0}
+.vt-item{display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;padding:14px 16px}
+.vt-fig{flex:0 0 96px;color:var(--ink)}
+.vt-q{flex:1 1 260px;min-width:0;margin:0;white-space:pre-wrap;line-height:1.5}
+.vt-act{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-left:auto}
+
+/* materials: page choice and richer slides */
+.mat-check{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:14px;cursor:pointer}
+.mat-check input{margin-top:4px;width:18px;height:18px;accent-color:var(--em)}
+.mat-check small{display:block;font-size:12.5px}
+.mat-paste summary{cursor:pointer;font-weight:700;font-size:14px;margin-bottom:8px}
+.slide-body{display:flex;gap:clamp(10px,2vw,24px);align-items:flex-start;flex:1;min-height:0}
+.slide-fig{flex:0 0 auto;width:clamp(110px,26%,240px);background:#F4F1E8;border-radius:14px;padding:10px;display:flex;justify-content:center}
+.slide-fig svg{width:100%;height:auto}
+.slide-f{margin:0 0 clamp(6px,1.2vw,12px);padding:clamp(8px,1.4vw,14px) clamp(10px,1.8vw,18px);background:#EAF4EF;border-left:4px solid #3E8A70;border-radius:10px;font-size:clamp(15px,2.2vw,24px);font-weight:800;color:#174A3C}
+.slide-add{margin:clamp(6px,1vw,10px) 0 0;padding:6px 10px;border:1px dashed #C99A3B;border-radius:10px;background:#FFF7E6;font-size:clamp(12px,1.5vw,16px);font-weight:600;color:#5A4513}
+.slide-title .slide-t{font-size:clamp(22px,3.6vw,40px)}
+.print-slides{display:none}
+@media print{
+  body>*:not(.print-slides){display:none!important}
+  body{background:#fff!important}
+  .print-slides{display:block}
+  .print-slides .slide{break-after:page;break-inside:avoid;box-shadow:none;margin:0 0 6mm;width:100%}
+}
+
+/* email code */
+.code-input{letter-spacing:.35em;font-variant-numeric:tabular-nums;text-align:center;font-weight:800;font-size:20px}
+.auth-link{background:none;border:0;padding:4px 0;font:inherit;font-size:14px;font-weight:700;color:var(--em-ink);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.code-input::placeholder{letter-spacing:normal;font-weight:600;font-size:15px}
+
+/* problems of the open FIPI bank are pictures */
+.prob-img{display:block;max-width:100%;height:auto;max-height:520px;margin-top:4px;border-radius:8px;background:#fff;padding:6px}
+.prob-img.sm{max-height:220px}
+.prob-img.ans{margin-top:8px;max-height:200px;border:1px solid var(--line)}
+.prob-q{display:flex;gap:6px;align-items:flex-start}
+.prob-wrap{display:block;flex:1;min-width:0;max-width:100%;cursor:zoom-in}
+:root[data-theme="dark"] .prob-img{filter:invert(.92) hue-rotate(180deg);background:#fff}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .prob-img{filter:invert(.92) hue-rotate(180deg)}}

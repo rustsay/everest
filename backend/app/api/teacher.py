@@ -9,6 +9,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -17,8 +18,8 @@ from app.config import NO_LLM, settings
 from app.auth.deps import get_current_user
 from app.db import crud_learning as crud
 from app.db.database import get_db
-from app.db.models import Assignment, ClassGroup, Material, TaskResult, TeacherReview, Textbook, User
-from app.learning import engine, llm, service
+from app.db.models import Assignment, ClassGroup, LearningPath, Material, TaskResult, TeacherReview, Textbook, User, Variant, VariantAttempt
+from app.learning import engine, llm, service, textbook_search
 from app.learning.content import EXAMS, NODE_BY_ID, NODES
 
 log = logging.getLogger(__name__)
@@ -112,13 +113,103 @@ async def student_detail(student_id: int, teacher: User = Depends(require_teache
     key = service.key_for(s)
     m = engine.build_model(row.data, key)
     hist = await service.history(db, student_id)
+    diag = await _diag_detail(db, s)
+    checks = _checks_detail(await crud.student_task_results(db, [student_id]))
+    prac = row.data.get("prac") or {}
+    last_check: dict[int, dict] = {}
+    for c in checks:
+        last_check.setdefault(c["n"], c)
+    diag_by_task = {it["task"]: it for it in (diag or {}).get("items", [])}
+    tasks = []
+    for t in m["tasks"]:
+        pr = prac.get(t["id"])
+        tasks.append({"id": t["id"], "n": t["n"], "name": t["name"], "p": t["p"], "max": t["max"], "risk": t["risk"],
+                      "prac": {"ok": pr[0], "all": pr[1]} if pr else None,
+                      "check": {k: last_check[t["n"]][k] for k in ("score", "max", "date")} if t["n"] in last_check else None,
+                      "diag": diag_by_task[t["id"]]["status"] if t["id"] in diag_by_task else None})
+    attempts = (await db.execute(select(VariantAttempt, Variant).join(Variant, Variant.id == VariantAttempt.variant_id)
+                                 .where(VariantAttempt.user_id == student_id).order_by(VariantAttempt.id.desc()))).all()
+    path = (await db.execute(select(LearningPath).where(LearningPath.student_id == student_id, LearningPath.status == "active")
+                             .order_by(LearningPath.id.desc()))).scalars().first()
+    stage = None
+    if path:
+        today = date.today().isoformat()
+        stage = next((st["title"] for st in path.data.get("stages", []) if st.get("from", "") <= today <= st.get("to", "")), None)
     await db.commit()
     return {"id": s.id, "name": s.name or s.email, "exam": EXAMS[key]["short"], "forecast": engine.forecast_value(m, key),
             "max": EXAMS[key]["max"], "pct": EXAMS[key]["pct"],
             "root": NODE_BY_ID[m["root"]]["name"] if m["root"] else None,
             "weak": [NODE_BY_ID[w]["name"] for w in m["weak"]],
-            "tasks": [{"id": t["id"], "n": t["n"], "name": t["name"], "p": t["p"], "max": t["max"], "risk": t["risk"]} for t in m["tasks"]],
-            "history": [{"date": h.created_at.date().isoformat() if h.created_at else None, "value": h.value, "source": h.source} for h in hist]}
+            "tasks": tasks,
+            "history": [{"date": h.created_at.date().isoformat() if h.created_at else None, "value": h.value, "source": h.source} for h in hist],
+            "target": row.data.get("target"), "diag": diag, "checks": checks[:20],
+            "variants": [{"title": v.title, "score": a.score, "max": a.max_score, "date": a.created_at.date().isoformat() if a.created_at else None}
+                         for a, v in attempts[:10]],
+            "path": {"id": path.id, "stage": stage, "count": len(path.data.get("stages", []))} if path else None,
+            "taskmap": {"done": len(row.data.get("tm") or {}), "ok": sum(1 for v in (row.data.get("tm") or {}).values() if v)}}
+
+
+def _diag_status(it: dict, answers: dict) -> tuple[str, str]:
+    """(short status, comment) of one diagnostic item for the teacher."""
+    ans = answers.get(it["id"])
+    w = (answers.get("_work") or {}).get(it["id"]) or {}
+    res = w.get("result") if w.get("status") == "done" else None
+    if w.get("mode") == "dont_know" or ans == "?":
+        return "не знаю", ""
+    if it["t"] == "num":
+        if not ans:
+            return "нет ответа", ""
+        ok = engine.same_ans(ans, it["a"])
+        note = ""
+        if res and w.get("mode") == "photo":
+            note = (res.get("comment") or "").strip()
+            if not ok and res.get("method_ok"):
+                return "ошибка в счёте", note
+            if ok and not res.get("method_ok"):
+                return "верно, решение спорное", note
+        elif w.get("mode") == "oral":
+            note = "решил устно"
+        return ("верно" if ok else "неверно"), note
+    if res and res.get("score") is not None:
+        return f"{res['score']} из {it.get('max') or 1}", (res.get("comment") or "").strip()
+    if w.get("status") in ("pending", "error"):
+        return "фото не проверено", ""
+    return "нет решения", ""
+
+
+async def _diag_detail(db: AsyncSession, s: User) -> dict | None:
+    d = await crud.last_finished_diagnostic(db, s.id)
+    if d is None:
+        return None
+    items = engine.diag_items(d.exam_key, s.grade, d.variant, (d.created_at or datetime.now()).date())
+    out = []
+    for it in items:
+        st, note = _diag_status(it, d.answers or {})
+        w = ((d.answers or {}).get("_work") or {}).get(it["id"]) or {}
+        out.append({"id": it["id"], "task": it["task"], "n": it.get("n"), "q": str(it.get("q", ""))[:300], "status": st, "note": note[:300],
+                    "answer": None if it["t"] != "num" else (d.answers or {}).get(it["id"]), "right": it.get("a"),
+                    "photo": w.get("mode") == "photo"})
+    good = {"верно", "верно, решение спорное"}
+    return {"date": d.created_at.date().isoformat() if d.created_at else None, "mode": d.mode, "items": out,
+            "right": sum(1 for x in out if x["status"] in good), "count": len(out)}
+
+
+def _checks_detail(results: list) -> list[dict]:
+    out = []
+    for _, r in reversed(results):
+        jd = r.judge_decision or {}
+        if r.status != "done" or "final_score" not in jd:
+            continue
+        errs: list[str] = []
+        for v in r.agent_verdicts or []:
+            for e in v.get("errors_found") or []:
+                e = str(e).strip()[:200]
+                if e and e not in errs:
+                    errs.append(e)
+        out.append({"id": r.id, "n": r.task_id, "score": jd["final_score"], "max": TASK_CONFIGS[r.task_id]["max_score"],
+                    "date": r.updated_at.date().isoformat() if r.updated_at else None, "errors": errs[:5],
+                    "teacher": jd.get("consensus_level") == "teacher"})
+    return out
 
 
 class ClassIn(BaseModel):
@@ -206,12 +297,43 @@ def _extract_text(name: str, data: bytes) -> str:
         except Exception as exc:  # scanned PDF without a text layer, broken file
             log.warning("pdf text extraction failed: %s", exc)
             return ""
-    raise HTTPException(400, "Учебник: .txt, .md или .pdf")
+    if ext == ".docx":
+        return docx_text(data)
+    raise HTTPException(400, "Учебник: .pdf, .docx, .txt или .md")
+
+
+def docx_text(data: bytes) -> str:
+    """Text of a Word file in reading order, tables included. Formulas typed in Word (OMML) are kept as text;
+    formulas pasted as pictures are lost."""
+    import zipfile
+    from xml.etree import ElementTree as ET
+    w = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    m = "{http://schemas.openxmlformats.org/officeDocument/2006/math}"
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            root = ET.fromstring(z.read("word/document.xml"))
+    except Exception as exc:  # noqa: BLE001 - not a docx, broken file
+        log.warning("docx text extraction failed: %s", exc)
+        raise HTTPException(400, "Не получилось прочитать файл Word. Сохраните его как .docx")
+    lines = []
+    for p in root.iter(f"{w}p"):
+        parts = []
+        for el in p.iter():
+            if el.tag in (f"{w}t", f"{m}t") and el.text:
+                parts.append(el.text)
+            elif el.tag == f"{w}tab":
+                parts.append(" ")
+            elif el.tag in (f"{w}br", f"{w}cr"):
+                parts.append("\n")
+        line = "".join(parts).strip()
+        if line:
+            lines.append(line)
+    return "\n".join(lines)
 
 
 def _book_view(b: Textbook) -> dict:
     return {"id": b.id, "title": b.title, "authors": b.authors, "grade": b.grade, "filename": b.filename,
-            "chars": len(b.text or "")}
+            "chars": len(b.text or ""), "pages": len(textbook_search.MARK.findall(b.text or ""))}
 
 
 @router.get("/textbooks")
@@ -257,8 +379,57 @@ class MaterialIn(BaseModel):
     textbook_id: int
     section: str = Field("", max_length=80)
     paragraph: str = Field("", max_length=60000)
+    pages: str = Field("", max_length=80)  # pages of the PDF file: "112-118, 120"
+    extra: bool = True  # the model may add what the textbook lacks, marked «Дополнение»
     who: str = Field("Класс", max_length=80)
     minutes: str = Field("45", max_length=4)
+
+
+MAX_PAGES = 30
+
+
+def parse_pages(spec: str) -> list[int]:
+    """'112-118, 120' -> [112..118, 120]; raises 400 on bad input or too many pages."""
+    out: list[int] = []
+    for part in re.split(r"[,;\s]+", re.sub(r"\s*[-–]\s*", "-", spec.strip())):
+        if not part:
+            continue
+        m = re.fullmatch(r"(\d{1,4})(?:[-–](\d{1,4}))?", part)
+        if not m:
+            raise HTTPException(400, f"Не понял страницы «{part}». Пишите так: 112-118, 120")
+        a, b = int(m.group(1)), int(m.group(2) or m.group(1))
+        if b < a:
+            a, b = b, a
+        out += [x for x in range(a, b + 1) if x not in out]
+        if len(out) > MAX_PAGES:
+            raise HTTPException(400, f"Не больше {MAX_PAGES} страниц за раз")
+    return out
+
+
+def material_text(book_text: str, body: MaterialIn) -> tuple[str, list[str]]:
+    """Text the material is built on and the labels of the pages used.
+    Pasted text > pages chosen by the teacher > pages found by the topic."""
+    if body.paragraph.strip():
+        return body.paragraph.strip(), []
+    ps = textbook_search.pages(book_text or "")
+    if not ps:
+        raise HTTPException(400, "В учебнике нет текста: укажите другой учебник или вставьте параграф вручную")
+    if body.pages.strip():
+        want = parse_pages(body.pages)
+        if not ps[0][0].startswith("стр."):
+            raise HTTPException(400, "В этом файле нет номеров страниц (это не PDF). Вставьте параграф вручную")
+        have = {int(lbl.split()[1]): (lbl, txt) for lbl, txt in ps}
+        got = [have[n] for n in want if n in have]
+        if not got:
+            raise HTTPException(400, f"В файле нет таких страниц или на них нет текста. Страниц в файле: {max(have)}")
+    else:
+        keys = [w for w in re.findall(r"[а-яёa-z]{4,}", body.topic.lower())]
+        keys = [k[:-2] if len(k) > 6 else k for k in keys]  # crude stem: «логарифмические» finds «логарифм»
+        _, got = textbook_search.best_pages(book_text, keys, top=6, limit=40000)
+        if not got:
+            raise HTTPException(400, "Не нашёл в учебнике страниц по этой теме. Укажите страницы вручную")
+    text = "\n".join(f"[[{lbl}]]\n{txt}" for lbl, txt in got)[:60000]
+    return text, [lbl for lbl, _ in got]
 
 
 def _exam_link(topic: str) -> str:
@@ -281,19 +452,19 @@ async def generate_material(body: MaterialIn, teacher: User = Depends(require_te
     b = await db.get(Textbook, body.textbook_id)
     if b is None or b.owner_id != teacher.id:
         raise HTTPException(404, "Учебник не найден")
-    text = body.paragraph.strip() or (b.text or "")
-    if not text.strip():
-        raise HTTPException(400, "Нужен текст учебника: вставьте параграф или загрузите учебник с текстом")
+    text, used = material_text(b.text or "", body)
     book = {"title": b.title, "authors": b.authors}
     link = _exam_link(body.topic)
+    section = body.section or (f"{used[0]}-{used[-1].split()[1]}" if len(used) > 1 else used[0] if used else "")
     try:
         if body.kind == "conspect":
-            content = {"text": await llm.conspect(body.topic, book, body.section, body.who, body.minutes, text, link)}
+            content = {"text": await llm.conspect(body.topic, book, section, body.who, body.minutes, text, link, body.extra)}
         else:
-            slides = await llm.slides(body.topic, book, body.section, body.who, body.minutes, text, link)
+            slides = await llm.slides(body.topic, book, section, body.who, body.minutes, text, link, body.extra)
             if not slides:
                 raise HTTPException(502, "Не получилось собрать слайды. Попробуйте ещё раз.")
             content = {"slides": slides}
+        content["pages"] = used
     except HTTPException:
         raise
     except Exception as exc:

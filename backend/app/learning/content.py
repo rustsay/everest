@@ -272,3 +272,13 @@ STAGES: list[tuple[int, str]] = [(0, "Подножие"), (2000, "Этап 1"), 
 
 # server-side rewards for client events (metres of height)
 EVENT_XP: dict[str, int] = {"hunt": 200, "chest": 100, "video_task": 40, "video13": 60, "break": 20, "route_block": 30}
+
+
+# Primary -> test points, ЕГЭ профиль. Scale of 2026 as published by Lenta.ru (17.04.2026); the official 2027 scale
+# is approved by Rosobrnadzor later. Used only to turn the student's goal in test points into primary points.
+PROF_SCALE_2026 = [0, 6, 11, 17, 22, 27, 34, 40, 46, 52, 58, 64, 70, 72, 74, 76, 78, 80, 82, 84, 86, 88, 90, 92, 94, 95, 96, 97, 98, 99, 100, 100, 100]
+
+
+def primary_for_test(test: int) -> int:
+    """The least primary score that gives at least `test` test points."""
+    return next((p for p, t in enumerate(PROF_SCALE_2026) if t >= test), 32)

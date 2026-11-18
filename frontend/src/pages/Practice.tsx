@@ -61,7 +61,7 @@ export default function Practice() {
         {data?.items.map((it, i) => (
           <div key={it.ref}>
             {(i === 0 || data.items[i - 1].proto !== it.proto) && <p className="label" style={{ margin: i ? '12px 0 6px 4px' : '0 0 6px 4px' }}>{it.proto_name || 'Без прототипа'}</p>}
-            <Problem n={it.task} i={i} q={{ id: it.pid, q: it.q, done: it.done, sol: it.sol, src: it.src, check: it.check }} onDone={load} />
+            <Problem n={it.task} i={i} q={{ id: it.pid, q: it.q, done: it.done, sol: it.sol, src: it.src, check: it.check, img: it.img, ans_img: it.ans_img }} onDone={load} />
           </div>
         ))}
       </div>

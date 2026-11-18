@@ -113,10 +113,15 @@ export function openWs(sessionId: string): WebSocket {
 import type {
   Me, Dashboard, PlanData, DiagRun, DiagResult, NotificationItem, ChatMsg, TeacherOverview, StudentDetail, Textbook, MaterialOut,
   TaskMapData, TmAnswer, TmFile, SkillExplain, BankItem, BankTask, PracticeItem, VariantSummary, VariantFull,
-  MyPath, PathOut, PathStage, TeacherPaths,
+  MyPath, PathOut, PathStage, TeacherPaths, DiagWork, Target, Walkthrough,
 } from '../types'
 
-export async function registerFull(body: { email: string; password: string; name?: string; role: string; grade?: string | null; exam?: string | null }) {
+export const authConfig = (): Promise<{ email_confirm: boolean }> => apiFetch('/auth/config')
+export const sendCode = (email: string, purpose: 'register' | 'reset'): Promise<{ sent: boolean }> =>
+  apiFetch('/auth/code', { method: 'POST', body: JSON.stringify({ email, purpose }) })
+export const resetPassword = (email: string, code: string, password: string) =>
+  apiFetch('/auth/reset', { method: 'POST', body: JSON.stringify({ email, code, password }) })
+export async function registerFull(body: { email: string; password: string; name?: string; role: string; grade?: string | null; exam?: string | null; code?: string }) {
   return apiFetch('/auth/register', { method: 'POST', body: JSON.stringify(body) })
 }
 export const demoLogin = () => apiFetch('/auth/demo', { method: 'POST' })
@@ -130,10 +135,21 @@ export const startDiagnostic = (mode: 'first' | 'mock'): Promise<DiagRun> =>
 export const saveAnswer = (id: number, item_id: string, answer: string, position: number) =>
   apiFetch(`/diagnostics/${id}/answer`, { method: 'PUT', body: JSON.stringify({ item_id, answer, position }) })
 export const finishDiagnostic = (id: number): Promise<DiagResult> => apiFetch(`/diagnostics/${id}/finish`, { method: 'POST' })
+export async function uploadDiagWork(id: number, item: string, files: File[]): Promise<{ work: Record<string, DiagWork> }> {
+  const form = new FormData()
+  files.forEach((f) => form.append('files', f))
+  const r = await fetch(`${BASE}/diagnostics/${id}/items/${encodeURIComponent(item)}/work`, { method: 'POST', headers: authHeader(), body: form })
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? `Ошибка загрузки (${r.status})`)
+  return r.json()
+}
+export const setDiagMode = (id: number, item: string, mode: 'dont_know' | 'oral' | 'clear'): Promise<{ work: Record<string, DiagWork> }> =>
+  apiFetch(`/diagnostics/${id}/items/${encodeURIComponent(item)}/mode`, { method: 'PUT', body: JSON.stringify({ mode }) })
+export const getDiagWork = (id: number): Promise<{ work: Record<string, DiagWork> }> => apiFetch(`/diagnostics/${id}/work`)
 export const skipDiagnostic = () => apiFetch('/diagnostics/skip', { method: 'POST' })
 
 export const getDashboard = (): Promise<Dashboard> => apiFetch('/dashboard')
 export const getPlan = (): Promise<PlanData> => apiFetch('/plan')
+export const setTarget = (test: number): Promise<{ target: Target }> => apiFetch('/me/target', { method: 'PUT', body: JSON.stringify({ test }) })
 
 // Educational trajectory
 const post = (body?: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body ?? {}) })
@@ -204,7 +220,7 @@ export async function addTextbook(title: string, authors: string, grade: string,
 }
 export const deleteTextbook = (id: number) => apiFetch(`/textbooks/${id}`, { method: 'DELETE' })
 export const generateMaterial = (body: {
-  kind: 'conspect' | 'slides'; topic: string; textbook_id: number; section: string; paragraph: string; who: string; minutes: string
+  kind: 'conspect' | 'slides'; topic: string; textbook_id: number; section: string; paragraph: string; pages: string; extra: boolean; who: string; minutes: string
 }): Promise<MaterialOut> => apiFetch('/materials/generate', { method: 'POST', body: JSON.stringify(body) })
 
 // ---------- task maps ----------
@@ -240,7 +256,7 @@ export const explainSkill = (id: string, textbook_id?: number): Promise<SkillExp
 
 // ---------- task bank ----------
 export const bankTasks = (): Promise<{ tasks: BankTask[] }> => apiFetch('/bank/protos')
-export const listBank = (status: 'draft' | 'approved', task?: number): Promise<{ items: BankItem[]; counts: Record<string, { approved: number; draft: number }> }> =>
+export const listBank = (status: 'draft' | 'approved', task?: number): Promise<{ items: BankItem[]; counts: Record<string, { approved: number; draft: number }>; fipi?: Record<string, number>; fipi_source?: string }> =>
   apiFetch(`/bank?status=${status}${task ? `&task=${task}` : ''}`)
 export const editBank = (id: number, body: Partial<Pick<BankItem, 'text' | 'answer' | 'solution' | 'proto' | 'status'>>): Promise<BankItem> =>
   apiFetch(`/bank/${id}`, { method: 'PUT', body: JSON.stringify(body) })
@@ -268,6 +284,8 @@ export async function downloadBankTemplate(): Promise<void> {
 }
 
 // ---------- practice bank and variants ----------
+export const getWalkthrough = (ref: string): Promise<Walkthrough> =>
+  apiFetch('/walkthrough', { method: 'POST', body: JSON.stringify({ ref }) })
 export const getPractice = (task?: number, proto?: string): Promise<{ items: PracticeItem[]; counts: Record<string, number>; tasks: BankTask[] }> =>
   apiFetch(`/practice?${task ? `task=${task}` : ''}${proto ? `&proto=${proto}` : ''}`)
 export const variantCandidates = (task: number): Promise<{ items: PracticeItem[] }> => apiFetch(`/variants/candidates?task=${task}`)

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getPlan, putSettings, togglePlanBlock } from '../api/client'
+import { getPlan, putSettings, setTarget, togglePlanBlock } from '../api/client'
 import { useApp } from '../app/store'
-import type { ExamInfo, PathStageInfo, PlanBlock, PlanData, RouteBasis } from '../types'
+import type { ExamInfo, Part2Info, PathStageInfo, PlanBlock, PlanData, RouteBasis, Target } from '../types'
 import { Icon, dkey, fmtD, plural, taskLabel } from '../design/ui'
 
 type App = ReturnType<typeof useApp>
@@ -40,6 +40,37 @@ export function RouteNote({ basis, exam, stage }: { basis?: RouteBasis; exam: Ex
   )
 }
 
+/** The goal in test points (profile exam): decides which tasks the schedule and the trajectory need. */
+export function TargetPick({ value, onSaved, compact }: { value?: Target | null; onSaved: (t: Target) => void; compact?: boolean }) {
+  const [v, setV] = useState(value?.test ? String(value.test) : '')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const save = async (n: number) => {
+    if (!n || n < 27 || n > 100) { setErr('От 27 до 100 тестовых баллов'); return }
+    setBusy(true); setErr('')
+    try { const r = await setTarget(n); setV(String(n)); onSaved(r.target) } catch (e) { setErr(String((e as Error).message || e)) }
+    setBusy(false)
+  }
+  return (
+    <div className={`tgt ${compact ? 'compact' : ''}`}>
+      <div className="tgt-row">
+        {[70, 80, 90, 100].map((n) => <button key={n} className={`chip ${String(n) === v ? 'on' : ''}`} aria-pressed={String(n) === v} disabled={busy} onClick={() => save(n)}>{n}</button>)}
+        <input className="input tgt-in" inputMode="numeric" placeholder="другой" value={[70, 80, 90, 100].includes(+v) ? '' : v} aria-label="Желаемый балл"
+          onChange={(e) => setV(e.target.value.replace(/\D/g, '').slice(0, 3))} onBlur={() => v && ![70, 80, 90, 100].includes(+v) && save(+v)} />
+      </div>
+      {value && <p className="muted tgt-note">{value.test} тестовых = {value.primary} первичных из 32 по шкале 2026 года (шкалу 2027 года утвердят позже).</p>}
+      {err && <p className="auth-msg">{err}</p>}
+    </div>
+  )
+}
+
+export function Part2Note({ p2, target }: { p2?: Part2Info; target?: Target | null }) {
+  if (!p2) return null
+  if (!p2.needed) return <p className="muted" style={{ fontSize: 13 }}>{target ? 'Для твоей цели хватает первой части: второй части в расписании нет.' : ''}</p>
+  return <p className="muted" style={{ fontSize: 13 }}>{p2.open_from ? `Вторая часть в расписании с ${fmtD(p2.open_from)}: ` : 'Вторая часть пока не в расписании: '}
+    она появляется, когда по диагностике решается хотя бы часть её заданий или первая часть освоена в среднем на 70%.</p>
+}
+
 /** Where a schedule block leads. */
 export function blockGo(b: PlanBlock, app: App) {
   if (b.k === 'mock') { window.dispatchEvent(new Event('everest:mock')); return }
@@ -52,6 +83,11 @@ export function blockGo(b: PlanBlock, app: App) {
   }
   if (b.k === 'school') { app.go({ v: 'chat', id: `Объясни тему «${b.title}» с примером. Начни с вопроса ко мне.` }); return }
   const t = b.tasks?.[0]
+  if (t && typeof t.n === 'number' && prof) {
+    // warm-up: problems from the bank; main task and the next step: the task map with its prototypes
+    if (b.k === 'warm') { app.go({ v: 'practice', id: String(t.n) }); return }
+    if (b.k === 'deep' || b.k === 'step') { app.go({ v: 'task', id: String(t.n) }); return }
+  }
   if (t && typeof t.n === 'number' && app.me.exam_info.key === 'prof') { app.go({ v: 'video', id: String(t.n) }); return }
   if (t) { app.go({ v: 'chat', id: `Задание «${t.name}»: с чего начать? Начни с вопроса ко мне.` }); return }
   app.go('check')
@@ -100,6 +136,9 @@ export default function Plan() {
           <div className="field" style={{ flex: '1 1 150px' }}><label htmlFor="plMin">Минут в день</label>
             <select id="plMin" className="input" value={p.settings.min} onChange={(e) => setPlan('min', +e.target.value)}>{[30, 45, 60, 90].map((n) => <option key={n} value={n}>{n}</option>)}</select></div>
         </div>
+        {ex.key === 'prof' && <div className="field" style={{ marginTop: 12 }}><span className="label">Цель: на сколько баллов хочу сдать</span>
+          <TargetPick value={p.target} onSaved={() => { load(); app.reload() }} /></div>}
+        <Part2Note p2={p.part2} target={p.target} />
         <RouteNote basis={p.route_basis} exam={ex} stage={p.path_stage} />
         <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>{ex.date_note}. Воскресенье всегда выходной. Занятия заканчиваются до 21:30, чтобы не сбивать сон.</p>
       </section>
@@ -114,6 +153,7 @@ export default function Plan() {
         <div className="week">{p.week.map((x) => (
           <div key={x.date} className={`wday ${x.date === today ? 'today' : ''} ${x.rest ? 'rest' : ''} ${x.past ? 'past' : ''}`}>
             <div className="wd-h"><b>{fmtD(x.date, { weekday: 'short' })}</b><span className="num">{+x.date.slice(8)}</span></div>
+            {!x.past && !x.rest && x.blocks[0]?.block && <span className="wd-blk">{x.blocks[0].block}</span>}
             {x.past ? <p className="muted" style={{ fontSize: 12.5 }}>прошло</p> : x.rest ? <p className="rest-t"><Icon n="moon" s={16} /> отдых</p> : x.blocks.map((b) => (
               <div key={b.key} className={`pblock k-${b.k}`}>
                 <button className={`tick ${b.done ? 'on' : ''}`} aria-pressed={!!b.done} aria-label={`Отметить: ${b.title}`} onClick={() => tick(b.key!)}>
@@ -126,7 +166,7 @@ export default function Plan() {
         ))}</div>
       </section>
       <section className="card">
-        <div className="card-h"><div><h2>Каждое {ex.pct ? 'тему' : 'задание'} по чуть-чуть</h2><p className="muted" style={{ fontSize: 13 }}>сколько раз встретится до {ex.pct ? 'конца года' : 'экзамена'}: слабые чаще, но ни одно не пропадает</p></div></div>
+        <div className="card-h"><div><h2>Каждое {ex.pct ? 'тему' : 'задание'} по чуть-чуть</h2><p className="muted" style={{ fontSize: 13 }}>сколько раз встретится до {ex.pct ? 'конца года' : 'экзамена'}: по блокам, от лёгких к трудным{p.target ? '; задания, которые не нужны для цели, не ставятся' : ''}</p></div></div>
         <div className="freq">{passed.map((t, i) => (
           <div key={t.id} className="fq"><span>{taskLabel(t)}</span>
             <span className="trk"><i style={{ width: `${((p.freq[t.id] ?? 0) / fmax) * 100}%`, background: t.risk ? 'var(--red)' : 'var(--em-3)', animationDelay: `${(i * 0.03).toFixed(2)}s` }} /></span>

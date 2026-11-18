@@ -5,7 +5,6 @@ No DB and no LLM imports, so it is easy to test.
 """
 from __future__ import annotations
 
-import math
 from copy import deepcopy
 from datetime import date, timedelta
 
@@ -54,18 +53,18 @@ def diag_items(key: str, grade: str | None, variant: int, today: date) -> list[d
             vs = PROF_P1[n]
             vi = variant % len(vs)
             it = vs[vi]
-            out.append({**it, "id": f"p{n}_{vi}", "task": f"T{n}", "n": n, "t": "num",
+            out.append({**it, "id": f"p{n}_{vi}", "task": f"T{n}", "n": n, "t": "num", "oral": n == 8,
                         "src": "по образцу банка ФИПИ" if it.get("own") else "демоверсия ЕГЭ 2027"})
         for t in EXAMS["prof"]["tasks"]:
             if t["part"] == 2:
-                out.append({"id": f"s{t['n']}", "t": "self", "task": t["id"], "n": t["n"], "q": PROF_P2[t["n"]],
+                out.append({"id": f"s{t['n']}", "t": "work", "task": t["id"], "n": t["n"], "q": PROF_P2[t["n"]],
                             "nodes": t["need"], "max": t["max"], "src": "демоверсия ЕГЭ 2027"})
     elif key == "oge":
         for n, it in OGE_P1:
             out.append({**it, "id": f"o{n}", "task": f"T{n}", "n": n, "t": "num", "src": "в формате ОГЭ"})
         for t in EXAMS["oge"]["tasks"]:
             if t["part"] == 2:
-                out.append({"id": f"os{t['n']}", "t": "self", "task": t["id"], "n": t["n"], "q": OGE_P2[t["n"]],
+                out.append({"id": f"os{t['n']}", "t": "work", "task": t["id"], "n": t["n"], "q": OGE_P2[t["n"]],
                             "nodes": t["need"], "max": t["max"], "src": "в формате ОГЭ"})
     elif key == "g10":
         topics = {t["id"]: t for t in EXAMS["g10"]["tasks"]}
@@ -108,21 +107,53 @@ def same_ans(v: str | None, a: str) -> bool:
 
 
 def score_item(it: dict, ans: str | None) -> float:
-    if it["t"] == "self":
+    if it["t"] in ("self", "work"):  # old self-assessment answers of unfinished diagnostics
         return {"full": 1.0, "part": 0.5}.get(ans or "", 0.0)
     return 1.0 if same_ans(ans, it["a"]) else 0.0
+
+
+def eval_item(it: dict, answers: dict) -> dict | None:
+    """One diagnostic item -> knowledge of its topics (k), chance to solve the task now (o) and exam points.
+    The photo of the solution separates a computing slip from not knowing the method. None = no evidence."""
+    ans = answers.get(it["id"])
+    w = (answers.get("_work") or {}).get(it["id"]) or {}
+    mode = w.get("mode")
+    if mode == "dont_know" or ans == "?":
+        # in the second part «не знаю» says nothing about the basic topics, only about the task itself
+        return {"k": 0.0 if it["t"] == "num" else None, "o": 0.0, "pts": 0.0}
+    res = w.get("result") if w.get("status") == "done" else None
+    if it["t"] == "num":
+        ok = same_ans(ans, it["a"])
+        if res and mode == "photo":
+            method = bool(res.get("method_ok"))
+            k, o = (1.0, 1.0) if ok and method else (0.4, 0.6) if ok else (0.7, 0.35) if method else (0.0, 0.0)
+        else:  # oral answer (task 8) or the photo could not be analysed: the answer alone
+            k = o = 1.0 if ok else 0.0
+        return {"k": k, "o": o, "pts": 1.0 if ok else 0.0}
+    mx = it.get("max") or 1
+    if res and res.get("score") is not None:
+        sc = max(0.0, min(float(res["score"]), mx))
+        return {"k": sc / mx, "o": sc / mx, "pts": sc}
+    if ans in ("full", "part", "none"):  # legacy self-assessment
+        s = score_item(it, ans)
+        return {"k": s, "o": s, "pts": (mx if s == 1 else 1 if s > 0 else 0)}
+    return None  # a photo that was not checked: no evidence either way
 
 
 def apply_diag(state: dict, items: list[dict], answers: dict, blend: bool) -> dict:
     """Update mastery / unknown / obs in `state` from one finished diagnostic or mock."""
     ev: dict[str, list[tuple[float, float]]] = {}
     obs: dict[str, list[float]] = {}
+    pts = 0.0
     for it in items:
-        s = score_item(it, answers.get(it["id"]))
-        w = 0.7 if it["t"] == "self" else 1.0
-        for nd in it["nodes"]:
-            ev.setdefault(nd, []).append((s, w))
-        obs.setdefault(it["task"], []).append(s)
+        e = eval_item(it, answers)
+        if e is None:
+            continue
+        pts += e["pts"]
+        if e["k"] is not None:
+            for nd in it["nodes"]:
+                ev.setdefault(nd, []).append((e["k"], 1.0 if it["t"] == "num" else 0.7))
+        obs.setdefault(it["task"], []).append(e["o"])
 
     mastery = state.setdefault("mastery", {})
     prev_unknown = set(state.get("unknown") or [])
@@ -138,7 +169,7 @@ def apply_diag(state: dict, items: list[dict], answers: dict, blend: bool) -> di
                 unknown.append(n["id"])
             continue
         m = sum(s * w for s, w in e) / sum(w for _, w in e)
-        val = round(0.12 + 0.8 * m, 2)
+        val = round(0.9 * m, 2)  # nothing solved -> 0, not a hidden floor
         if blend and n["id"] not in prev_unknown and n["id"] in mastery:
             mastery[n["id"]] = round(mastery[n["id"]] * 0.5 + val * 0.5, 2)
         else:
@@ -150,13 +181,9 @@ def apply_diag(state: dict, items: list[dict], answers: dict, blend: bool) -> di
         o = sum(arr) / len(arr)
         so[t] = (so[t] + o) / 2 if blend and t in so else o
 
-    pts = 0.0
-    for it in items:
-        s = score_item(it, answers.get(it["id"]))
-        pts += (it["max"] if s == 1 else 1 if s > 0 else 0) if it["t"] == "self" else s
     nums = [i for i in items if i["t"] == "num"]
-    right = sum(1 for i in nums if score_item(i, answers.get(i["id"])) == 1)
-    return {"pts": pts, "right": right, "of": len(nums)}
+    right = sum(1 for i in nums if same_ans(answers.get(i["id"]), i["a"]))
+    return {"pts": round(pts, 1), "right": right, "of": len(nums)}
 
 
 def observe_task(state: dict, task_id: str, fraction: float) -> None:
@@ -219,8 +246,12 @@ def build_model(state: dict, key: str, mastery: dict | None = None) -> dict:
         pm = min(E[k] for k in t["need"])
         o = obs.get(t["id"])
         pr = practice_share(state, t["id"])
-        if o is not None:  # photo check: weight 0.6; practice answers are mixed into it
-            p = 0.6 * ((o + pr[0]) / 2 if pr else o) + 0.4 * pm
+        if o is None and t["part"] == 2:
+            pm *= 0.3  # knowing the topics is far from solving a second-part task with full reasoning
+        if o is not None and t["part"] == 2:  # a checked solution or an honest «не знаю»: the task itself decides
+            p = (o + pr[0]) / 2 if pr else o
+        elif o is not None:  # the task was measured (diagnostic, photo check): weight 0.75; practice answers are mixed in
+            p = 0.75 * ((o + pr[0]) / 2 if pr else o) + 0.25 * pm
         elif pr:  # only short answers: the more of them, the more they weigh (1 answer 0.2, 4 answers 0.4, max 0.6)
             w = 0.6 * pr[1] / (pr[1] + 2)
             p = w * pr[0] + (1 - w) * pm
@@ -230,8 +261,15 @@ def build_model(state: dict, key: str, mastery: dict | None = None) -> dict:
         tasks.append({**t, "p": round(p, 4), "exp": round(t["max"] * p, 4), "risk": risk, "obs": o,
                       "prac": (state.get("prac") or {}).get(t["id"])})
     primary = sum(t["exp"] for t in tasks)
-    roots = [w for w in weak if all(p not in weak for p in NODE_BY_ID[w]["pre"])]
-    root = sorted(roots, key=lambda r: E[r])[0] if roots else None
+    order = {n["id"]: i for i, n in enumerate(NODES)}
+    tested = [n["id"] for n in NODES if n["id"] not in unk]
+    basics = bool(tested) and len(weak) >= 0.75 * len(tested)
+    if basics:  # almost everything failed: start from the first basic topic, not from a random weak one
+        root = next((n["id"] for n in NODES if not n["pre"] and (n["id"] in weak or n["id"] in unk)), None)
+    else:  # a weak topic whose foundations are fine; the most basic one first
+        roots = [w for w in weak if all(p not in weak and p not in unk for p in NODE_BY_ID[w]["pre"])]
+        key = lambda r: (NODE_BY_ID[r]["col"], E[r], order[r])  # noqa: E731
+        root = sorted(roots, key=key)[0] if roots else (sorted(weak, key=key)[0] if weak else None)
     root_set: set[str] = set()
     if root:
         root_set.add(root)
@@ -245,7 +283,7 @@ def build_model(state: dict, key: str, mastery: dict | None = None) -> dict:
     root_tasks = [t for t in tasks if any(k in root_set for k in t["need"]) and t["p"] < 0.95]
     at_risk = sum(t["max"] - t["exp"] for t in root_tasks)
     return {"E": E, "weak": sorted(weak), "threat": sorted(threat), "unknown": sorted(unk), "tasks": tasks,
-            "primary": primary, "root": root, "root_tasks": [t["id"] for t in root_tasks], "at_risk": round(at_risk, 2)}
+            "primary": primary, "root": root, "basics": basics, "root_tasks": [t["id"] for t in root_tasks], "at_risk": round(at_risk, 2)}
 
 
 def forecast_value(model: dict, key: str) -> int:
@@ -303,8 +341,72 @@ def path_stage(stages: list[dict] | None, d: date) -> int | None:
     return next((i for i, s in enumerate(stages or []) if s.get("from", "") <= ds <= s.get("to", "")), None)
 
 
+# ---------- schedule by blocks: geometry, algebra, probability, functions; from easy to hard ----------
+
+GOAL = 0.8  # a task counts as mastered from this estimate on
+_GEO, _PROB, _FUNC = {"PLANE", "STEREO", "TTRI"}, {"PROB"}, {"FUNC", "DER", "DERAPP"}
+BLOCK_NAMES = {"geo": "Геометрия", "alg": "Алгебра", "prob": "Вероятность", "func": "Функции и производная"}
+
+
+def task_block(t: dict) -> str:
+    need = set(t["need"])
+    return "geo" if need & _GEO else "prob" if need & _PROB else "func" if need & _FUNC else "alg"
+
+
+_EASIER = {"T11": 7.5}  # graphs of functions come before the derivative in the functions block
+
+
+def _rank(t: dict) -> float:
+    return _EASIER.get(t["id"], t["n"] if isinstance(t.get("n"), (int, float)) else 0)
+
+
+def base_topic(nid: str, E: dict, unknown: set | None = None) -> str:
+    """Go down to the most basic weak foundation: no point in logarithmic equations before powers.
+    unknown: untested topics that also count as weak (when almost nothing was solved)."""
+    while True:
+        weak_pre = [p for p in NODE_BY_ID[nid]["pre"] if E[p] < 0.4 or p in (unknown or set())]
+        if not weak_pre:
+            return nid
+        nid = min(weak_pre, key=lambda p: E[p])
+
+
+def needed_tasks(tasks: list[dict], target: int | None) -> list[dict]:
+    """Tasks the goal needs, easiest first: the whole first part, then the second part from the most attainable.
+    Each task is counted at 85% of its maximum, so the goal is reached with a margin."""
+    if not target:
+        return tasks
+    order = [t for t in tasks if t["part"] == 1] + sorted([t for t in tasks if t["part"] == 2], key=lambda t: (-t["att"], tasks.index(t)))
+    out, acc = [], 0.0
+    for t in order:
+        if acc >= target:
+            break
+        out.append(t)
+        acc += 0.85 * t["max"]
+    return [t for t in tasks if t in out]
+
+
+def part2_open(state: dict, tasks: list[dict], sim: dict[str, float]) -> bool:
+    """The second part enters the schedule only when the student shows he can solve it (a checked solution scored
+    above zero) or when the first part is mostly mastered (70% on average)."""
+    obs = state.get("obs") or {}
+    if any((obs.get(t["id"]) or 0) > 0 for t in tasks if t["part"] == 2):
+        return True
+    p1 = [sim[t["id"]] for t in tasks if t["part"] == 1]
+    return bool(p1) and sum(p1) / len(p1) >= 0.7
+
+
+def _protos(t: dict) -> list[dict]:
+    if not isinstance(t.get("n"), int):
+        return []
+    from app.learning.taskmaps import TASK_MAPS
+    return (TASK_MAPS.get(t["n"]) or {}).get("protos") or []
+
+
 def build_plan(state: dict, key: str, today: date, stages: list[dict] | None = None) -> dict:
-    """stages: the active educational trajectory; during a stage its tasks come three times as often."""
+    """Daily schedule. Each study day belongs to one block (geometry, algebra, probability, functions); inside the block
+    the first task that is not mastered yet is studied, prototype after prototype, then the next, harder task.
+    The second part waits until the student can solve it. The goal (test points) decides which tasks are needed.
+    stages: the active educational trajectory; during a stage only its tasks are studied."""
     ex = EXAMS[key]
     ps = state.get("plan") or {}
     model = build_model(state, key)
@@ -312,104 +414,91 @@ def build_plan(state: dict, key: str, today: date, stages: list[dict] | None = N
     total_days = max(7, (end - today).days)
     mins = int(ps.get("min") or 45)
     study = DAYSETS.get(int(ps.get("days") or 5), DAYSETS[5])
-    tasks = model["tasks"]
-    passed = [t for t in tasks if school_passed(t.get("from"), today)]
-    future = [t for t in tasks if not school_passed(t.get("from"), today)]
-    p1 = [t for t in passed if t["part"] == 1]
-    p2 = [t for t in passed if t["part"] == 2]
-
-    def w(t):
-        return 0.25 + (1 - min(1.0, t["p"])) * t["att"] * min(t["max"], 3)
-
-    stages = sorted([s for s in (stages or []) if s.get("tasks")], key=lambda s: s.get("from", ""))
-
-    def pickers(si: int | None):
-        focus = set(stages[si]["tasks"]) if si is not None else set()
-        k = lambda t: 3.0 if t["id"] in focus else 1.0  # noqa: E731
-        return (_Swrr(p1, [w(t) * k(t) for t in p1]) if p1 else None, _Swrr(p2, [w(t) * k(t) for t in p2]) if p2 else None)
-
-    cur_si = path_stage(stages, today)
-    pick1, pick2 = pickers(cur_si)
-
-    needed: set[str] = set()
-
-    def up(nid):
-        for p in NODE_BY_ID[nid]["pre"]:
-            needed.add(p)
-            up(p)
-
-    for t in tasks:
-        for k in t["need"]:
-            needed.add(k)
-            up(k)
+    target = (state.get("target") or {}).get("primary") if key == "prof" else None
+    all_tasks = [t for t in model["tasks"] if school_passed(t.get("from"), today)] or model["tasks"]
+    need = sorted(needed_tasks(all_tasks, target), key=lambda t: (t["part"], _rank(t)))
     E = model["E"]
-    # topics behind tasks that go badly in practice (2+ answers, under half right) come first after the root cause
-    hot: set[str] = set()
-    for t in tasks:
-        pr = practice_share(state, t["id"])
-        if pr and pr[1] >= 2 and pr[0] < 0.5:
-            hot.update(t["need"])
-    if cur_si is not None:  # topics of the current trajectory stage go first too
-        hot.update(k for t in tasks if t["id"] in set(stages[cur_si]["tasks"]) for k in t["need"])
-    order = [n for n in NODES if n["id"] in needed and E[n["id"]] < 0.8]
-    order.sort(key=lambda n: (0 if n["id"] == model["root"] else 1, 0 if n["id"] in hot else 1, n["col"], E[n["id"]]))
-    queue: list[str] = []
-    for n in order:
-        k = max(1, min(4, math.ceil((0.8 - E[n["id"]]) / 0.12)))
-        queue += [n["id"]] * k
-    q_len = len(queue)
-
-    wm, mm = round(mins * 0.2), round(mins * 0.55)
+    sim = {t["id"]: min(1.0, t["p"]) for t in model["tasks"]}
+    sessions: dict[str, int] = {}
+    stages = sorted([s for s in (stages or []) if s.get("tasks")], key=lambda s: s.get("from", ""))
+    block_order = list(dict.fromkeys(task_block(t) for t in need))
+    rr: dict[str, float] = {b: 0.0 for b in block_order}
+    wm, mm = round(mins * 0.2), round(mins * 0.5)
     tm = mins - wm - mm
     brief = lambda t: {"id": t["id"], "n": t["n"], "name": t["name"]}  # noqa: E731
+    label = lambda t: f"{task_label(t)}: {t['name']}" if t.get("n") else t["name"]  # noqa: E731
+    queue = sum(1 for t in need if sim[t["id"]] < GOAL)
     days, mock, studied = [], 0, 0
+    p2_first = None
     for i in range(total_days):
         d = today + timedelta(days=i)
         wd, week, left = d.weekday(), i // 7, total_days - i
         if wd not in study:
             days.append({"date": d.isoformat(), "rest": True, "blocks": []})
             continue
+        open2 = part2_open(state, need, sim)
+        if open2 and p2_first is None and any(t["part"] == 2 for t in need):
+            p2_first = d.isoformat()
         last_study = study[-1] == wd
         if last_study and ((week + 1) % 4 == 0 or left <= 14):
             mock += 1
             title = f"Контрольный замер № {mock}" if ex["pct"] else f"Пробник № {mock}"
-            sub = "все темы, по которым есть задания" if ex["pct"] else "полный вариант, ответы и самооценка второй части"
+            sub = ("все темы, по которым есть задания" if ex["pct"] else
+                   "полный вариант, вторая часть - с проверкой по фото" if open2 else "первая часть варианта целиком")
             days.append({"date": d.isoformat(), "mock": mock,
                          "blocks": [{"k": "mock", "min": mins if ex["pct"] else max(mins, 90), "title": title, "sub": sub}]})
             continue
         studied += 1
+        avail = [t for t in need if t["part"] == 1 or open2]
         si = path_stage(stages, d)
-        if si != cur_si:
-            cur_si = si
-            pick1, pick2 = pickers(si)
-        blocks: list[dict] = []
-        if pick1:
-            a = pick1()
-            b = pick1()
-            if b is a and len(p1) > 1:
-                b = pick1()
-            blocks.append({"k": "warm", "min": wm, "title": "Разминка",
-                           "sub": f"{task_label(a)}{' и ' + task_label(b) if b is not a else ''}: по 2 задачи",
-                           "tasks": [brief(a)] + ([brief(b)] if b is not a else [])})
-        if queue and left > 14:
-            nd = queue.pop(0)
-            blocks.append({"k": "topic", "min": mm, "title": NODE_BY_ID[nd]["name"], "sub": "конспект по учебнику, разбор, 6-8 задач", "node": nd})
-        elif pick2:
-            t = pick2()
-            blocks.append({"k": "deep", "min": mm, "title": f"{task_label(t)}: {t['name']}", "sub": "полное решение и проверка по фото", "tasks": [brief(t)]})
-        elif p1:
-            t = pick1()
-            title = t["name"] if not t.get("n") else f"{task_label(t)}: {t['name']}"
-            blocks.append({"k": "deep", "min": mm, "title": title, "sub": "задачи посложнее по теме", "tasks": [brief(t)]})
-        if pick2 and len(blocks) > 1 and blocks[1]["k"] != "deep":
-            t = pick2()
-            blocks.append({"k": "p2", "min": tm, "title": f"{task_label(t)}: {t['name']}", "sub": "один шаг решения второй части", "tasks": [brief(t)]})
-        elif future and key == "g10":
-            cur = passed[-1] if passed else None
-            blocks.append({"k": "school", "min": tm, "title": cur["name"] if cur else "Тема школы", "sub": "тема, которую сейчас проходят в школе"})
-        elif p1:
-            t = pick1()
-            blocks.append({"k": "rep", "min": tm, "title": f"Повторение: {task_label(t)}", "sub": "2-3 задачи, чтобы не забылось", "tasks": [brief(t)]})
+        if si is not None:  # the trajectory stage narrows the choice
+            focus = [t for t in avail if t["id"] in set(stages[si]["tasks"])]
+            avail = focus or avail
+        pending = [t for t in avail if sim[t["id"]] < GOAL] or sorted(avail, key=lambda t: sim[t["id"]])[:4]
+        blocks_today = [b for b in block_order if any(task_block(t) == b for t in pending)]
+        if not blocks_today:
+            days.append({"date": d.isoformat(), "blocks": []})
+            continue
+        weight = {b: sum(GOAL + 0.2 - sim[t["id"]] for t in pending if task_block(t) == b) for b in blocks_today}
+        tot = sum(weight.values())
+        for b in blocks_today:
+            rr[b] += weight[b]
+        blk = max(blocks_today, key=lambda b: rr[b])
+        rr[blk] -= tot
+        in_blk = [t for t in avail if task_block(t) == blk]
+        cur = next(t for t in pending if task_block(t) == blk)
+        k = sessions.get(cur["id"], 0)
+        protos = _protos(cur)
+        pr = protos[min(k, len(protos) - 1)] if protos else None
+        weak_node = base_topic(min(cur["need"], key=lambda n: E[n]), E, set(model["unknown"]) if model["basics"] else None)
+        main_sub = (f"прототип «{pr['name']}»: разбор и 6-8 задач" if pr else "разбор и 6-8 задач, от простых к сложным")
+        if k == 0 and (E[weak_node] < 0.4 or (model["basics"] and weak_node in model["unknown"])):
+            main_sub = f"сначала тема «{NODE_BY_ID[weak_node]['name']}» по учебнику, потом {main_sub}"
+        idx = in_blk.index(cur)
+        before = [t for t in in_blk[:idx] if t["part"] == 1 or open2]
+        warm_t = before[-1] if before else cur
+        after = [t for t in in_blk[idx + 1:] if sim[t["id"]] < GOAL]
+        blocks: list[dict] = [
+            {"k": "warm", "min": wm, "title": "Разминка", "block": BLOCK_NAMES[blk],
+             "sub": f"{task_label(warm_t)}: 2-3 {'знакомые' if warm_t is not cur else 'простые'} задачи", "tasks": [brief(warm_t)]},
+            {"k": "deep", "min": mm, "title": label(cur), "sub": main_sub, "tasks": [brief(cur)], "block": BLOCK_NAMES[blk],
+             **({"proto": pr["id"]} if pr else {}), **({"node": weak_node} if "сначала тема" in main_sub else {})},
+        ]
+        if after and k >= 1:
+            nxt = after[0]
+            blocks.append({"k": "step", "min": tm, "title": f"Шаг сложнее: {label(nxt)}", "block": BLOCK_NAMES[blk],
+                           "sub": "первые 2-3 задачи следующего задания" if nxt["part"] == 1 else "один пункт решения, проверка по фото",
+                           "tasks": [brief(nxt)]})
+            sim[nxt["id"]] = min(1.0, sim[nxt["id"]] + 0.04)
+        else:
+            nxt_pr = protos[min(k + 1, len(protos) - 1)] if protos else None
+            blocks.append({"k": "step", "min": tm, "title": f"Закрепление: {label(cur)}", "block": BLOCK_NAMES[blk],
+                           "sub": f"задачи посложнее, прототип «{nxt_pr['name']}»" if nxt_pr and nxt_pr is not pr else "задачи посложнее без подсказок",
+                           "tasks": [brief(cur)]})
+        sessions[cur["id"]] = k + 1
+        sim[cur["id"]] = min(1.0, sim[cur["id"]] + 0.12)
+        if warm_t is not cur:
+            sim[warm_t["id"]] = min(1.0, sim[warm_t["id"]] + 0.02)
         days.append({"date": d.isoformat(), "blocks": blocks})
 
     freq: dict[str, int] = {}
@@ -417,14 +506,16 @@ def build_plan(state: dict, key: str, today: date, stages: list[dict] | None = N
         for b in dd["blocks"]:
             for t in b.get("tasks") or []:
                 freq[t["id"]] = freq.get(t["id"], 0) + 1
-    phases_def = [("Фундамент", 0.3), ("Все задания по чуть-чуть", 0.35),
-                  ("Вторая часть" if any(t["part"] == 2 for t in tasks) else "Сложные темы", 0.25), ("Пробники", 0.1)]
+    has2 = any(t["part"] == 2 for t in need)
+    phases_def = [("Фундамент по блокам", 0.3), ("Вся первая часть", 0.35),
+                  ("Вторая часть" if has2 else "Закрепление и скорость", 0.25), ("Пробники", 0.1)]
     acc, phases = 0.0, []
     for name, f in phases_def:
         phases.append({"name": name, "share": f, "from": (today + timedelta(days=round(acc * total_days))).isoformat()})
         acc += f
-    return {"days": days, "total_days": total_days, "studied": studied, "mocks": mock, "queue": q_len,
-            "end": end.isoformat(), "freq": freq, "minutes": mins, "days_per_week": len(study), "phases": phases}
+    return {"days": days, "total_days": total_days, "studied": studied, "mocks": mock, "queue": queue,
+            "end": end.isoformat(), "freq": freq, "minutes": mins, "days_per_week": len(study), "phases": phases,
+            "needed": [t["id"] for t in need], "part2": {"needed": has2, "open_from": p2_first}, "target": state.get("target")}
 
 
 def plan_window(plan: dict, today: date) -> list[dict]:

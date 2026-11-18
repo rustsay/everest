@@ -333,3 +333,27 @@ class LearningPath(Base):
     approved_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     approved_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class ProblemWalkthrough(Base):
+    """A board walkthrough of one bank / task map problem, shared by all students (built once)."""
+    __tablename__ = "problem_walkthroughs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ref: Mapped[str] = mapped_column(String(40), unique=True, nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(12), nullable=False)  # ai | solution
+    steps: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class EmailCode(Base):
+    """A one-time code sent by email: confirm the address at registration or reset the password."""
+    __tablename__ = "email_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    purpose: Mapped[str] = mapped_column(String(10), nullable=False)  # register | reset
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)

@@ -1,6 +1,6 @@
-import { FormEvent, ReactNode, useEffect, useState } from 'react'
-import { finishDiagnostic, saveAnswer, skipDiagnostic, startDiagnostic } from '../api/client'
-import type { DiagItem, DiagResult, DiagRun, ExamInfo } from '../types'
+import { ReactNode, useEffect, useRef, useState } from 'react'
+import { finishDiagnostic, getDiagWork, saveAnswer, setDiagMode, skipDiagnostic, startDiagnostic, uploadDiagWork } from '../api/client'
+import type { DiagItem, DiagResult, DiagRun, DiagWork, ExamInfo } from '../types'
 import { Icon, plural } from '../design/ui'
 
 interface Props {
@@ -22,20 +22,42 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
     startDiagnostic(mode).then((r) => { setRun(r); setI(Math.min(r.position, r.items.length - 1)) }).catch((e) => setErr(String(e).replace('Error: ', '')))
   }, [mode])
 
-  const answer = async (value: string) => {
+  const [waitMsg, setWaitMsg] = useState('')
+  const finish = async (r: DiagRun) => {
+    setPhase('finishing'); setErr('')
+    try {
+      await Promise.all(Object.entries(r.answers).map(([k, v], idx) => saveAnswer(r.id, k, v, idx + 1)))
+      // photos are checked in the background: wait until every check is done
+      for (let k = 0; k < 120; k++) {
+        const w = (await getDiagWork(r.id)).work
+        const pend = Object.values(w).filter((x) => x.status === 'pending').length
+        if (!pend) break
+        setWaitMsg(`Проверяю решения по фото: осталось ${pend}`)
+        await new Promise((res) => setTimeout(res, 2500))
+      }
+      onFinished(await finishDiagnostic(r.id))
+    } catch (e) {
+      const msg = String(e).replace('Error: ', '')
+      setErr(msg); setPhase('q')
+      const m = msg.match(/заданиях: (\d+)/)
+      if (m) setI(Math.max(0, Number(m[1]) - 1))
+    }
+  }
+
+  /** Answer saved, photo / «не знаю» set: go to the next task or finish. */
+  const next = (r: DiagRun) => {
+    if (i + 1 < r.items.length) { setI(i + 1); setErr(''); return }
+    finish(r)
+  }
+  const setAnswer = (value: string) => {
     if (!run) return
     const it = run.items[i]
-    const answers = { ...run.answers, [it.id]: value }
-    setRun({ ...run, answers })
-    saveAnswer(run.id, it.id, value, i + 1).catch(() => { /* retried on finish: answers stay in memory */ })
-    if (i + 1 < run.items.length) { setI(i + 1); return }
-    setPhase('finishing')
-    try {
-      // make sure every answer reached the server before scoring
-      await Promise.all(Object.entries(answers).map(([k, v], idx) => saveAnswer(run.id, k, v, idx + 1)))
-      onFinished(await finishDiagnostic(run.id))
-    } catch (e) { setErr(String(e).replace('Error: ', '')); setPhase('q') }
+    const r = { ...run, answers: { ...run.answers, [it.id]: value } }
+    setRun(r)
+    saveAnswer(run.id, it.id, value, i + 1).catch(() => { /* retried on finish */ })
+    return r
   }
+  const setWork = (work: Record<string, DiagWork>) => setRun((r) => (r ? { ...r, work } : r))
 
   if (err && !run) return <Frame><p className="auth-msg">{err}</p></Frame>
   if (!run) return <Frame><p className="ob-sub">Готовлю задания…</p></Frame>
@@ -50,10 +72,11 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
           <h1 className="ob-h">Диагностика</h1>
           <p className="ob-sub">
             {exam.key === 'prof' ? 'Задания из демоверсии ЕГЭ 2027 года (ФИПИ): ' : exam.key === 'oge' ? 'Задания в формате ОГЭ: ' : exam.key === 'g10' ? 'Только темы, которые прошли с 1 сентября: ' : ''}
-            {nNum} {plural(nNum, 'задание', 'задания', 'заданий')} с ответом{nSelf ? ` и ${nSelf} ${plural(nSelf, 'задание', 'задания', 'заданий')} второй части, где честно оценишь себя` : ''}.
+            {nNum} {plural(nNum, 'задание', 'задания', 'заданий')} с ответом{nSelf ? ` и ${nSelf} ${plural(nSelf, 'задание', 'задания', 'заданий')} второй части` : ''}.
           </p>
           <ul className="ob-rules">
-            <li>Пиши ответ числом. Не знаешь - жми «Не знаю», это честнее, чем угадывать.</li>
+            <li>К каждому заданию прикрепи фото решения или нажми «Не знаю». {exam.key === 'prof' ? 'Только задание 8 можно отметить «Решил устно». ' : ''}По фото видно, где просто ошибка в счёте, а где непонятен способ.</li>
+            <li>Во второй части решение проверяется по критериям ФИПИ, как на экзамене.</li>
             <li>Правильные ответы не показываю до конца: это проверка, а не урок.</li>
             <li>Можно сделать паузу, прогресс сохранится.</li>
             <li>По ответам посчитаю прогноз, найду первопричину ошибок и соберу расписание.</li>
@@ -65,7 +88,7 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
     )
   }
 
-  if (phase === 'finishing') return <Frame><p className="ob-sub">Считаю результат…</p></Frame>
+  if (phase === 'finishing') return <Frame><p className="ob-sub">{waitMsg || 'Считаю результат…'}</p></Frame>
 
   const it = run.items[i], n = run.items.length
   return (
@@ -75,7 +98,10 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
       <div className="q-text">{it.q.split('\n').map((l, k) => <span key={k}>{l}<br /></span>)}</div>
       {it.fig && <Figure k={it.fig} />}
       <p className="q-src">{it.src}</p>
-      {it.t === 'self' ? <SelfAssess item={it} value={run.answers[it.id]} onPick={answer} /> : <NumAnswer key={it.id} initial={run.answers[it.id]} onAnswer={answer} />}
+      {it.t === 'self'
+        ? <SelfAssess item={it} value={run.answers[it.id]} onPick={(v) => { const r = setAnswer(v); if (r) next(r) }} />
+        : <ItemWork key={it.id} run={run} item={it} llm={run.llm_ready} onAnswer={setAnswer} onWork={setWork} onNext={() => next(run)} />}
+      {i > 0 && <button className="ob-link" onClick={() => { setI(i - 1); setErr('') }}>Назад</button>}
       {err && <p className="auth-msg">{err}</p>}
     </Frame>
   )
@@ -90,21 +116,71 @@ function Frame({ children, top }: { children: ReactNode; top?: ReactNode }) {
   )
 }
 
-function NumAnswer({ initial, onAnswer }: { initial?: string; onAnswer: (v: string) => void }) {
-  const submit = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const v = String(new FormData(e.currentTarget).get('ans') || '').trim()
-    if (v) onAnswer(v)
+const STATUS: Record<string, string> = {
+  pending: 'фото загружено, проверяю решение…', done: 'решение проверено', skipped: 'фото сохранено', error: 'фото сохранено, проверить не удалось',
+}
+
+/** Answer (first part) + the photo of the solution, «решил устно» (task 8) or «не знаю». */
+function ItemWork({ run, item, llm, onAnswer, onWork, onNext }: {
+  run: DiagRun; item: DiagItem; llm: boolean
+  onAnswer: (v: string) => DiagRun | undefined; onWork: (w: Record<string, DiagWork>) => void; onNext: () => void
+}) {
+  const num = item.t === 'num'
+  const init = run.answers[item.id]
+  const [ans, setAns] = useState(init && init !== '?' ? init : '')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const fileRef = useRef<HTMLInputElement>(null)
+  const w = run.work[item.id]
+  const mode = w?.mode && w.mode !== 'dont_know' ? w.mode : null
+  const ready = (!num || ans.trim() !== '') && (mode === 'photo' || mode === 'oral')
+
+  const upload = async (files: FileList | null) => {
+    if (!files?.length) return
+    setBusy(true); setMsg('')
+    try { onWork((await uploadDiagWork(run.id, item.id, Array.from(files))).work) } catch (e) { setMsg(String(e).replace('Error: ', '')) }
+    setBusy(false)
+    if (fileRef.current) fileRef.current.value = ''
   }
+  const pick = async (m: 'dont_know' | 'oral' | 'clear') => {
+    setBusy(true); setMsg('')
+    try {
+      const r = await setDiagMode(run.id, item.id, m)
+      onWork(r.work)
+      if (m === 'dont_know') { onAnswer('?'); onNext() }
+    } catch (e) { setMsg(String(e).replace('Error: ', '')) }
+    setBusy(false)
+  }
+  const go = () => { if (num) onAnswer(ans.trim()); onNext() }
+
   return (
-    <>
-      <form className="ob-form" onSubmit={submit}>
-        <label htmlFor="qIn" className="sr">Ответ</label>
-        <input id="qIn" name="ans" className="input ob-input" inputMode="decimal" autoComplete="off" placeholder="Ответ" defaultValue={initial && initial !== '?' ? initial : ''} autoFocus={innerWidth > 900} />
-        <button className="btn btn-em" type="submit">Дальше</button>
-      </form>
-      <button className="ob-link" onClick={() => onAnswer('?')}>Не знаю</button>
-    </>
+    <div className="dw">
+      {num && (
+        <form className="ob-form" onSubmit={(e) => { e.preventDefault(); if (ready) go() }}>
+          <label htmlFor="qIn" className="sr">Ответ</label>
+          <input id="qIn" className="input ob-input" inputMode="decimal" autoComplete="off" placeholder="Ответ" value={ans} onChange={(e) => setAns(e.target.value)} />
+        </form>
+      )}
+      <div className="dw-box">
+        <p className="dw-h">{num ? 'Решение' : `Решение (максимум ${item.max} б.)`}</p>
+        <input ref={fileRef} type="file" accept="image/*,.pdf,.heic,.heif" multiple hidden onChange={(e) => upload(e.target.files)} />
+        <div className="dw-btns">
+          <button className={`btn ${mode === 'photo' ? 'btn-line' : 'btn-em'}`} disabled={busy} onClick={() => fileRef.current?.click()}>
+            <Icon n="check" s={18} />{mode === 'photo' ? 'Заменить фото' : 'Прикрепить фото решения'}</button>
+          {item.oral && <button className={`btn ${mode === 'oral' ? 'btn-em' : 'btn-line'}`} disabled={busy} onClick={() => pick(mode === 'oral' ? 'clear' : 'oral')}>
+            {mode === 'oral' ? <Icon n="ok" s={18} /> : null}Решил устно</button>}
+        </div>
+        {mode === 'photo' && w && <p className={`dw-st ${w.status === 'pending' ? 'pend' : ''}`}>{w.files} {plural(w.files, 'страница', 'страницы', 'страниц')} · {STATUS[w.status ?? 'pending']}{w.comment && w.status !== 'pending' ? `: ${w.comment}` : ''}</p>}
+        {mode === 'photo' && !llm && <p className="dw-st">ИИ не подключён: решение сохранено, засчитается ответ.</p>}
+        {mode === 'oral' && <p className="dw-st">Отмечено: решено устно, засчитается ответ.</p>}
+        {msg && <p className="auth-msg">{msg}</p>}
+      </div>
+      <div className="dw-go">
+        <button className="btn btn-em" disabled={!ready || busy} onClick={go}>Дальше</button>
+        <button className="ob-link" disabled={busy} onClick={() => pick('dont_know')}>{num ? 'Не знаю' : 'Не знаю, как решать'}</button>
+      </div>
+      {!ready && <p className="dw-hint">{(num && !ans.trim() ? 'Впиши ответ и п' : 'П') + (item.oral ? 'рикрепи решение или отметь «Решил устно».' : 'рикрепи фото решения.')} Или нажми «Не знаю».</p>}
+    </div>
   )
 }
 

@@ -13,8 +13,9 @@ export default function Bank() {
   const [tab, setTab] = useState<'draft' | 'approved'>('draft')
   const [items, setItems] = useState<BankItem[] | null>(null)
   const [counts, setCounts] = useState<Record<string, { approved: number; draft: number }>>({})
+  const [fipi, setFipi] = useState<{ c: Record<string, number>; src: string } | null>(null)
   const [busy, setBusy] = useState(false)
-  const load = useCallback(() => listBank(tab, task).then((r) => { setItems(r.items); setCounts(r.counts) }).catch(() => setItems([])), [tab, task])
+  const load = useCallback(() => listBank(tab, task).then((r) => { setItems(r.items); setCounts(r.counts); if (r.fipi) setFipi({ c: r.fipi, src: r.fipi_source ?? '' }) }).catch(() => setItems([])), [tab, task])
   useEffect(() => { bankTasks().then((r) => setTasks(r.tasks)).catch(() => null) }, [])
   useEffect(() => { setItems(null); load() }, [load])
 
@@ -34,6 +35,14 @@ export default function Bank() {
     <>
       <div><p className="muted">Кабинет учителя</p><h1>Банк задач</h1></div>
       <NoLlm what="Разбор PDF и текстовых файлов" />
+      {fipi && (
+        <section className="card" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Icon n="book" s={24} />
+          <div style={{ flex: '1 1 260px' }}><b>Открытый банк ФИПИ уже загружен: {Object.values(fipi.c).reduce((a, b) => a + b, 0)} задач с ответами</b>
+            <p className="muted" style={{ fontSize: 13 }}>По заданию № {task}: {fipi.c[String(task)] ?? 0}. Ученики видят их в «Банке задач», на картах заданий и в разборах, вы можете брать их в варианты. Источник: {fipi.src}.</p></div>
+          <button className="btn btn-sm btn-line" onClick={() => app.go({ v: 'practice', id: String(task) })}>Посмотреть задачи</button>
+        </section>
+      )}
       <section className="card">
         <div className="card-h"><div><h2>Импорт задач</h2>
           <p className="muted" style={{ fontSize: 13 }}>Задачи попадают в черновики. На карте задания их видно только после проверки и публикации.</p></div></div>
@@ -43,12 +52,12 @@ export default function Bank() {
               {tasks.map((x) => <option key={x.n} value={x.n}>№ {x.n} · {x.name}</option>)}
             </select></div>
           <label className="btn btn-em" style={{ alignSelf: 'flex-end' }}><Icon n="plus" s={18} />{busy ? 'Разбираю файл…' : 'Загрузить файл'}
-            <input type="file" hidden accept=".json,.csv,.pdf,.txt,.md" disabled={busy} onChange={(e) => { doImport(e.target.files?.[0]); e.target.value = '' }} /></label>
+            <input type="file" hidden accept=".json,.csv,.pdf,.docx,.txt,.md" disabled={busy} onChange={(e) => { doImport(e.target.files?.[0]); e.target.value = '' }} /></label>
           <button className="btn btn-ghost" style={{ alignSelf: 'flex-end' }} onClick={() => downloadBankTemplate().catch((e) => app.toast(String(e)))}><Icon n="copy" s={18} />Шаблон CSV</button>
         </div>
         <ul className="tm-know" style={{ fontSize: 13.5 }}>
           <li><b>CSV или JSON</b> - точный импорт без ИИ: задание, прототип, условие, ответ, решение, источник. Удобно для выгрузки открытого банка ФИПИ или своих подборок.</li>
-          <li><b>PDF с текстом или TXT</b> (вариант, сборник) - помощник найдёт задачи этого задания и разложит по прототипам. Условие он переписывает дословно, ответ берёт только из файла. Всё равно проверьте перед публикацией.</li>
+          <li><b>PDF с текстом, Word (.docx) или TXT</b> (вариант, сборник; формулы-картинки из Word не читаются) - помощник найдёт задачи этого задания и разложит по прототипам. Условие он переписывает дословно, ответ берёт только из файла. Всё равно проверьте перед публикацией.</li>
           <li>Задачи с чужих сайтов загружайте, только если у вас есть право их использовать.</li>
         </ul>
       </section>

@@ -1,3 +1,4 @@
+import ProblemText, { AnswerPic } from '../components/ProblemText'
 import { FormEvent, ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { answerTaskMap, deleteTaskFile, downloadTaskFile, explainSkill, getTaskMap, listTaskMaps, uploadTaskFile } from '../api/client'
@@ -300,10 +301,10 @@ export function Problem({ n, i, q, onDone }: { n: number; i: number; q: TmProble
   const was = q.done
   return (
     <div className={`tm-prob ${res ? (res.ok ? 'ok' : 'no') : was === 1 ? 'ok' : was === 0 ? 'no' : ''}`}>
-      <p><b>{i + 1}.</b> {q.q}</p>
+      <div className="prob-q"><b>{i + 1}.</b> <ProblemText q={q.q} img={q.img} /></div>
       {q.src && <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>Источник: {q.src}</p>}
       {q.check === 'photo' && !res && was == null ? (
-        <button className="btn btn-sm btn-line" style={{ marginTop: 10 }} onClick={() => app.go('check')}><Icon n="check" s={16} />Решить и проверить по фото</button>
+        <><button className="btn btn-sm btn-line" style={{ marginTop: 10 }} onClick={() => app.go('check')}><Icon n="check" s={16} />Решить и проверить по фото</button><AnswerPic src={q.ans_img} /></>
       ) : res ? (
         <p className="tm-res"><b>{res.ok ? 'Верно.' : `Неверно, ответ ${res.answer}.`}</b> {res.sol}{!res.first && <span className="muted"> В процент идёт первая попытка.</span>}</p>
       ) : was != null ? (

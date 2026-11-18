@@ -49,25 +49,37 @@ async def _pool(db: AsyncSession, key: str) -> dict[str, list[dict]]:
 
 
 async def _build(db: AsyncSession, kind: str, key: str, who: str, model: dict, facts: list[dict], basis: list[str],
-                 extra: list[str], state: dict, done: dict | None) -> dict:
+                 extra: list[str], state: dict, done: dict | None, target: dict | None = None, p2_open: bool = False) -> dict:
     today = date.today()
     end, dw, mins = paths.plan_settings(state, key)
     end = paths.exam_end_ok(end, today)
     allowed = {t["id"]: t["name"] for t in model["tasks"]}
+    part2 = {t["id"] for t in model["tasks"] if t["part"] == 2}
+    extra = list(extra)
+    if target and key == "prof":
+        extra.append(f"Цель ученика: {target['test']} тестовых баллов = {target['primary']} первичных (шкала 2026 г.).")
+    if part2:
+        extra.append("Вторая часть: " + ("ученик уже решает часть заданий второй части." if p2_open else
+                                          "по диагностике пока не решается - сначала первая часть."))
     data = None
     if settings.llm_ready:
         try:
             raw = await llm.build_path(paths.prompt_facts(kind, who, key, today, end, facts, basis, extra, dw, mins), kind)
             data = paths.validate(raw, allowed, today, end)
-            if data:
+            if data and not p2_open and data["stages"]:  # the second part never goes first while it is not solved
+                data["stages"][0]["tasks"] = [t for t in data["stages"][0]["tasks"] if t not in part2]
+                data["stages"] = [s for s in data["stages"] if s["tasks"]]
+            if data and data["stages"]:
                 data["source"] = "ai"
+            else:
+                data = None
         except Exception:  # noqa: BLE001 - any failure of the model falls back to the rules
             log.exception("path: model failed")
         if data is None:
-            data = paths.rules_path(model, key, today, end, basis)
+            data = paths.rules_path(model, key, today, end, basis, target, p2_open)
             data["fallback"] = "ИИ не дал подходящего ответа, траектория собрана по правилам"
     else:
-        data = paths.rules_path(model, key, today, end, basis)
+        data = paths.rules_path(model, key, today, end, basis, target, p2_open)
     data["exam"], data["end"], data["built"] = key, end.isoformat(), today.isoformat()
     data["labels"] = {t["id"]: paths.label(t) for t in model["tasks"]}
     data["nums"] = {t["id"]: t.get("n") for t in model["tasks"]}
@@ -83,8 +95,9 @@ async def _for_student(db: AsyncSession, st: User) -> dict:
     basis = paths.basis_lines(diag, row.data)
     errs = await _photo_errors(db, [st.id])
     extra = (["Ошибки из проверки по фото:"] + [f"- {e}" for e in errs]) if errs else []
+    sim = {t["id"]: min(1.0, t["p"]) for t in model["tasks"]}
     return await _build(db, "student", key, st.name or "ученик", model, paths.task_facts(model, row.data), basis or ["данных пока нет"],
-                        extra, row.data, row.data.get("tm"))
+                        extra, row.data, row.data.get("tm"), row.data.get("target"), engine.part2_open(row.data, model["tasks"], sim))
 
 
 async def _for_class(db: AsyncSession, cg: ClassGroup, teacher: User) -> dict:
@@ -107,7 +120,9 @@ async def _for_class(db: AsyncSession, cg: ClassGroup, teacher: User) -> dict:
     errs = await _photo_errors(db, [s.id for s in same], 10)
     extra = (["Частые ошибки в проверке по фото:"] + [f"- {e}" for e in errs]) if errs else []
     teacher_row = await service.get_state(db, teacher.id)
-    return await _build(db, "class", key, f"класс {cg.name}", model, paths.task_facts(model, None), basis, extra, teacher_row.data, None)
+    sim = {t["id"]: min(1.0, t["p"]) for t in model["tasks"]}
+    return await _build(db, "class", key, f"класс {cg.name}", model, paths.task_facts(model, None), basis, extra, teacher_row.data, None,
+                        None, engine.part2_open({}, model["tasks"], sim))
 
 
 # ---------- view ----------
@@ -152,24 +167,22 @@ async def my_path(user: User = Depends(get_current_user), db: AsyncSession = Dep
         if t and (t.name or t.email) not in teachers:
             teachers.append(t.name or t.email)
     return {"mode": "class" if classes else "solo", "teachers": teachers, "follow": bool(row.data.get("path_follow", True)),
+            "building": bool(row.data.get("path_building")), "target": row.data.get("target"),
             "llm_ready": settings.llm_ready, "active": await _out(db, active), "pending": await _out(db, pending),
             "rejected": await _out(db, rejected), "class_path": await _out(db, class_path)}
 
 
-@router.post("/path/generate")
-async def generate_mine(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    if user.role != "student":
-        raise HTTPException(403, "Траектория ученика")
+async def _save_student_path(db: AsyncSession, user: User, data: dict) -> LearningPath:
+    """Solo student: the path is active at once. In a class: it waits for the teacher."""
     classes = await crud.student_classes(db, user.id)
-    data = await _for_student(db, user)
-    if classes:  # in a class the teacher accepts the trajectory
+    if classes:
         for old in (await db.execute(select(LearningPath).where(LearningPath.student_id == user.id, LearningPath.status == "pending"))).scalars():
             old.status = "archived"
         p = LearningPath(student_id=user.id, author_id=user.id, status="pending", data=data)
         db.add(p)
         for t_id in {c.teacher_id for c in classes}:
             await service.notify(db, t_id, f"{user.name or 'Ученик'} собрал образовательную траекторию: проверьте и утвердите", "paths")
-    else:  # on his own the student decides himself
+    else:
         for old in (await db.execute(select(LearningPath).where(LearningPath.student_id == user.id, LearningPath.status == "active"))).scalars():
             old.status = "archived"
         p = LearningPath(student_id=user.id, author_id=user.id, status="active", data=data, approved_at=datetime.utcnow())
@@ -177,9 +190,42 @@ async def generate_mine(user: User = Depends(get_current_user), db: AsyncSession
         row = await service.get_state(db, user.id)
         row.data["path_follow"] = True
         service.touch(row)
+    return p
+
+
+@router.post("/path/generate")
+async def generate_mine(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    if user.role != "student":
+        raise HTTPException(403, "Траектория ученика")
+    p = await _save_student_path(db, user, await _for_student(db, user))
     await db.commit()
     await db.refresh(p)
     return await _out(db, p)
+
+
+async def auto_build(user_id: int) -> None:
+    """In the background after the diagnostic or a new goal: the trajectory is built without a button."""
+    from app.db.database import AsyncSessionLocal
+    async with AsyncSessionLocal() as db:
+        user = await db.get(User, user_id)
+        if user is None or user.role != "student":
+            return
+        row = await service.get_state(db, user_id)
+        row.data["path_building"] = True
+        service.touch(row)
+        await db.commit()
+        try:
+            data = await _for_student(db, user)
+            await _save_student_path(db, user, data)
+            await service.notify(db, user_id, "Траектория собрана по диагностике и цели" if not await crud.student_classes(db, user_id)
+                                 else "Траектория собрана и отправлена учителю на утверждение", "path")
+        except Exception:  # noqa: BLE001
+            log.exception("auto path for user %s failed", user_id)
+        finally:
+            row = await service.get_state(db, user_id)
+            row.data["path_building"] = False
+            service.touch(row)
+            await db.commit()
 
 
 class FollowIn(BaseModel):
@@ -282,10 +328,11 @@ class StageIn(BaseModel):
     from_: str = Field(..., alias="from")
     to: str
     tasks: list[str] = Field(default_factory=list, max_length=8)
+    steps: list[str] = Field(default_factory=list, max_length=10)
 
 
 class EditIn(BaseModel):
-    stages: list[StageIn] | None = Field(None, max_length=6)
+    stages: list[StageIn] | None = Field(None, max_length=8)
     summary: str | None = Field(None, max_length=600)
     note: str | None = Field(None, max_length=1000)
 
@@ -301,7 +348,8 @@ async def teacher_edit(pid: int, body: EditIn, teacher: User = Depends(require_t
         allowed = {k: v for k, v in (data.get("labels") or {}).items()}
         end = date.fromisoformat(data.get("end") or EXAMS[data.get("exam", "prof")]["date"])
         raw = {"summary": data.get("summary", ""), "why": data.get("why", []),
-               "stages": [{"title": s.title, "goal": s.goal, "check": s.check, "from": s.from_, "to": s.to, "tasks": s.tasks} for s in body.stages]}
+               "stages": [{"title": s.title, "goal": s.goal, "check": s.check, "from": s.from_, "to": s.to, "tasks": s.tasks, "steps": s.steps}
+                          for s in body.stages]}
         checked = paths.validate(raw, allowed, min(today, date.fromisoformat(data.get("built") or today.isoformat())), end)
         if not checked:
             raise HTTPException(400, "Нужен хотя бы один этап с заданиями и датами до экзамена")

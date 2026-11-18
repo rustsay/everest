@@ -1,10 +1,12 @@
-"""One way to address any practice problem: "b12" = task bank row 12, "s1:r2" = built-in problem r2 of task 1."""
+"""One way to address any practice problem: "b12" = task bank row 12, "s1:r2" = built-in problem r2 of task 1,
+"f57" = problem 57 of the open FIPI bank (learning/fipi.py)."""
 from __future__ import annotations
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import BankProblem
+from app.learning import fipi
 from app.learning.taskmaps import PART2, TASK_MAPS
 
 
@@ -37,7 +39,7 @@ async def approved(db: AsyncSession, n: int | None = None, proto: str | None = N
     if proto:
         q = q.where(BankProblem.proto == proto)
     bank = [_bank_view(b) for b in (await db.execute(q.order_by(BankProblem.task_n, BankProblem.id))).scalars()]
-    items = [p for p in builtin(n) if not proto or p["proto"] == proto] + bank
+    items = [p for p in builtin(n) if not proto or p["proto"] == proto] + fipi.problems(n, proto) + bank
     return sorted(items, key=lambda p: p["task"])
 
 
@@ -49,9 +51,12 @@ async def resolve(db: AsyncSession, refs: list[str]) -> dict[str, dict]:
         for b in (await db.execute(select(BankProblem).where(BankProblem.id.in_(ids), BankProblem.status == "approved"))).scalars():
             out[f"b{b.id}"] = _bank_view(b)
     static = {p["ref"]: p for p in builtin()}
+    fp = fipi.by_ref()
     for r in refs:
         if r in static:
             out[r] = static[r]
+        elif r in fp:
+            out[r] = fp[r]
     return out
 
 

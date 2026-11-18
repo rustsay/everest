@@ -54,6 +54,7 @@ export function PathTimeline({ p }: { p: PathOut }) {
                     ? <button key={t} className="chip" title={d.labels?.[t]} onClick={() => app.go({ v: 'task', id: String(d.nums[t]) })}>{short(d, t)}</button>
                     : <span key={t} className="chip" title={d.labels?.[t]}>{short(d, t)}</span>)}
                 </div>
+                {(s.steps?.length ?? 0) > 0 && <ol className="path-steps">{s.steps!.map((x, k) => <li key={k}>{x}</li>)}</ol>}
                 {s.check && <p className="muted" style={{ fontSize: 13, marginTop: 6 }}><Icon n="flag" s={14} /> Конец этапа: {s.check}</p>}
                 {prof && (s.problems?.length ?? 0) > 0 && (
                   <button className="btn btn-sm btn-line" style={{ marginTop: 8 }} onClick={() => app.go({ v: 'practice', id: String(d.nums[s.tasks[0]] ?? 1) })}>
@@ -78,6 +79,11 @@ export default function PathPage() {
   const [err, setErr] = useState('')
   const load = useCallback(() => getMyPath().then(setM).catch((e) => setErr(String(e.message || e))), [])
   useEffect(() => { load() }, [load])
+  useEffect(() => { // the trajectory is being built after the diagnostic or a new goal: check again in a moment
+    if (!m?.building) return
+    const t = window.setTimeout(load, 3000)
+    return () => clearTimeout(t)
+  }, [m, load])
 
   const build = async () => {
     setBusy(true); setErr('')
@@ -99,6 +105,7 @@ export default function PathPage() {
           {busy ? 'Собираю…' : solo ? (m.active ? 'Собрать заново' : 'Собрать траекторию') : 'Собрать и отправить учителю'}</button>
       </div>
 
+      {m.building && <section className="card path-note"><b>Собираю траекторию</b> по диагностике и цели, это займёт до минуты…</section>}
       <section className="card path-status">
         {solo ? (
           <>
@@ -274,7 +281,7 @@ function PathEditor({ p, onClose, onDone }: { p: PathOut; onClose: () => void; o
     try { await f(); onDone(msg) } catch (e) { setErr(String((e as Error).message || e)) }
     setBusy(false)
   }
-  const save = () => teacherEditPath(p.id, { stages, note })
+  const save = () => teacherEditPath(p.id, { stages: stages.map((x) => ({ ...x, steps: (x.steps ?? []).map((t) => t.trim()).filter(Boolean) })), note })
   return (
     <section className="card path-editor">
       <div className="card-h">
@@ -322,6 +329,10 @@ function PathEditor({ p, onClose, onDone }: { p: PathOut; onClose: () => void; o
                       })}
                     </div>
                   </div>
+                  <div className="field"><label htmlFor={`ps${i}s`}>Шаги этапа (каждый с новой строки)</label>
+                    <textarea id={`ps${i}s`} className="input" rows={Math.min(8, Math.max(3, (s.steps?.length ?? 0) + 1))} maxLength={1500}
+                      value={(s.steps ?? []).join('\n')} placeholder={'Например:\nПрямоугольный треугольник: 5 задач из банка\nТрапеция: 3 задачи'}
+                      onChange={(e) => set(i, { steps: e.target.value.split('\n').slice(0, 10) })} /></div>
                   <div className="field"><label htmlFor={`ps${i}c`}>Чем проверить конец этапа</label>
                     <input id={`ps${i}c`} className="input" maxLength={200} value={s.check} onChange={(e) => set(i, { check: e.target.value })} /></div>
                   {stages.length > 1 && <button className="btn btn-sm btn-line" style={{ justifySelf: 'start' }} onClick={() => setStages(stages.filter((_, k) => k !== i))}><Icon n="trash" s={14} />Убрать этап</button>}
@@ -329,7 +340,7 @@ function PathEditor({ p, onClose, onDone }: { p: PathOut; onClose: () => void; o
               </li>
             ))}
           </ol>
-          {stages.length < 6 && (
+          {stages.length < 8 && (
             <button className="btn btn-sm btn-line" onClick={() => {
               const last = stages[stages.length - 1]
               setStages([...stages, { title: 'Новый этап', from: last?.to ?? todayIso(), to: p.data.end, goal: '', check: '', tasks: [] }])

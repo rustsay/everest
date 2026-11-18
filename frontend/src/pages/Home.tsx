@@ -291,16 +291,19 @@ function RootCard({ d }: { d: Dashboard }) {
   const root = M.root ? nodes[M.root] : null
   const rootTasks = M.tasks.filter((t) => M.root_tasks.includes(t.id))
   const title = !root ? 'Явной первопричины нет: все проверенные темы выше 50%'
+    : M.basics ? `Почти все задания пока не получились: начинаем с основ, с темы «${root.name}»`
     : ex.pct ? `«${root.name}» тянет вниз ${rootTasks.length} ${plural(rootTasks.length, 'тему', 'темы', 'тем')}`
       : `Около ${fmt1(M.at_risk)} ${ex.unit === 'б.' ? 'баллов' : 'первичных баллов'} теряется из-за темы «${root.name}»`
   return (
     <section className="card" aria-label="Первопричина" style={{ borderColor: 'var(--bad)', borderWidth: 1.5 }}>
       <div className="card-h"><span className="pill p-bad">Первопричина</span><span className="muted" style={{ fontSize: 13 }}>{d.history.length ? `по ${d.history.length} ${plural(d.history.length, 'замеру', 'замерам', 'замерам')}` : 'пока нет замеров'}</span></div>
       <h2 style={{ fontSize: 19 }}>{title}</h2>
-      <p className="muted" style={{ marginTop: 8 }}>{root
+      <p className="muted" style={{ marginTop: 8 }}>{root && M.basics
+        ? <>Когда не получилось почти ничего, выбирать «главную» слабую тему наугад нечестно. Начинаем с базовых тем по порядку, расписание идёт от лёгкого к сложному.</>
+        : root
         ? <>Слабое место: <b style={{ color: 'var(--ink)' }}>{root.name}</b> ({Math.round(root.m * 100)}%). От неё зависят: {rootTasks.slice(0, 8).map(taskLabel).join(', ') || 'задания выше по карте'}.</>
         : 'Продолжай по расписанию: оно уже чередует задания так, чтобы ничего не забылось.'}</p>
-      {root && <p style={{ marginTop: 10, fontWeight: 700 }}>Закрыть пробел: примерно <span style={{ color: 'var(--em-ink)' }}>+{ex.pct ? Math.round((d.gain / ex.max) * 100) + '%' : fmt1(d.gain)}</span> к прогнозу</p>}
+      {root && !M.basics && <p style={{ marginTop: 10, fontWeight: 700 }}>Закрыть пробел: примерно <span style={{ color: 'var(--em-ink)' }}>+{ex.pct ? Math.round((d.gain / ex.max) * 100) + '%' : fmt1(d.gain)}</span> к прогнозу</p>}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
         {rootTaskN(d) != null && <button className="btn btn-em" onClick={() => { sendEvent('ach', 'root').catch(() => null); app.go({ v: 'task', id: String(rootTaskN(d)) }) }}>Карта задания № {rootTaskN(d)}</button>}
         <button className="btn btn-line" onClick={() => app.openModal('Подробный разбор пробелов', <Analysis />, true)}>Подробный разбор</button>

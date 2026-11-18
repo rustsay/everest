@@ -14,6 +14,8 @@ from app.api.taskmaps import router as taskmaps_router
 from app.api.bank import router as bank_router
 from app.api.practice import router as practice_router
 from app.api.paths import router as paths_router
+from app.api.diag_work import router as diag_work_router
+from app.api.walkthrough import router as walkthrough_router
 from app.api.teacher import router as teacher_router
 from app.auth.router import router as auth_router
 from app.config import settings
@@ -68,3 +70,5 @@ app.include_router(taskmaps_router, prefix="/api")
 app.include_router(bank_router, prefix="/api")
 app.include_router(practice_router, prefix="/api")
 app.include_router(paths_router, prefix="/api")
+app.include_router(diag_work_router, prefix="/api")
+app.include_router(walkthrough_router, prefix="/api")

@@ -1,5 +1,5 @@
 import { FormEvent, useState } from 'react'
-import { demoLogin, login, putProfile, registerFull } from '../api/client'
+import { authConfig, demoLogin, login, putProfile, registerFull, resetPassword, sendCode } from '../api/client'
 import type { Me } from '../types'
 import { Icon, Orn, StarBot, Typed, WideMountains } from '../design/ui'
 
@@ -29,6 +29,12 @@ export default function Onboarding({ me, onToken, onProfile }: Props) {
   })
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
+  // email code: at registration (when the server asks for it) and for «Забыли пароль»
+  const [acc, setAcc] = useState<{ email: string; password: string } | null>(null)
+  const [mode, setMode] = useState<'login' | 'reset' | 'reset2'>('login')
+  const [resetEmail, setResetEmail] = useState('')
+  const [info, setInfo] = useState('')
+  const fail = (e2: unknown) => setErr(String(e2).replace('Error: ', ''))
 
   const show = (s: Step) => { setBack((b) => [...b, step]); setStep(s); setErr('') }
   const goBack = () => setBack((b) => { const nb = [...b]; const p = nb.pop(); if (p) setStep(p); return nb })
@@ -42,18 +48,57 @@ export default function Onboarding({ me, onToken, onProfile }: Props) {
     } else show('account')
   }
 
+  const register = async (email: string, password: string, code?: string) => {
+    const student = d.role === 'student'
+    const r = await registerFull({ email, password, name: d.name, role: d.role, grade: student ? d.grade : null, exam: student ? d.exam : null, code })
+    onToken(r.token, r.email)
+  }
+
   const createAccount = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const f = new FormData(e.currentTarget)
     const email = String(f.get('email') || '').trim().toLowerCase(), password = String(f.get('password') || '')
     if (!/^\S+@\S+\.\S+$/.test(email)) return setErr('Проверь почту: нужен адрес вида name@mail.ru')
     if (password.length < 6) return setErr('Пароль должен быть не короче 6 символов')
-    setBusy(true)
+    setBusy(true); setErr('')
     try {
-      const student = d.role === 'student'
-      const r = await registerFull({ email, password, name: d.name, role: d.role, grade: student ? d.grade : null, exam: student ? d.exam : null })
-      onToken(r.token, r.email)
-    } catch (e2) { setErr(String(e2).replace('Error: ', '')) } finally { setBusy(false) }
+      const cfg = await authConfig().catch(() => ({ email_confirm: true }))
+      if (!cfg.email_confirm) return await register(email, password)
+      await sendCode(email, 'register')
+      setAcc({ email, password })
+    } catch (e2) { fail(e2) } finally { setBusy(false) }
+  }
+
+  const confirmAccount = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    if (!acc) return
+    const code = String(new FormData(e.currentTarget).get('code') || '').replace(/\D/g, '')
+    if (code.length !== 6) return setErr('В коде 6 цифр')
+    setBusy(true); setErr('')
+    try { await register(acc.email, acc.password, code) } catch (e2) { fail(e2) } finally { setBusy(false) }
+  }
+
+  const resend = async (email: string, purpose: 'register' | 'reset') => {
+    setErr(''); setInfo('')
+    try { await sendCode(email, purpose); setInfo('Отправили новый код') } catch (e2) { fail(e2) }
+  }
+
+  const askReset = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const email = String(new FormData(e.currentTarget).get('email') || '').trim().toLowerCase()
+    if (!/^\S+@\S+\.\S+$/.test(email)) return setErr('Нужен адрес вида name@mail.ru')
+    setBusy(true); setErr(''); setInfo('')
+    try { await sendCode(email, 'reset'); setResetEmail(email); setMode('reset2') } catch (e2) { fail(e2) } finally { setBusy(false) }
+  }
+
+  const doReset = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const f = new FormData(e.currentTarget)
+    const code = String(f.get('code') || '').replace(/\D/g, ''), password = String(f.get('password') || '')
+    if (code.length !== 6) return setErr('В коде 6 цифр')
+    if (password.length < 6) return setErr('Пароль должен быть не короче 6 символов')
+    setBusy(true); setErr('')
+    try { const r = await resetPassword(resetEmail, code, password); onToken(r.token, r.email) } catch (e2) { fail(e2) } finally { setBusy(false) }
   }
 
   const doLogin = async (e: FormEvent<HTMLFormElement>) => {
@@ -133,6 +178,20 @@ export default function Onboarding({ me, onToken, onProfile }: Props) {
       <div className="ob-list">{opts.map(([v, l, s]) => <Choice key={v} label={l} sub={s} on={d.exam === v} onClick={() => afterExam(v)} />)}</div>
       {err && <p className="auth-msg">{err}</p>}
     </>)
+  } else if (step === 'account' && acc) {
+    body = (<>
+      <h1 className="ob-h">Проверь почту</h1>
+      <p className="ob-sub">Мы отправили код на <b>{acc.email}</b>. Если письма нет, загляни в «Спам».</p>
+      <form className="ob-form col" onSubmit={confirmAccount} noValidate>
+        <input name="code" className="input ob-input code-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="6 цифр из письма" autoFocus />
+        <p className="auth-msg" aria-live="polite">{err || info}</p>
+        <button className="btn btn-em" type="submit" disabled={busy}>{busy ? 'Создаю…' : 'Создать аккаунт'}</button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => resend(acc.email, 'register')}>Отправить код ещё раз</button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setAcc(null); setErr(''); setInfo('') }}>Другая почта</button>
+        </div>
+      </form>
+    </>)
   } else if (step === 'account') {
     body = (<>
       <h1 className="ob-h">Сохраним прогресс</h1>
@@ -141,7 +200,8 @@ export default function Onboarding({ me, onToken, onProfile }: Props) {
         <input name="email" className="input ob-input" type="email" autoComplete="email" placeholder="Почта" />
         <input name="password" className="input ob-input" type="password" autoComplete="new-password" placeholder="Пароль, не короче 6 символов" />
         <p className="auth-msg">{err}</p>
-        <button className="btn btn-em" type="submit" disabled={busy}>{busy ? 'Создаю…' : 'Создать аккаунт'}</button>
+        <button className="btn btn-em" type="submit" disabled={busy}>{busy ? 'Отправляю код…' : 'Дальше'}</button>
+        <p className="muted" style={{ fontSize: 13, textAlign: 'center' }}>На почту придёт код из 6 цифр, чтобы подтвердить адрес.</p>
       </form>
     </>)
   } else {
@@ -156,12 +216,39 @@ export default function Onboarding({ me, onToken, onProfile }: Props) {
           <Orn style={{ margin: '16px 0' }} />
           <div className="auth-hello"><StarBot size={58} /><Typed text="Привет! Я Звёздочка. Входи, продолжим подъём." speed={26} /></div>
           <h1 id="authT" className="sr">Вход</h1>
-          <form className="auth-form" onSubmit={doLogin} noValidate>
-            <div className="field"><label htmlFor="auEmail">Почта</label><input id="auEmail" name="email" className="input" type="email" autoComplete="email" placeholder="name@mail.ru" /></div>
-            <div className="field"><label htmlFor="auPw">Пароль</label><input id="auPw" name="password" className="input" type="password" autoComplete="current-password" /></div>
-            <p className="auth-msg" aria-live="polite">{err}</p>
-            <button className="btn btn-gold" type="submit" style={{ width: '100%' }} disabled={busy}>{busy ? 'Вхожу…' : 'Войти'}</button>
-          </form>
+          {mode === 'login' && (
+            <form className="auth-form" onSubmit={doLogin} noValidate>
+              <div className="field"><label htmlFor="auEmail">Почта</label><input id="auEmail" name="email" className="input" type="email" autoComplete="email" placeholder="name@mail.ru" /></div>
+              <div className="field"><label htmlFor="auPw">Пароль</label><input id="auPw" name="password" className="input" type="password" autoComplete="current-password" /></div>
+              <p className="auth-msg" aria-live="polite">{err}</p>
+              <button className="btn btn-gold" type="submit" style={{ width: '100%' }} disabled={busy}>{busy ? 'Вхожу…' : 'Войти'}</button>
+              <button type="button" className="auth-link" onClick={() => { setMode('reset'); setErr(''); setInfo('') }}>Забыли пароль?</button>
+            </form>
+          )}
+          {mode === 'reset' && (
+            <form className="auth-form" onSubmit={askReset} noValidate>
+              <p style={{ fontWeight: 700 }}>Восстановление пароля</p>
+              <p className="muted" style={{ fontSize: 14 }}>Пришлём код на почту, с которой вы регистрировались.</p>
+              <div className="field"><label htmlFor="rsEmail">Почта</label><input id="rsEmail" name="email" className="input" type="email" autoComplete="email" placeholder="name@mail.ru" /></div>
+              <p className="auth-msg" aria-live="polite">{err}</p>
+              <button className="btn btn-gold" type="submit" style={{ width: '100%' }} disabled={busy}>{busy ? 'Отправляю…' : 'Прислать код'}</button>
+              <button type="button" className="auth-link" onClick={() => { setMode('login'); setErr('') }}>Я вспомнил пароль</button>
+            </form>
+          )}
+          {mode === 'reset2' && (
+            <form className="auth-form" onSubmit={doReset} noValidate>
+              <p style={{ fontWeight: 700 }}>Новый пароль</p>
+              <p className="muted" style={{ fontSize: 14 }}>Если почта {resetEmail} зарегистрирована, на неё пришёл код. Письма нет - проверьте «Спам».</p>
+              <div className="field"><label htmlFor="rsCode">Код из письма</label><input id="rsCode" name="code" className="input code-input" inputMode="numeric" autoComplete="one-time-code" maxLength={6} placeholder="6 цифр" /></div>
+              <div className="field"><label htmlFor="rsPw">Новый пароль</label><input id="rsPw" name="password" className="input" type="password" autoComplete="new-password" placeholder="не короче 6 символов" /></div>
+              <p className="auth-msg" aria-live="polite">{err || info}</p>
+              <button className="btn btn-gold" type="submit" style={{ width: '100%' }} disabled={busy}>{busy ? 'Сохраняю…' : 'Сменить пароль и войти'}</button>
+              <div style={{ display: 'flex', gap: 8, justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                <button type="button" className="auth-link" onClick={() => resend(resetEmail, 'reset')}>Прислать код ещё раз</button>
+                <button type="button" className="auth-link" onClick={() => { setMode('login'); setErr(''); setInfo('') }}>Ко входу</button>
+              </div>
+            </form>
+          )}
           <button className="btn btn-line" style={{ width: '100%', marginTop: 10 }} onClick={() => { setBack([]); setStep('role'); setErr('') }}>Я здесь впервые</button>
         </div>
       </div>

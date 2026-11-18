@@ -19,6 +19,7 @@ from app.db.database import get_db
 from app.db.models import BankProblem, Diagnostic, SkillExplanation, TaskFile, Textbook, User
 from app.learning import engine, llm, service, textbook_search
 from app.learning.content import PROF_P1
+from app.learning import fipi
 from app.learning.taskmaps import AVAILABLE, PART2, SKILLS, TASK_MAPS, problem_index
 
 log = logging.getLogger(__name__)
@@ -72,6 +73,9 @@ async def _bank(db: AsyncSession, n: int) -> list[BankProblem]:
 def _problems(n: int, pr: dict, bank: list[BankProblem]) -> list[dict]:
     """Static problems of the prototype + approved bank problems, one shape: id, q, a, sol, skills."""
     out = [{"id": p["id"], "q": p["q"], "a": p["a"], "sol": p["sol"], "skills": p["skills"], "src": ""} for p in pr["problems"]]
+    for p in fipi.problems(n, pr["id"]):
+        out.append({"id": p["pid"], "q": p["q"], "a": p["a"], "sol": p["sol"], "skills": pr["skills"], "src": p["src"],
+                    "img": p["img"], "ans_img": p["ans_img"]})
     for b in bank:
         if b.proto == pr["id"]:
             out.append({"id": f"b{b.id}", "q": b.text, "a": b.answer, "sol": b.solution or "", "skills": pr["skills"], "src": b.source})
@@ -115,7 +119,7 @@ async def get_map(n: int, user: User = Depends(get_current_user), db: AsyncSessi
             "from_diag": sum(1 for proto, _ in diag if proto == pr["id"]),
             "problems": [{"id": p["id"], "q": p["q"], "done": done.get(p["id"]), "src": p["src"],
                           "check": "answer" if p["a"] else "photo",
-                          "sol": p["sol"] if p["id"] in done else None} for p in probs],
+                          "sol": p["sol"] if p["id"] in done else None, "img": p.get("img"), "ans_img": p.get("ans_img")} for p in probs],
             "files": [{"id": f.id, "name": f.name, "size": f.size, "mine": f.owner_id == user.id} for f in files if f.proto == pr["id"]],
         })
     return {
@@ -137,7 +141,12 @@ class AnswerIn(BaseModel):
 async def answer(n: int, body: AnswerIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     _map(n)
     pid = body.problem_id
-    if pid.startswith("b") and pid[1:].isdigit():
+    if pid.startswith("f") and pid[1:].isdigit():
+        fp = fipi.by_ref().get(pid)
+        if fp is None or fp["task"] != n:
+            raise HTTPException(404, "Нет такой задачи")
+        right, sol = fp["a"], fp["sol"]
+    elif pid.startswith("b") and pid[1:].isdigit():
         b = await db.get(BankProblem, int(pid[1:]))
         if b is None or b.status != "approved" or b.task_n != n:
             raise HTTPException(404, "Нет такой задачи")

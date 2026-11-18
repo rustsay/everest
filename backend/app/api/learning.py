@@ -133,7 +133,10 @@ async def put_settings(body: SettingsIn, user: User = Depends(get_current_user),
 # ---------- diagnostics ----------
 
 def _diag_view(d: Diagnostic, items: list[dict]) -> dict:
-    return {"id": d.id, "mode": d.mode, "variant": d.variant, "position": d.position, "answers": d.answers,
+    from app.api.diag_work import public_work
+    ans = dict(d.answers or {})
+    return {"id": d.id, "mode": d.mode, "variant": d.variant, "position": d.position, "work": public_work(ans),
+            "answers": {k: v for k, v in ans.items() if k != "_work"}, "llm_ready": settings.llm_ready,
             "items": [engine.public_item(i) for i in items], "exam": exam_info(d.exam_key)}
 
 
@@ -167,12 +170,20 @@ class AnswerIn(BaseModel):
 
 @router.put("/diagnostics/{diag_id}/answer")
 async def save_answer(diag_id: int, body: AnswerIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    from app.api.diag_work import _lock
     d = await db.get(Diagnostic, diag_id)
     if d is None or d.user_id != user.id or d.finished:
         raise HTTPException(404, "Диагностика не найдена")
-    d.answers = {**(d.answers or {}), body.item_id: body.answer}
-    d.position = max(0, body.position)
-    await db.commit()
+    async with _lock(diag_id):  # photo checks write into the same answers in the background
+        await db.refresh(d)
+        d.answers = {**(d.answers or {}), body.item_id: body.answer}
+        if body.answer != "?":  # a real answer cancels an earlier «не знаю»
+            w = dict((d.answers.get("_work") or {}))
+            if (w.get(body.item_id) or {}).get("mode") == "dont_know":
+                w.pop(body.item_id)
+                d.answers = {**d.answers, "_work": w}
+        d.position = max(0, body.position)
+        await db.commit()
     return {"ok": True}
 
 
@@ -183,6 +194,12 @@ async def finish_diagnostic(diag_id: int, user: User = Depends(get_current_user)
         raise HTTPException(404, "Диагностика не найдена")
     if d.finished and d.result:
         return d.result
+    from app.api.diag_work import missing
+    gaps, pending = missing(d, user)
+    if pending:
+        raise HTTPException(409, f"Ещё проверяем решения: {pending}. Подождите немного")
+    if gaps:
+        raise HTTPException(400, "Нет решения или «Не знаю» в заданиях: " + ", ".join(map(str, gaps[:10])))
     key = d.exam_key
     items = engine.diag_items(key, user.grade, d.variant, date.today())
     row = await service.get_state(db, user.id)
@@ -198,7 +215,7 @@ async def finish_diagnostic(diag_id: int, user: User = Depends(get_current_user)
     result = {
         **r, "mode": d.mode, "value": value, "prev": prev[-1].value if prev else None, "exam": exam_info(key),
         "strong": [NODE_BY_ID[n]["name"] for n in strong], "weak": [NODE_BY_ID[n]["name"] for n in weak],
-        "root": model["root"], "root_name": NODE_BY_ID[model["root"]]["name"] if model["root"] else None,
+        "root": model["root"], "root_name": NODE_BY_ID[model["root"]]["name"] if model["root"] else None, "basics": model["basics"],
         "plan": {"studied": plan["studied"], "days": plan["days_per_week"], "min": plan["minutes"]}, "mocks": row.data.get("mocks", 0),
     }
     d.finished, d.result = True, result
@@ -206,7 +223,31 @@ async def finish_diagnostic(diag_id: int, user: User = Depends(get_current_user)
     service.touch(row)
     await service.notify(db, user.id, "Расписание собрано по диагностике" if not blend else f"Пробник № {row.data['mocks']}: {value}", "plan")
     await db.commit()
+    if not blend:  # the trajectory follows the diagnostic at once (and again when the goal is set)
+        import asyncio
+        from app.api.paths import auto_build
+        asyncio.create_task(auto_build(user.id))
     return result
+
+
+class TargetIn(BaseModel):
+    test: int = Field(..., ge=27, le=100)
+
+
+@router.put("/me/target")
+async def set_target(body: TargetIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """The score the student wants (test points, profile exam): decides which tasks the schedule and the trajectory need."""
+    from app.learning.content import primary_for_test
+    if service.key_for(user) != "prof":
+        raise HTTPException(400, "Цель в тестовых баллах есть только для профильного ЕГЭ")
+    row = await service.get_state(db, user.id)
+    row.data["target"] = {"test": body.test, "primary": primary_for_test(body.test)}
+    service.touch(row)
+    await db.commit()
+    import asyncio
+    from app.api.paths import auto_build
+    asyncio.create_task(auto_build(user.id))
+    return {"target": row.data["target"]}
 
 
 @router.post("/diagnostics/skip")
@@ -271,7 +312,7 @@ async def dashboard(user: User = Depends(get_current_user), db: AsyncSession = D
         "exam": exam_info(key), "forecast": engine.forecast_value(model, key), "gain": engine.what_if(st, key),
         "model": {
             "nodes": [{**n, "m": round(model["E"][n["id"]], 3), "unknown": n["id"] in model["unknown"]} for n in NODES],
-            "tasks": model["tasks"], "root": model["root"], "root_tasks": model["root_tasks"], "at_risk": model["at_risk"],
+            "tasks": model["tasks"], "root": model["root"], "root_tasks": model["root_tasks"], "at_risk": model["at_risk"], "basics": model["basics"],
             "weak": model["weak"], "threat": model["threat"],
         },
         "history": [{"date": h.created_at.date().isoformat() if h.created_at else today.isoformat(), "value": h.value, "source": h.source} for h in hist],
@@ -288,7 +329,7 @@ async def dashboard(user: User = Depends(get_current_user), db: AsyncSession = D
         # without a diagnostic the forecast rests on default values: the client shows an invitation instead of a number
         "diag_done": await crud.last_finished_diagnostic(db, user.id) is not None,
         "route_basis": await service.route_basis(db, user.id, row, path),
-        "path_stage": _stage_info(path, today),
+        "path_stage": _stage_info(path, today), "target": st.get("target"), "part2": plan["part2"],
     }
 
 
@@ -325,7 +366,7 @@ async def get_plan(user: User = Depends(get_current_user), db: AsyncSession = De
         "tasks": [{"id": t["id"], "n": t["n"], "name": t["name"], "risk": t["risk"], "from": t.get("from")} for t in model["tasks"]],
         "root": model["root"], "root_name": NODE_BY_ID[model["root"]]["name"] if model["root"] else None,
         "route_basis": await service.route_basis(db, user.id, row, path),
-        "path_stage": _stage_info(path, today),
+        "path_stage": _stage_info(path, today), "target": row.data.get("target"), "part2": plan["part2"], "needed": plan["needed"],
     }
 
 
@@ -489,16 +530,40 @@ async def _student_context(db: AsyncSession, user: User) -> str:
     return f"Ученик {user.grade or '?'} класса, готовится: {EXAMS[key]['title']}. Слабые темы: {weak}; первопричина: {root}."
 
 
-async def _teacher_context(db: AsyncSession, user: User) -> str:
-    lines = []
+async def _teacher_context(db: AsyncSession, user: User, question: str = "") -> str:
+    from app.learning import textbook_search
+    lines, ids = [], []
     for cg in await crud.teacher_classes(db, user.id):
         for s in await crud.class_students(db, cg.id):
             row = await service.get_state(db, s.id)
             key = service.key_for(s)
             m = engine.build_model(row.data, key)
-            lines.append(f"{cg.name}: {s.name or s.email}, {EXAMS[key]['short']}, прогноз {engine.forecast_value(m, key)}, "
-                         f"первопричина {NODE_BY_ID[m['root']]['name'] if m['root'] else 'нет'}")
-    return "Данные учеников:\n" + ("\n".join(lines[:60]) if lines else "учеников в классах пока нет")
+            risk = [engine.task_label(t) for t in m["tasks"] if t["risk"]][:8]
+            tgt = row.data.get("target")
+            tgt_s = f", цель {tgt['test']}" if tgt else ""
+            lines.append(f"{cg.name}: {s.name or s.email} (id {s.id}), {EXAMS[key]['short']}, прогноз {engine.forecast_value(m, key)}"
+                         f"{tgt_s}, "
+                         f"первопричина {NODE_BY_ID[m['root']]['name'] if m['root'] else 'нет'}"
+                         f"{', под угрозой: ' + ', '.join(risk) if risk else ''}")
+            ids.append(s.id)
+    errs: dict[int, list[str]] = {}
+    for sid, r in await crud.student_task_results(db, ids):
+        for v in r.agent_verdicts or []:
+            for e in (v.get("errors_found") or [])[:1]:
+                errs.setdefault(sid, []).append(f"№ {r.task_id}: {str(e)[:120]}")
+    err_lines = [f"id {sid}: " + "; ".join(v[-3:]) for sid, v in errs.items()][:30]
+    books = [(b.title, b.text or "") for b in await crud.textbooks(db, user.id) if (b.text or "").strip()]
+    found = textbook_search.search_books(books, question) if books and question else []
+    out = "Данные учеников:\n" + ("\n".join(lines[:60]) if lines else "учеников в классах пока нет")
+    if err_lines:
+        out += "\nПоследние ошибки проверки по фото:\n" + "\n".join(err_lines)
+    if not books:
+        out += "\nУчебников учитель не загрузил: теорию отвечай по школьной программе с пометкой «Не из учебника:»."
+    elif found:
+        out += "\nСТРАНИЦЫ УЧЕБНИКОВ УЧИТЕЛЯ ПО ВОПРОСУ:\n" + "\n\n".join(f"[[{t}, {lbl}]]\n{body}" for t, lbl, body in found)
+    else:
+        out += f"\nВ учебниках учителя ({', '.join(t for t, _ in books)}) по этому вопросу страниц не нашлось."
+    return out
 
 
 @router.get("/chat/{kind}")
@@ -527,7 +592,7 @@ async def post_chat(kind: str, body: ChatIn, user: User = Depends(get_current_us
     db.add(ChatMessage(user_id=user.id, kind=kind, role="user", content=body.text + (" [приложено фото решения]" if body.image else "")))
     await db.commit()
     hist = [{"role": m.role, "content": m.content} for m in await crud.chat_history(db, user.id, kind)]
-    ctx = await (_teacher_context(db, user) if kind == "teacher" else _student_context(db, user))
+    ctx = await (_teacher_context(db, user, body.text) if kind == "teacher" else _student_context(db, user))
     try:
         reply = await llm.chat(kind, ctx, hist, body.image)
     except Exception as exc:  # LLM down: keep the question, tell the user

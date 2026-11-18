@@ -15,10 +15,12 @@ class Solution(BaseModel):
     title: str = Field(min_length=1, max_length=150)
     steps: list[SolutionStep] = Field(min_length=2, max_length=12)
 
-async def generate_steps(problem: str) -> dict:
+async def generate_steps(problem: str, images: list[str] | None = None) -> dict:
+    """images: base64 PNG/JPEG of the condition (and of the known answer), for problems stored as pictures."""
     messages = [
         {'role': 'system', 'content': 'Ты репетитор математики. Реши задачу корректно и объясни по этапам, обязательно проверь ответ. Верни только JSON: {"title":"Название темы","steps":[{"title":"Название шага","lines":["Короткая запись на доске","Формула или вычисление"],"text":"Понятное устное пояснение Звёздочки к этому шагу"}]}. От 3 до 9 шагов. На каждом шаге 1–4 коротких строки до 90 символов каждая; длинные вычисления разделяй на шаги. В lines только ключевые записи и формулы, в text связное пояснение до 100 слов. Используй обычные символы: √, π, ², дробь через /; без LaTeX, markdown, HTML, SVG и кода. Последний шаг — ответ и проверка. Не выдумывай недостающие условия; если данных недостаточно, объясни это по шагам.'},
-        {'role': 'user', 'content': problem},
+        {'role': 'user', 'content': problem if not images else [{'type': 'text', 'text': problem}]
+         + [{'type': 'image_url', 'image_url': {'url': f'data:image/png;base64,{b}'}} for b in images]},
     ]
     async with AsyncOpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key, timeout=150, max_retries=0) as client:
         for attempt in range(3):

@@ -24,8 +24,10 @@ MAX_ITEMS = 40
 def _public(p: dict, done: dict | None = None) -> dict:
     """A problem as a student sees it: no answer; solution only after the first attempt."""
     d = (done or {}).get(p["pid"])
-    return {"ref": p["ref"], "pid": p["pid"], "task": p["task"], "proto": p["proto"], "proto_name": p["proto_name"], "q": p["q"],
-            "src": p["src"], "check": "answer" if p["a"] else "photo", "done": d, "sol": p["sol"] if d is not None else None}
+    fig = next((x.get("fig") for x in (TASK_MAPS.get(p["task"]) or {}).get("protos", []) if x["id"] == p["proto"]), None)
+    return {"ref": p["ref"], "pid": p["pid"], "task": p["task"], "proto": p["proto"], "proto_name": p["proto_name"], "q": p["q"], "fig": fig,
+            "src": p["src"], "check": "answer" if p["a"] else "photo", "done": d, "sol": p["sol"] if d is not None else None,
+            "img": p.get("img"), "ans_img": p.get("ans_img")}
 
 
 # ---------- student: the bank ----------

@@ -17,6 +17,14 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_days: int = 30
 
+    # email codes (registration and «Забыли пароль»). No SMTP_HOST: the code is written to the backend log
+    email_confirm: bool = True
+    smtp_host: str = ""
+    smtp_port: int = 465
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+
     class Config:
         env_file = ".env"
 
@@ -24,6 +32,10 @@ class Settings(BaseSettings):
     def llm_ready(self) -> bool:
         url, key = self.llm_base_url.strip(), self.llm_api_key.strip()
         return bool(url and key) and "your-llm-server" not in url and key != "your-api-key"
+
+    @property
+    def smtp_ready(self) -> bool:
+        return bool(self.smtp_host.strip())
 
 
 settings = Settings()
