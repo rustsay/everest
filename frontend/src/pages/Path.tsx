@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
-  followPath, generateMyPath, getMyPath, teacherApprovePath, teacherEditPath, teacherGenPath, teacherPath, teacherPaths, teacherRejectPath,
+  followPath, generateMyPath, getMyPath, editMyPath, pathAdvice, teacherApprovePath, teacherEditPath, teacherGenPath, teacherPath, teacherPaths, teacherRejectPath,
 } from '../api/client'
 import { useApp } from '../app/store'
 import type { MyPath, PathData, PathOut, PathStage, TeacherPaths as TP } from '../types'
@@ -15,6 +15,7 @@ function Source({ p }: { p: PathOut }) {
   return (
     <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
       <span className={`pill ${d.source === 'ai' ? 'p-em' : 'p-gold'}`}>{d.source === 'ai' ? 'Составил ИИ, проверено сервером' : 'Собрано по правилам'}</span>
+      {d.student_edit && <span className="pill p-gold">изменено учеником</span>}
       {d.edited && <span className="pill p-em">поправлено учителем</span>}
       {p.kind === 'class' && <span className="pill p-gold">траектория класса {p.class_name}</span>}
     </span>
@@ -77,6 +78,7 @@ export default function PathPage() {
   const [m, setM] = useState<MyPath | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
+  const [editing, setEditing] = useState(false)
   const load = useCallback(() => getMyPath().then(setM).catch((e) => setErr(String(e.message || e))), [])
   useEffect(() => { load() }, [load])
   useEffect(() => { // the trajectory is being built after the diagnostic or a new goal: check again in a moment
@@ -97,12 +99,16 @@ export default function PathPage() {
   if (!m) return <section className="card"><p className="muted">{err || 'Загружаю…'}</p></section>
   const solo = m.mode === 'solo'
   const shown = m.active ?? m.class_path
+  const base = m.pending ?? m.active ?? m.class_path
   return (
     <>
       <div className="card-h" style={{ margin: 0 }}>
         <div><p className="muted">Этапы до экзамена с целями</p><h1>Образовательная траектория</h1></div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {base && !editing && <button className="btn btn-line" onClick={() => setEditing(true)}><Icon n="pen" s={18} />Изменить под себя</button>}
         <button className="btn btn-gold" disabled={busy} onClick={build}><Icon n="restart" s={18} c="#16231F" />
           {busy ? 'Собираю…' : solo ? (m.active ? 'Собрать заново' : 'Собрать траекторию') : 'Собрать и отправить учителю'}</button>
+        </div>
       </div>
 
       {m.building && <section className="card path-note"><b>Собираю траекторию</b> по диагностике и цели, это займёт до минуты…</section>}
@@ -126,6 +132,9 @@ export default function PathPage() {
         </p>
         {err && <p style={{ color: 'var(--red)', marginTop: 6 }}>{err}</p>}
       </section>
+
+      {editing && base && <MyPathEditor p={base} solo={solo} llm={m.llm_ready} onClose={() => setEditing(false)}
+        onDone={async (msg) => { setEditing(false); app.toast(msg, 'gold'); await load(); app.reload() }} />}
 
       {m.rejected && (
         <section className="card path-note bad">
@@ -273,8 +282,6 @@ function PathEditor({ p, onClose, onDone }: { p: PathOut; onClose: () => void; o
   const [edit, setEdit] = useState(p.status !== 'active')
   const [err, setErr] = useState('')
   const [busy, setBusy] = useState(false)
-  const all = Object.keys(p.data.labels || {})
-  const set = (i: number, patch: Partial<PathStage>) => setStages(stages.map((s, k) => (k === i ? { ...s, ...patch } : s)))
   const who = p.kind === 'class' ? `класс ${p.class_name}` : p.student_name
   const run = async (f: () => Promise<unknown>, msg: string) => {
     setBusy(true); setErr('')
@@ -288,6 +295,7 @@ function PathEditor({ p, onClose, onDone }: { p: PathOut; onClose: () => void; o
         <div><h2>Траектория: {who}</h2><p className="muted" style={{ fontSize: 13 }}>{STATUS[p.status]}{p.author ? ` · собрал(а): ${p.author}` : ''}</p></div>
         <button className="btn btn-sm btn-line" onClick={onClose} aria-label="Закрыть"><Icon n="close" s={16} /></button>
       </div>
+      {p.data.student_edit && <p className="path-note"><b>Ученик изменил траекторию сам{p.data.student_edit.at ? ` (${fmtD(p.data.student_edit.at)})` : ''}.</b>{p.data.student_edit.comment ? ` ${p.data.student_edit.comment}` : ''}</p>}
       {!edit ? (
         <>
           {p.note && <p className="path-note"><b>Ваш комментарий:</b> {p.note}</p>}
@@ -304,48 +312,7 @@ function PathEditor({ p, onClose, onDone }: { p: PathOut; onClose: () => void; o
             {p.data.summary && <p>{p.data.summary}</p>}
             {p.data.why?.length > 0 && <ul className="path-why">{p.data.why.map((w, i) => <li key={i}>{w}</li>)}</ul>}
           </div>
-          <ol className="path-stages edit">
-            {stages.map((s, i) => (
-              <li key={i} className="path-stage">
-                <span className="path-dot" aria-hidden="true">{i + 1}</span>
-                <div className="path-body" style={{ display: 'grid', gap: 8 }}>
-                  <div className="mat-form">
-                    <div className="field" style={{ flex: '2 1 220px' }}><label htmlFor={`ps${i}t`}>Этап</label>
-                      <input id={`ps${i}t`} className="input" value={s.title} maxLength={80} onChange={(e) => set(i, { title: e.target.value })} /></div>
-                    <div className="field" style={{ flex: '1 1 140px' }}><label htmlFor={`ps${i}f`}>С</label>
-                      <input id={`ps${i}f`} type="date" className="input" value={s.from} onChange={(e) => set(i, { from: e.target.value })} /></div>
-                    <div className="field" style={{ flex: '1 1 140px' }}><label htmlFor={`ps${i}e`}>По</label>
-                      <input id={`ps${i}e`} type="date" className="input" value={s.to} onChange={(e) => set(i, { to: e.target.value })} /></div>
-                  </div>
-                  <div className="field"><label htmlFor={`ps${i}g`}>Цель</label>
-                    <textarea id={`ps${i}g`} className="input" rows={2} maxLength={300} value={s.goal} onChange={(e) => set(i, { goal: e.target.value })} /></div>
-                  <div>
-                    <span className="label">Задания этапа</span>
-                    <div className="path-tasks">
-                      {all.map((id) => {
-                        const on = s.tasks.includes(id)
-                        return <button key={id} className={`chip ${on ? 'on' : ''}`} aria-pressed={on} title={p.data.labels[id]}
-                          onClick={() => set(i, { tasks: on ? s.tasks.filter((x) => x !== id) : [...s.tasks, id].slice(0, 8) })}>{short(p.data, id)}</button>
-                      })}
-                    </div>
-                  </div>
-                  <div className="field"><label htmlFor={`ps${i}s`}>Шаги этапа (каждый с новой строки)</label>
-                    <textarea id={`ps${i}s`} className="input" rows={Math.min(8, Math.max(3, (s.steps?.length ?? 0) + 1))} maxLength={1500}
-                      value={(s.steps ?? []).join('\n')} placeholder={'Например:\nПрямоугольный треугольник: 5 задач из банка\nТрапеция: 3 задачи'}
-                      onChange={(e) => set(i, { steps: e.target.value.split('\n').slice(0, 10) })} /></div>
-                  <div className="field"><label htmlFor={`ps${i}c`}>Чем проверить конец этапа</label>
-                    <input id={`ps${i}c`} className="input" maxLength={200} value={s.check} onChange={(e) => set(i, { check: e.target.value })} /></div>
-                  {stages.length > 1 && <button className="btn btn-sm btn-line" style={{ justifySelf: 'start' }} onClick={() => setStages(stages.filter((_, k) => k !== i))}><Icon n="trash" s={14} />Убрать этап</button>}
-                </div>
-              </li>
-            ))}
-          </ol>
-          {stages.length < 8 && (
-            <button className="btn btn-sm btn-line" onClick={() => {
-              const last = stages[stages.length - 1]
-              setStages([...stages, { title: 'Новый этап', from: last?.to ?? todayIso(), to: p.data.end, goal: '', check: '', tasks: [] }])
-            }}><Icon n="plus" s={16} />Добавить этап</button>
-          )}
+          <StageList p={p} stages={stages} setStages={setStages} />
           <div className="field" style={{ marginTop: 12 }}><label htmlFor="pnote">Комментарий {p.kind === 'class' ? 'классу' : 'ученику'}</label>
             <textarea id="pnote" className="input" rows={2} maxLength={1000} value={note} placeholder="Например: начни с № 1, потом № 5" onChange={(e) => setNote(e.target.value)} /></div>
           {err && <p style={{ color: 'var(--red)', marginTop: 8 }}>{err}</p>}
@@ -360,6 +327,114 @@ function PathEditor({ p, onClose, onDone }: { p: PathOut; onClose: () => void; o
           </div>
         </>
       )}
+    </section>
+  )
+}
+
+/** Stages of a trajectory in edit mode: title, dates, goal, tasks of the exam, steps, the end check. Teacher and student. */
+function StageList({ p, stages, setStages }: { p: PathOut; stages: PathStage[]; setStages: (s: PathStage[]) => void }) {
+  const all = Object.keys(p.data.labels || {})
+  const set = (i: number, patch: Partial<PathStage>) => setStages(stages.map((s, k) => (k === i ? { ...s, ...patch } : s)))
+  return (
+    <>
+      <ol className="path-stages edit">
+        {stages.map((s, i) => (
+          <li key={i} className="path-stage">
+            <span className="path-dot" aria-hidden="true">{i + 1}</span>
+            <div className="path-body" style={{ display: 'grid', gap: 8 }}>
+              <div className="mat-form">
+                <div className="field" style={{ flex: '2 1 220px' }}><label htmlFor={`ps${i}t`}>Этап</label>
+                  <input id={`ps${i}t`} className="input" value={s.title} maxLength={80} onChange={(e) => set(i, { title: e.target.value })} /></div>
+                <div className="field" style={{ flex: '1 1 140px' }}><label htmlFor={`ps${i}f`}>С</label>
+                  <input id={`ps${i}f`} type="date" className="input" value={s.from} onChange={(e) => set(i, { from: e.target.value })} /></div>
+                <div className="field" style={{ flex: '1 1 140px' }}><label htmlFor={`ps${i}e`}>По</label>
+                  <input id={`ps${i}e`} type="date" className="input" value={s.to} onChange={(e) => set(i, { to: e.target.value })} /></div>
+              </div>
+              <div className="field"><label htmlFor={`ps${i}g`}>Цель</label>
+                <textarea id={`ps${i}g`} className="input" rows={2} maxLength={300} value={s.goal} onChange={(e) => set(i, { goal: e.target.value })} /></div>
+              <div>
+                <span className="label">Задания этапа</span>
+                <div className="path-tasks">
+                  {all.map((id) => {
+                    const on = s.tasks.includes(id)
+                    return <button key={id} className={`chip ${on ? 'on' : ''}`} aria-pressed={on} title={p.data.labels[id]}
+                      onClick={() => set(i, { tasks: on ? s.tasks.filter((x) => x !== id) : [...s.tasks, id].slice(0, 8) })}>{short(p.data, id)}</button>
+                  })}
+                </div>
+              </div>
+              <div className="field"><label htmlFor={`ps${i}s`}>Шаги этапа (каждый с новой строки)</label>
+                <textarea id={`ps${i}s`} className="input" rows={Math.min(8, Math.max(3, (s.steps?.length ?? 0) + 1))} maxLength={1500}
+                  value={(s.steps ?? []).join('\n')} placeholder={'Например:\nПрямоугольный треугольник: 5 задач из банка\nТрапеция: 3 задачи'}
+                  onChange={(e) => set(i, { steps: e.target.value.split('\n').slice(0, 10) })} /></div>
+              <div className="field"><label htmlFor={`ps${i}c`}>Чем проверить конец этапа</label>
+                <input id={`ps${i}c`} className="input" maxLength={200} value={s.check} onChange={(e) => set(i, { check: e.target.value })} /></div>
+              {stages.length > 1 && <button className="btn btn-sm btn-line" style={{ justifySelf: 'start' }} onClick={() => setStages(stages.filter((_, k) => k !== i))}><Icon n="trash" s={14} />Убрать этап</button>}
+            </div>
+          </li>
+        ))}
+      </ol>
+      {stages.length < 8 && (
+        <button className="btn btn-sm btn-line" onClick={() => {
+          const last = stages[stages.length - 1]
+          setStages([...stages, { title: 'Новый этап', from: last?.to ?? todayIso(), to: p.data.end, goal: '', check: '', tasks: [] }])
+        }}><Icon n="plus" s={16} />Добавить этап</button>
+      )}
+    </>
+  )
+}
+
+/** The student edits his trajectory himself and can ask Звёздочка what to change (advice in words, he decides). */
+function MyPathEditor({ p, solo, llm, onClose, onDone }: { p: PathOut; solo: boolean; llm: boolean; onClose: () => void; onDone: (msg: string) => void }) {
+  const [stages, setStages] = useState<PathStage[]>(p.data.stages.map((s) => ({ ...s, tasks: [...s.tasks], steps: [...(s.steps ?? [])] })))
+  const [comment, setComment] = useState('')
+  const [q, setQ] = useState('')
+  const [advice, setAdvice] = useState<string[]>([])
+  const [asking, setAsking] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const clean = () => stages.map((x) => ({ ...x, steps: (x.steps ?? []).map((t) => t.trim()).filter(Boolean) }))
+  const ask = async (question: string) => {
+    setAsking(true); setErr('')
+    try { const r = await pathAdvice(question, clean()); setAdvice((a) => [...a, (question ? `Ты: ${question}\n\n` : '') + r.text]); setQ('') }
+    catch (e) { setErr(String((e as Error).message || e)) }
+    setAsking(false)
+  }
+  const save = async () => {
+    setBusy(true); setErr('')
+    try { await editMyPath(clean(), comment); onDone(solo ? 'Траектория сохранена, расписание идёт по ней' : 'Изменения отправлены учителю') }
+    catch (e) { setErr(String((e as Error).message || e)) }
+    setBusy(false)
+  }
+  return (
+    <section className="card path-editor">
+      <div className="card-h">
+        <div><h2>Моя траектория: правка</h2>
+          <p className="muted" style={{ fontSize: 13 }}>{solo ? 'Сохранишь, и расписание сразу пойдёт по новой версии.' : 'Новая версия уйдёт учителю. Пока он её не утвердит, действует прежняя.'}</p></div>
+        <button className="btn btn-sm btn-line" onClick={onClose} aria-label="Закрыть"><Icon n="close" s={16} /></button>
+      </div>
+      <div className="mypath">
+        <div style={{ minWidth: 0 }}>
+          <StageList p={p} stages={stages} setStages={setStages} />
+          {!solo && <div className="field" style={{ marginTop: 12 }}><label htmlFor="mpc">Что ты поменял и почему (увидит учитель)</label>
+            <textarea id="mpc" className="input" rows={2} maxLength={500} value={comment} onChange={(e) => setComment(e.target.value)} placeholder="Например: сдвинул вторую часть на январь, в декабре олимпиада по физике" /></div>}
+          {err && <p style={{ color: 'var(--red)', marginTop: 8 }}>{err}</p>}
+          <div className="path-actions">
+            <button className="btn btn-em" disabled={busy} onClick={save}><Icon n="ok" s={16} />{solo ? 'Сохранить' : 'Отправить учителю'}</button>
+            <button className="btn btn-line" disabled={busy} onClick={onClose}>Отмена</button>
+          </div>
+        </div>
+        <aside className="mypath-help">
+          <b>Совет Звёздочки</b>
+          {!llm ? <p className="muted" style={{ fontSize: 13.5 }}>Помощник не подключён. Пока правь сам: сначала слабые задания первой части, геометрию и алгебру чередуй, вторую часть после первой.</p> : (<>
+            <p className="muted" style={{ fontSize: 13.5 }}>Звёздочка видит твои результаты и этот черновик и скажет, что стоит поменять. Решаешь ты.</p>
+            {advice.map((a, i) => <div key={i} className="mypath-adv">{a.split('\n').map((l, k) => <p key={k}>{l}</p>)}</div>)}
+            <form onSubmit={(e) => { e.preventDefault(); ask(q.trim()) }} style={{ display: 'grid', gap: 8 }}>
+              <textarea className="input" rows={2} maxLength={1000} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Например: успею ли я вторую часть, если начну в феврале?" aria-label="Вопрос помощнику" />
+              <button className="btn btn-sm btn-gold" type="submit" disabled={asking}>{asking ? 'Думаю…' : q.trim() ? 'Спросить' : 'Оценить мой вариант'}</button>
+            </form>
+          </>)}
+        </aside>
+      </div>
     </section>
   )
 }

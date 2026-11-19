@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
-import { getPlan, putSettings, setTarget, togglePlanBlock } from '../api/client'
+import { FormEvent, useCallback, useEffect, useState } from 'react'
+import { getPlan, putEvents, putSettings, setTarget, togglePlanBlock } from '../api/client'
 import { useApp } from '../app/store'
-import type { ExamInfo, Part2Info, PathStageInfo, PlanBlock, PlanData, RouteBasis, Target } from '../types'
+import type { ExamInfo, Part2Info, PathStageInfo, PlanBlock, MyEvent, PlanData, RouteBasis, Target } from '../types'
 import { Icon, dkey, fmtD, plural, taskLabel } from '../design/ui'
 
 type App = ReturnType<typeof useApp>
@@ -93,10 +93,72 @@ export function blockGo(b: PlanBlock, app: App) {
   app.go('check')
 }
 
+const WD = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+const SUBJECTS = ['Русский язык', 'Физика', 'Информатика', 'Обществознание', 'Химия', 'Биология', 'История', 'Английский язык', 'Литература', 'География']
+
+/** The student's own plans: other subjects for the exams and personal things. A day marked as taken moves mathematics on. */
+function MyEvents({ events, onSaved }: { events: MyEvent[]; onSaved: () => void }) {
+  const app = useApp()
+  const [open, setOpen] = useState(false)
+  const blank: MyEvent = { id: '', title: '', kind: 'subject', repeat: 'weekly', weekdays: [], date: null, start: '', min: 60, busy: false }
+  const [e, setE] = useState<MyEvent>(blank)
+  const save = async (list: MyEvent[], msg: string) => {
+    try { await putEvents(list); app.toast(msg); onSaved(); return true } catch (err) { app.toast(String(err).replace('Error: ', '')); return false }
+  }
+  const add = async (ev: FormEvent) => {
+    ev.preventDefault()
+    if (!e.title.trim()) return app.toast('Как назвать?')
+    if (e.repeat === 'weekly' && !e.weekdays.length) return app.toast('Выбери дни недели')
+    if (e.repeat === 'once' && !e.date) return app.toast('Выбери дату')
+    const list = e.id ? events.map((x) => (x.id === e.id ? e : x)) : [...events, { ...e, id: '' }]
+    if (await save(list, e.busy ? 'Сохранено: в этот день математика перенесётся' : 'Сохранено')) { setE(blank); setOpen(false) }
+  }
+  const fmt = (x: MyEvent) => (x.repeat === 'weekly' ? x.weekdays.map((i) => WD[i]).join(', ') : fmtD(x.date ?? '')) + (x.start ? `, ${x.start}` : '') + (x.min ? `, ${x.min} мин` : '')
+  return (
+    <section className="card">
+      <div className="card-h"><div><h2>Мои дела и другие предметы</h2>
+        <p className="muted" style={{ fontSize: 13 }}>Подготовка к другим экзаменам, кружки, тренировки. Они видны в расписании; если день занят целиком, математика переносится.</p></div>
+        {!open && <button className="btn btn-sm btn-line" onClick={() => { setE(blank); setOpen(true) }}><Icon n="plus" s={16} />Добавить</button>}</div>
+      {events.length > 0 && <div className="myev">{events.map((x) => (
+        <div key={x.id} className={`myev-i ${x.kind}`}>
+          <span style={{ flex: 1, minWidth: 0 }}><b>{x.title}</b>{x.busy && <span className="pill p-gold" style={{ marginLeft: 6 }}>день занят</span>}<small className="muted" style={{ display: 'block' }}>{x.kind === 'subject' ? 'Предмет · ' : ''}{fmt(x)}</small></span>
+          <button className="btn btn-sm btn-ghost" onClick={() => { setE({ ...x }); setOpen(true) }}>Изменить</button>
+          <button className="iconbtn" aria-label={`Удалить ${x.title}`} onClick={() => save(events.filter((y) => y.id !== x.id), 'Удалено')}><Icon n="trash" s={16} /></button>
+        </div>
+      ))}</div>}
+      {open && (
+        <form className="myev-form" onSubmit={add}>
+          <div className="seg" role="group" aria-label="Что это">
+            <button type="button" aria-pressed={e.kind === 'subject'} onClick={() => setE({ ...e, kind: 'subject' })}>Другой предмет</button>
+            <button type="button" aria-pressed={e.kind === 'own'} onClick={() => setE({ ...e, kind: 'own' })}>Своё дело</button></div>
+          {e.kind === 'subject' && <div className="qchips">{SUBJECTS.map((x) => <button type="button" key={x} className={e.title === x ? 'on' : ''} onClick={() => setE({ ...e, title: x })}>{x}</button>)}</div>}
+          <div className="mat-form">
+            <div className="field" style={{ flex: '2 1 200px' }}><label htmlFor="evT">Название</label>
+              <input id="evT" className="input" maxLength={60} value={e.title} onChange={(x) => setE({ ...e, title: x.target.value })} placeholder={e.kind === 'subject' ? 'Физика' : 'Тренировка, репетитор, кружок'} /></div>
+            <div className="field" style={{ flex: '0 1 120px' }}><label htmlFor="evS">Начало</label>
+              <input id="evS" type="time" className="input" value={e.start ?? ''} onChange={(x) => setE({ ...e, start: x.target.value })} /></div>
+            <div className="field" style={{ flex: '0 1 120px' }}><label htmlFor="evM">Минут</label>
+              <input id="evM" type="number" min={0} max={720} step={15} className="input" value={e.min ?? 0} onChange={(x) => setE({ ...e, min: Number(x.target.value) || 0 })} /></div>
+          </div>
+          <div className="seg" role="group" aria-label="Как часто">
+            <button type="button" aria-pressed={e.repeat === 'weekly'} onClick={() => setE({ ...e, repeat: 'weekly' })}>Каждую неделю</button>
+            <button type="button" aria-pressed={e.repeat === 'once'} onClick={() => setE({ ...e, repeat: 'once' })}>Один раз</button></div>
+          {e.repeat === 'weekly'
+            ? <div className="wd-pick">{WD.map((w, i) => { const on = e.weekdays.includes(i); return <button type="button" key={i} aria-pressed={on} className={on ? 'on' : ''} onClick={() => setE({ ...e, weekdays: on ? e.weekdays.filter((x) => x !== i) : [...e.weekdays, i].sort() })}>{w}</button> })}</div>
+            : <div className="field" style={{ maxWidth: 200 }}><label htmlFor="evD">Дата</label><input id="evD" type="date" className="input" value={e.date ?? ''} onChange={(x) => setE({ ...e, date: x.target.value })} /></div>}
+          <label className="mat-check"><input type="checkbox" checked={!!e.busy} onChange={(x) => setE({ ...e, busy: x.target.checked })} /><span><b>Весь день занят</b><small className="muted">в этот день математику не ставить, она сдвинется</small></span></label>
+          <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-em" type="submit">Сохранить</button><button className="btn btn-line" type="button" onClick={() => setOpen(false)}>Отмена</button></div>
+        </form>
+      )}
+    </section>
+  )
+}
+
 export default function Plan() {
   const app = useApp()
   const [p, setP] = useState<PlanData | null>(null)
-  const load = useCallback(() => getPlan().then(setP).catch(() => null), [])
+  const [wk, setWk] = useState(0)
+  const load = useCallback(() => getPlan(wk).then(setP).catch(() => null), [wk])
   useEffect(() => { load() }, [load])
   if (!p) return <p className="muted">Собираю расписание…</p>
   const ex = p.exam
@@ -105,7 +167,7 @@ export default function Plan() {
   const fmax = Math.max(1, ...passed.map((t) => p.freq[t.id] ?? 0))
   const today = dkey(new Date())
 
-  const setPlan = async (k: string, v: string | number) => {
+  const setPlan = async (k: string, v: string | number | number[]) => {
     await putSettings({ plan: { ...p.settings, [k]: v } })
     await load()
     app.reload()
@@ -131,8 +193,17 @@ export default function Plan() {
         <div className="mat-form">
           <div className="field" style={{ flex: '1 1 170px' }}><label htmlFor="plDate">{ex.pct ? 'Конец учебного года' : 'Дата экзамена'}</label>
             <input id="plDate" type="date" className="input" defaultValue={p.settings.date} onChange={(e) => e.target.value && setPlan('date', e.target.value)} /></div>
-          <div className="field" style={{ flex: '1 1 150px' }}><label htmlFor="plDays">Дней в неделю</label>
-            <select id="plDays" className="input" value={p.settings.days} onChange={(e) => setPlan('days', +e.target.value)}>{[3, 4, 5, 6].map((n) => <option key={n} value={n}>{n}</option>)}</select></div>
+          <div style={{ flex: '2 1 300px' }}><span className="flabel">Дни для математики</span>
+            <div className="wd-pick" role="group" aria-label="Дни для математики">{WD.map((w, i) => {
+              const on = (p.settings.wd ?? []).includes(i)
+              return <button key={i} type="button" aria-pressed={on} className={on ? 'on' : ''} onClick={() => {
+                const next = on ? (p.settings.wd ?? []).filter((x) => x !== i) : [...(p.settings.wd ?? []), i]
+                if (!next.length) { app.toast('Нужен хотя бы один день'); return }
+                setPlan('wd', next.sort())
+              }}>{w}</button>
+            })}</div></div>
+          <div className="field" style={{ flex: '0 1 130px' }}><label htmlFor="plTime">Во сколько</label>
+            <input id="plTime" type="time" className="input" defaultValue={p.settings.time ?? ''} onBlur={(e) => e.target.value !== (p.settings.time ?? '') && setPlan('time', e.target.value)} /></div>
           <div className="field" style={{ flex: '1 1 150px' }}><label htmlFor="plMin">Минут в день</label>
             <select id="plMin" className="input" value={p.settings.min} onChange={(e) => setPlan('min', +e.target.value)}>{[30, 45, 60, 90].map((n) => <option key={n} value={n}>{n}</option>)}</select></div>
         </div>
@@ -140,7 +211,7 @@ export default function Plan() {
           <TargetPick value={p.target} onSaved={() => { load(); app.reload() }} /></div>}
         <Part2Note p2={p.part2} target={p.target} />
         <RouteNote basis={p.route_basis} exam={ex} stage={p.path_stage} />
-        <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>{ex.date_note}. Воскресенье всегда выходной. Занятия заканчиваются до 21:30, чтобы не сбивать сон.</p>
+        <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>{ex.date_note}. Хотя бы один день в неделю лучше оставить для отдыха. Занятия лучше заканчивать до 21:30, чтобы не сбивать сон.</p>
       </section>
       <section className="card">
         <div className="card-h"><h2>Этапы до {ex.pct ? 'конца года' : 'экзамена'}</h2><span className="muted num">{totalW} {plural(totalW, 'неделя', 'недели', 'недель')}</span></div>
@@ -148,13 +219,21 @@ export default function Plan() {
           <div key={i} className={`ph ph${i}`} style={{ flex: ph.share }}><b>Этап {i + 1}</b><span>{ph.name}</span><small>с {fmtD(ph.from, { day: 'numeric', month: 'short' })}</small></div>
         ))}</div>
       </section>
+      <MyEvents events={p.events ?? []} onSaved={() => { load(); app.reload() }} />
       <section>
-        <div className="card-h"><h2>Эта неделя</h2><span className="muted">{fmtD(p.week[0].date)} - {fmtD(p.week[6].date)}</span></div>
+        <div className="card-h"><h2>{wk === 0 ? 'Эта неделя' : wk === 1 ? 'Следующая неделя' : `Через ${wk} ${plural(wk, 'неделю', 'недели', 'недель')}`}</h2>
+          <span style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <button className="iconbtn" disabled={wk === 0} onClick={() => setWk(wk - 1)} aria-label="Предыдущая неделя"><Icon n="prev" s={16} /></button>
+            <span className="muted">{fmtD(p.week[0].date)} - {fmtD(p.week[6].date)}</span>
+            <button className="iconbtn" disabled={wk >= 26} onClick={() => setWk(wk + 1)} aria-label="Следующая неделя"><Icon n="next" s={16} /></button>
+          </span></div>
         <div className="week">{p.week.map((x) => (
-          <div key={x.date} className={`wday ${x.date === today ? 'today' : ''} ${x.rest ? 'rest' : ''} ${x.past ? 'past' : ''}`}>
+          <div key={x.date} className={`wday ${x.date === today ? 'today' : ''} ${x.rest ? 'rest' : ''} ${x.past ? 'past' : ''} ${x.busy ? 'busy' : ''}`}>
             <div className="wd-h"><b>{fmtD(x.date, { weekday: 'short' })}</b><span className="num">{+x.date.slice(8)}</span></div>
-            {!x.past && !x.rest && x.blocks[0]?.block && <span className="wd-blk">{x.blocks[0].block}</span>}
-            {x.past ? <p className="muted" style={{ fontSize: 12.5 }}>прошло</p> : x.rest ? <p className="rest-t"><Icon n="moon" s={16} /> отдых</p> : x.blocks.map((b) => (
+            {!x.past && !x.rest && x.blocks[0]?.block && <span className="wd-blk">{x.blocks[0].block}{p.settings.time ? ` · ${p.settings.time}` : ''}</span>}
+            {!x.past && (x.events ?? []).map((e) => <div key={e.id} className={`pev ${e.kind}`}><b>{e.start ? `${e.start} ` : ''}{e.title}</b>{e.min ? <small>{e.min} мин{e.busy ? ' · весь день занят' : ''}</small> : e.busy ? <small>весь день занят</small> : null}</div>)}
+            {!x.past && x.heavy && <p className="wd-warn">Много дел на день: больше 5 часов занятий</p>}
+            {x.past ? <p className="muted" style={{ fontSize: 12.5 }}>прошло</p> : x.busy ? <p className="rest-t">математика переносится</p> : x.rest ? <p className="rest-t"><Icon n="moon" s={16} /> {x.events?.length ? 'без математики' : 'отдых'}</p> : x.blocks.map((b) => (
               <div key={b.key} className={`pblock k-${b.k}`}>
                 <button className={`tick ${b.done ? 'on' : ''}`} aria-pressed={!!b.done} aria-label={`Отметить: ${b.title}`} onClick={() => tick(b.key!)}>
                   <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5 L6.8 11.5 L12.5 5" fill="none" stroke={b.done ? '#fff' : 'transparent'} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" /></svg>

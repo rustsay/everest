@@ -225,6 +225,22 @@ async def build_path(facts: str, kind: str) -> dict:
 
 # ---------- diagnostic: what the photo of a solution shows ----------
 
+async def path_advice(facts: list[str], draft: str, question: str, target: dict | None, exam_date: str) -> str:
+    """Advice on the student's own trajectory: only from his results and his draft; the student edits himself."""
+    prompt = f"""Ты Звёздочка, помощник ученика при подготовке к экзамену по математике. Ученик сам правит свою образовательную траекторию
+(этапы до экзамена {exam_date}: даты, задания, цель этапа) и просит совета. Отвечай на «ты», коротко, по делу: 4-8 предложений или короткий список.
+Опирайся только на его результаты ниже. Правила хорошей траектории: сначала слабые задания первой части и основы, от простого к сложному,
+геометрия и алгебра чередуются, вторая часть - когда первая освоена хотя бы на 70%, в конце пробники. Не пиши новую траекторию целиком:
+скажи, что в его варианте хорошо, что стоит поменять и почему. Если он задаёт вопрос, ответь на него.
+{f"Цель: {target['test']} тестовых баллов = {target['primary']} первичных." if target else "Цель не выбрана."}
+РЕЗУЛЬТАТЫ ПО ЗАДАНИЯМ:
+{chr(10).join(facts)}
+ЕГО ТРАЕКТОРИЯ:
+{draft or "пока пустая"}
+ВОПРОС УЧЕНИКА: {question or "оцени мою траекторию"}"""
+    return (await complete([{"role": "user", "content": prompt}], 0.4)).strip()[:2500]
+
+
 async def diag_summary(facts: list[str], rows: list[str], who: str) -> str:
     """A short conclusion of a diagnostic for the student, only from the facts given."""
     prompt = f"""Ты Звёздочка, помощник ученика в подготовке к экзамену по математике. Напиши итог {who} для ученика: 3-5 коротких предложений на «ты».

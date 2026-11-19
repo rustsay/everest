@@ -152,7 +152,9 @@ export interface PlanBlock {
   tasks?: { id: string; n: number | string | null; name: string }[]
   key?: string; done?: boolean
 }
-export interface PlanDay { date: string; rest?: boolean; past?: boolean; mock?: number; blocks: PlanBlock[] }
+export interface PlanEvent { id: string; title: string; kind: 'own' | 'subject'; start?: string; min?: number; busy?: boolean }
+export interface MyEvent extends PlanEvent { repeat: 'weekly' | 'once'; weekdays: number[]; date?: string | null; until?: string | null }
+export interface PlanDay { date: string; rest?: boolean; busy?: boolean; heavy?: boolean; past?: boolean; mock?: number; blocks: PlanBlock[]; events?: PlanEvent[] }
 
 export type RouteBasis = 'path' | 'diag' | 'practice' | 'start'
 export interface Dashboard {
@@ -170,7 +172,7 @@ export interface Dashboard {
   model: { nodes: GraphNode[]; tasks: ExamTask[]; root: string | null; root_tasks: string[]; at_risk: number; weak: string[]; threat: string[]; basics?: boolean }
   history: { date: string; value: number; source: string }[]
   deltas: { node: string; name: string; delta: number }[]
-  today: { date: string; rest: boolean; blocks: PlanBlock[] }
+  today: { date: string; rest: boolean; busy?: boolean; blocks: PlanBlock[]; events?: PlanEvent[]; time?: string }
   daily: { q: string; node: string; hints: string[]; hint_count: number; done: boolean; sol: string | null }
   deadline:
     | { kind: 'hw'; id: number; title: string; due: string; task_id: number | null; count: number }
@@ -194,7 +196,8 @@ export interface Dashboard {
 
 export interface PlanData {
   exam: ExamInfo
-  settings: { date: string; days: number; min: number }
+  settings: { date: string; days: number; min: number; wd?: number[]; time?: string }
+  events?: MyEvent[]; week_index?: number
   week: PlanDay[]
   phases: { name: string; share: number; from: string }[]
   freq: Record<string, number>
@@ -312,6 +315,7 @@ export interface PathStageInfo { title: string | null; goal: string | null; inde
 export interface PathStage { title: string; from: string; to: string; goal: string; check: string; tasks: string[]; problems?: string[]; steps?: string[] }
 export interface PathData {
   source: 'ai' | 'rules'; fallback?: string; edited?: boolean; summary: string; why: string[]; stages: PathStage[]
+  student_edit?: { comment: string; at: string }
   exam: string; end: string; built: string; labels: Record<string, string>; nums: Record<string, number | string | null>
 }
 export interface PathOut {

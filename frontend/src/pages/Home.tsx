@@ -192,9 +192,11 @@ function Route({ d }: { d: Dashboard }) {
   const cur = blocks.findIndex((b) => b && !b.done)
   return (
     <section className="card" style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: 10 }} aria-label="Маршрут на сегодня">
-      <div className="card-h" style={{ margin: 0 }}><h2>Маршрут на сегодня</h2><span className="muted num">{done} из {blocks.length || 0}</span></div>
+      <div className="card-h" style={{ margin: 0 }}><h2>Маршрут на сегодня{d.today.time ? ` · ${d.today.time}` : ''}</h2><span className="muted num">{done} из {blocks.length || 0}</span></div>
       <div className="bar"><i style={{ width: `${blocks.length ? (done / blocks.length) * 100 : 0}%`, background: 'var(--em)' }} /></div>
       <RouteNote basis={d.route_basis} exam={d.exam} stage={d.path_stage} />
+      {(d.today.events ?? []).map((e) => <div key={e.id} className={`pev ${e.kind}`}><b>{e.start ? `${e.start} ` : ''}{e.title}</b>{e.min ? <small>{e.min} мин</small> : null}</div>)}
+      {d.today.busy && <div className="item" style={{ cursor: 'default' }}><Icon n="cal" /><span style={{ flex: 1 }}><span className="t-strong">Сегодня день занят</span><span className="t-sub">математика перенесена на следующий день</span></span><button className="btn btn-sm btn-line" onClick={() => app.go('plan')}>Неделя</button></div>}
       {d.today.rest && <div className="item" style={{ cursor: 'default' }}><Icon n="moon" /><span style={{ flex: 1 }}><span className="t-strong">Сегодня отдых</span><span className="t-sub">выходной день в расписании</span></span><button className="btn btn-sm btn-line" onClick={() => app.go('plan')}>Неделя</button></div>}
       {blocks.map((b, i) => b && (
         <div key={b.key} className={`item ${i === cur ? 'current' : ''}`} style={{ cursor: 'default' }}>

@@ -402,6 +402,31 @@ def _protos(t: dict) -> list[dict]:
     return (TASK_MAPS.get(t["n"]) or {}).get("protos") or []
 
 
+def day_events(state: dict, d: date) -> list[dict]:
+    """The student's own events on a day: other subjects and personal plans (weekly or once)."""
+    out = []
+    ds = d.isoformat()
+    for e in state.get("events") or []:
+        if e.get("repeat") == "once":
+            hit = e.get("date") == ds
+        else:
+            hit = d.weekday() in (e.get("weekdays") or []) and (not e.get("until") or ds <= e["until"])
+        if hit:
+            out.append({k: e.get(k) for k in ("id", "title", "kind", "start", "min", "busy")})
+    return sorted(out, key=lambda e: e.get("start") or "99:99")
+
+
+HEAVY_MIN = 300  # more than 5 hours of study in a day: the schedule warns
+
+
+def study_days(ps: dict) -> list[int]:
+    """Weekdays for mathematics: chosen by the student (any of Mon..Sun) or by the count of days a week."""
+    wd = ps.get("wd")
+    if isinstance(wd, list) and wd and all(isinstance(x, int) and 0 <= x <= 6 for x in wd):
+        return sorted(set(wd))
+    return DAYSETS.get(int(ps.get("days") or 5), DAYSETS[5])
+
+
 def build_plan(state: dict, key: str, today: date, stages: list[dict] | None = None) -> dict:
     """Daily schedule. Each study day belongs to one block (geometry, algebra, probability, functions); inside the block
     the first task that is not mastered yet is studied, prototype after prototype, then the next, harder task.
@@ -413,7 +438,7 @@ def build_plan(state: dict, key: str, today: date, stages: list[dict] | None = N
     end = date.fromisoformat(ps.get("date") or ex["date"])
     total_days = max(7, (end - today).days)
     mins = int(ps.get("min") or 45)
-    study = DAYSETS.get(int(ps.get("days") or 5), DAYSETS[5])
+    study = study_days(ps)
     target = (state.get("target") or {}).get("primary") if key == "prof" else None
     all_tasks = [t for t in model["tasks"] if school_passed(t.get("from"), today)] or model["tasks"]
     need = sorted(needed_tasks(all_tasks, target), key=lambda t: (t["part"], _rank(t)))
@@ -433,9 +458,14 @@ def build_plan(state: dict, key: str, today: date, stages: list[dict] | None = N
     for i in range(total_days):
         d = today + timedelta(days=i)
         wd, week, left = d.weekday(), i // 7, total_days - i
+        ev = day_events(state, d)
         if wd not in study:
-            days.append({"date": d.isoformat(), "rest": True, "blocks": []})
+            days.append({"date": d.isoformat(), "rest": True, "blocks": [], "events": ev})
             continue
+        if any(e.get("busy") for e in ev):  # the student marked the day as taken: mathematics moves on to the next day
+            days.append({"date": d.isoformat(), "busy": True, "blocks": [], "events": ev})
+            continue
+        heavy = sum(int(e.get("min") or 0) for e in ev) + mins > HEAVY_MIN
         open2 = part2_open(state, need, sim)
         if open2 and p2_first is None and any(t["part"] == 2 for t in need):
             p2_first = d.isoformat()
@@ -445,7 +475,7 @@ def build_plan(state: dict, key: str, today: date, stages: list[dict] | None = N
             title = f"Контрольный замер № {mock}" if ex["pct"] else f"Пробник № {mock}"
             sub = ("все темы, по которым есть задания" if ex["pct"] else
                    "полный вариант, вторая часть - с проверкой по фото" if open2 else "первая часть варианта целиком")
-            days.append({"date": d.isoformat(), "mock": mock,
+            days.append({"date": d.isoformat(), "mock": mock, "events": ev, "heavy": heavy,
                          "blocks": [{"k": "mock", "min": mins if ex["pct"] else max(mins, 90), "title": title, "sub": sub}]})
             continue
         studied += 1
@@ -457,7 +487,7 @@ def build_plan(state: dict, key: str, today: date, stages: list[dict] | None = N
         pending = [t for t in avail if sim[t["id"]] < GOAL] or sorted(avail, key=lambda t: sim[t["id"]])[:4]
         blocks_today = [b for b in block_order if any(task_block(t) == b for t in pending)]
         if not blocks_today:
-            days.append({"date": d.isoformat(), "blocks": []})
+            days.append({"date": d.isoformat(), "blocks": [], "events": ev})
             continue
         weight = {b: sum(GOAL + 0.2 - sim[t["id"]] for t in pending if task_block(t) == b) for b in blocks_today}
         tot = sum(weight.values())
@@ -499,7 +529,7 @@ def build_plan(state: dict, key: str, today: date, stages: list[dict] | None = N
         sim[cur["id"]] = min(1.0, sim[cur["id"]] + 0.12)
         if warm_t is not cur:
             sim[warm_t["id"]] = min(1.0, sim[warm_t["id"]] + 0.02)
-        days.append({"date": d.isoformat(), "blocks": blocks})
+        days.append({"date": d.isoformat(), "blocks": blocks, "events": ev, "heavy": heavy})
 
     freq: dict[str, int] = {}
     for dd in days:
@@ -518,9 +548,9 @@ def build_plan(state: dict, key: str, today: date, stages: list[dict] | None = N
             "needed": [t["id"] for t in need], "part2": {"needed": has2, "open_from": p2_first}, "target": state.get("target")}
 
 
-def plan_window(plan: dict, today: date) -> list[dict]:
-    """Monday..Sunday of the current week; days before today are marked past."""
-    monday = today - timedelta(days=today.weekday())
+def plan_window(plan: dict, today: date, week: int = 0) -> list[dict]:
+    """Monday..Sunday of the current week (or `week` weeks later); days before today are marked past."""
+    monday = today - timedelta(days=today.weekday()) + timedelta(days=7 * week)
     by_date = {d["date"]: d for d in plan["days"]}
     out = []
     for i in range(7):

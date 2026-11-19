@@ -113,7 +113,7 @@ export function openWs(sessionId: string): WebSocket {
 import type {
   Me, Dashboard, PlanData, DiagRun, DiagResult, NotificationItem, ChatMsg, TeacherOverview, StudentDetail, Textbook, MaterialOut,
   TaskMapData, TmAnswer, TmFile, SkillExplain, BankItem, BankTask, PracticeItem, VariantSummary, VariantFull,
-  MyPath, PathOut, PathStage, TeacherPaths, DiagWork, Target, Walkthrough, DiagListItem, DiagAnalytics, Check1Result, Check1Item, RedoItem, WeekReport, ClassWeek,
+  MyPath, PathOut, PathStage, TeacherPaths, DiagWork, Target, Walkthrough, DiagListItem, DiagAnalytics, Check1Result, Check1Item, RedoItem, WeekReport, ClassWeek, MyEvent,
 } from '../types'
 
 export const authConfig = (): Promise<{ email_confirm: boolean }> => apiFetch('/auth/config')
@@ -149,13 +149,18 @@ export const getDiagWork = (id: number): Promise<{ work: Record<string, DiagWork
 export const skipDiagnostic = () => apiFetch('/diagnostics/skip', { method: 'POST' })
 
 export const getDashboard = (): Promise<Dashboard> => apiFetch('/dashboard')
-export const getPlan = (): Promise<PlanData> => apiFetch('/plan')
+export const getPlan = (week = 0): Promise<PlanData> => apiFetch(`/plan?week=${week}`)
+export const putEvents = (events: MyEvent[]): Promise<{ events: MyEvent[] }> => apiFetch('/me/events', { method: 'PUT', body: JSON.stringify({ events }) })
 export const setTarget = (test: number): Promise<{ target: Target }> => apiFetch('/me/target', { method: 'PUT', body: JSON.stringify({ test }) })
 
 // Educational trajectory
 const post = (body?: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body ?? {}) })
 export const getMyPath = (): Promise<MyPath> => apiFetch('/path')
 export const generateMyPath = (): Promise<PathOut> => apiFetch('/path/generate', post())
+export const editMyPath = (stages: PathStage[], comment: string): Promise<PathOut> =>
+  apiFetch('/path/mine', { method: 'PUT', body: JSON.stringify({ stages, comment }) })
+export const pathAdvice = (question: string, stages: PathStage[]): Promise<{ text: string }> =>
+  apiFetch('/path/advice', { method: 'POST', body: JSON.stringify({ question, stages }) })
 export const followPath = (follow: boolean): Promise<{ follow: boolean }> => apiFetch('/path/follow', post({ follow }))
 export const teacherPaths = (): Promise<TeacherPaths> => apiFetch('/teacher/paths')
 export const teacherPath = (id: number): Promise<PathOut> => apiFetch(`/teacher/paths/${id}`)

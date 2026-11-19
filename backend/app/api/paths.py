@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.teacher import require_teacher
 from app.auth.deps import get_current_user
-from app.config import settings
+from app.config import NO_LLM, settings
 from app.db import crud_learning as crud
 from app.db.database import get_db
 from app.db.models import ClassGroup, LearningPath, User
@@ -337,6 +337,23 @@ class EditIn(BaseModel):
     note: str | None = Field(None, max_length=1000)
 
 
+def _edited(data: dict, stages: list[StageIn]) -> dict:
+    """The same checks as for a path from the model: tasks of this exam only, dates up to the exam, no overlaps."""
+    today = date.today()
+    allowed = {k: v for k, v in (data.get("labels") or {}).items()}
+    end = date.fromisoformat(data.get("end") or EXAMS[data.get("exam", "prof")]["date"])
+    raw = {"summary": data.get("summary", ""), "why": data.get("why", []),
+           "stages": [{"title": s.title, "goal": s.goal, "check": s.check, "from": s.from_, "to": s.to, "tasks": s.tasks, "steps": s.steps}
+                      for s in stages]}
+    checked = paths.validate(raw, allowed, min(today, date.fromisoformat(data.get("built") or today.isoformat())), end)
+    if not checked:
+        raise HTTPException(400, "Нужен хотя бы один этап с заданиями и датами до экзамена")
+    old = {s["title"]: s.get("problems", []) for s in data.get("stages", [])}
+    for s in checked["stages"]:
+        s["problems"] = old.get(s["title"], [])
+    return {**data, "stages": checked["stages"]}
+
+
 @router.put("/teacher/paths/{pid}")
 async def teacher_edit(pid: int, body: EditIn, teacher: User = Depends(require_teacher), db: AsyncSession = Depends(get_db)):
     p = await _own_path(db, teacher, pid)
@@ -344,20 +361,7 @@ async def teacher_edit(pid: int, body: EditIn, teacher: User = Depends(require_t
         raise HTTPException(400, "Эту траекторию уже нельзя менять")
     data = dict(p.data)
     if body.stages is not None:
-        today = date.today()
-        allowed = {k: v for k, v in (data.get("labels") or {}).items()}
-        end = date.fromisoformat(data.get("end") or EXAMS[data.get("exam", "prof")]["date"])
-        raw = {"summary": data.get("summary", ""), "why": data.get("why", []),
-               "stages": [{"title": s.title, "goal": s.goal, "check": s.check, "from": s.from_, "to": s.to, "tasks": s.tasks, "steps": s.steps}
-                          for s in body.stages]}
-        checked = paths.validate(raw, allowed, min(today, date.fromisoformat(data.get("built") or today.isoformat())), end)
-        if not checked:
-            raise HTTPException(400, "Нужен хотя бы один этап с заданиями и датами до экзамена")
-        old = {s["title"]: s.get("problems", []) for s in data.get("stages", [])}
-        for s in checked["stages"]:
-            s["problems"] = old.get(s["title"], [])
-        data["stages"] = checked["stages"]
-        data["edited"] = True
+        data = {**_edited(data, body.stages), "edited": True}
     if body.summary is not None:
         data["summary"] = body.summary.strip()
     p.data = data
@@ -365,6 +369,65 @@ async def teacher_edit(pid: int, body: EditIn, teacher: User = Depends(require_t
         p.note = body.note.strip()
     await db.commit()
     return await _out(db, p)
+
+
+class MyEditIn(BaseModel):
+    stages: list[StageIn] = Field(..., min_length=1, max_length=8)
+    comment: str = Field("", max_length=500)  # what the student changed and why: the teacher sees it
+
+
+@router.put("/path/mine")
+async def student_edit(body: MyEditIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """The student changes his trajectory (or makes his own from the class one). On his own it works at once;
+    in a class the changed version goes to the teacher, and the old one keeps working until it is approved."""
+    if user.role != "student":
+        raise HTTPException(403, "Траектория ученика")
+    base = (await _latest(db, LearningPath.student_id == user.id, LearningPath.status == "pending")
+            or await _latest(db, LearningPath.student_id == user.id, LearningPath.status == "active"))
+    if base is None:
+        classes = await crud.student_classes(db, user.id)
+        if classes:
+            base = await _latest(db, LearningPath.class_id.in_([c.id for c in classes]), LearningPath.status == "active")
+    if base is None:
+        raise HTTPException(400, "Сначала собери траекторию, потом её можно править")
+    data = _edited(dict(base.data), body.stages)
+    data.pop("kind", None)
+    data.pop("edited", None)  # «поправлено учителем» belonged to the old version
+    data["student_edit"] = {"comment": body.comment.strip(), "at": date.today().isoformat()}
+    p = await _save_student_path(db, user, data)
+    if body.comment.strip() and p.status == "pending":
+        p.note = ""
+    await db.commit()
+    await db.refresh(p)
+    return await _out(db, p)
+
+
+class AdviceIn(BaseModel):
+    question: str = Field("", max_length=1000)
+    stages: list[StageIn] | None = Field(None, max_length=8)
+
+
+@router.post("/path/advice")
+async def path_advice(body: AdviceIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Звёздочка looks at the student's results and his draft of the trajectory and says what to change.
+    Only advice in words: the student decides and edits himself."""
+    if user.role != "student":
+        raise HTTPException(403, "Траектория ученика")
+    if not settings.llm_ready:
+        raise HTTPException(503, NO_LLM)
+    key = service.key_for(user)
+    row = await service.get_state(db, user.id)
+    model = engine.build_model(row.data, key)
+    facts = [f"{t['label']} (часть {t['part']}, блок «{t['block']}»): оценка {round(t['p'] * 100)}%"
+             + (f"; {t['evidence']}" if t["evidence"] else "") for t in paths.task_facts(model, row.data)]
+    target = row.data.get("target")
+    draft = "\n".join(f"{i + 1}. {s.title} ({s.from_} - {s.to}): задания {', '.join(s.tasks)}; цель: {s.goal}" for i, s in enumerate(body.stages or []))
+    try:
+        text = await llm.path_advice(facts, draft, body.question.strip(), target, EXAMS[key]["date"])
+    except Exception as exc:  # noqa: BLE001
+        log.exception("path advice failed: %s", exc)
+        raise HTTPException(502, "Помощник сейчас недоступен. Попробуй через минуту.")
+    return {"text": text}
 
 
 async def _notify_target(db: AsyncSession, p: LearningPath, text: str) -> None:

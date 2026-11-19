@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import re
 from datetime import date, datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -115,8 +116,20 @@ async def put_settings(body: SettingsIn, user: User = Depends(get_current_user),
             raise HTTPException(422, "days и min должны быть числами")
         if days in engine.DAYSETS:
             p["days"] = days
+            p.pop("wd", None)
         if mins in (30, 45, 60, 90):
             p["min"] = mins
+        if "wd" in body.plan:  # own weekdays for mathematics
+            wd = body.plan["wd"]
+            if not isinstance(wd, list) or not wd or not all(isinstance(x, int) and 0 <= x <= 6 for x in wd):
+                raise HTTPException(422, "Дни недели: числа от 0 (понедельник) до 6 (воскресенье)")
+            p["wd"] = sorted(set(wd))
+            p["days"] = len(p["wd"])
+        if "time" in body.plan:
+            t = str(body.plan["time"] or "")
+            if t and not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", t):
+                raise HTTPException(422, "Время в формате ЧЧ:ММ")
+            p["time"] = t
     if body.care is not None:
         c = row.data.setdefault("care", {})
         for k in ("breaks", "sleep"):
@@ -400,7 +413,8 @@ async def dashboard(user: User = Depends(get_current_user), db: AsyncSession = D
         },
         "history": [{"date": h.created_at.date().isoformat() if h.created_at else today.isoformat(), "value": h.value, "source": h.source} for h in hist],
         "deltas": deltas[:5],
-        "today": {"date": td["date"], "rest": bool(td.get("rest")), "blocks": today_blocks},
+        "today": {"date": td["date"], "rest": bool(td.get("rest")), "busy": bool(td.get("busy")), "blocks": today_blocks,
+                  "events": td.get("events") or [], "time": (st.get("plan") or {}).get("time") or ""},
         "daily": {"q": dq["q"], "node": dq["node"], "hints": dq["h"][: daily.get("hint", 0)], "hint_count": len(dq["h"]),
                   "done": daily.get("done", False), "sol": dq["sol"] if daily.get("done") else None},
         "deadline": deadline,
@@ -430,8 +444,59 @@ def _stage_info(path, today: date) -> dict | None:
 
 # ---------- schedule ----------
 
+class EventIn(BaseModel):
+    id: str | None = Field(None, max_length=12)
+    title: str = Field(..., min_length=1, max_length=60)
+    kind: str = Field("own", pattern="^(own|subject)$")  # own plans | another subject of the exams
+    repeat: str = Field("weekly", pattern="^(weekly|once)$")
+    weekdays: list[int] = Field(default_factory=list, max_length=7)
+    date: str | None = None
+    until: str | None = None
+    start: str = Field("", pattern=r"^$|^([01]\d|2[0-3]):[0-5]\d$")
+    min: int = Field(60, ge=0, le=720)
+    busy: bool = False  # the whole day is taken: no mathematics that day
+
+
+class EventsIn(BaseModel):
+    events: list[EventIn] = Field(default_factory=list, max_length=30)
+
+
+@router.put("/me/events")
+async def put_events(body: EventsIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """The student's own schedule items: other subjects for the exams and personal plans. The mathematics schedule
+    shows them and skips the days marked as taken."""
+    import uuid
+    out = []
+    for e in body.events:
+        d = e.model_dump()
+        if e.repeat == "weekly":
+            if not e.weekdays or any(x < 0 or x > 6 for x in e.weekdays):
+                raise HTTPException(422, f"«{e.title}»: выберите дни недели")
+            d["weekdays"] = sorted(set(e.weekdays))
+            d["date"] = None
+        else:
+            try:
+                d["date"] = date.fromisoformat(e.date or "").isoformat()
+            except ValueError:
+                raise HTTPException(422, f"«{e.title}»: нужна дата")
+            d["weekdays"] = []
+        if d.get("until"):
+            try:
+                d["until"] = date.fromisoformat(d["until"]).isoformat()
+            except ValueError:
+                d["until"] = None
+        d["id"] = e.id or uuid.uuid4().hex[:8]
+        d["title"] = e.title.strip()
+        out.append(d)
+    row = await service.get_state(db, user.id)
+    row.data["events"] = out
+    service.touch(row)
+    await db.commit()
+    return {"events": out}
+
+
 @router.get("/plan")
-async def get_plan(user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+async def get_plan(week: int = 0, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     today = date.today()
     key = service.key_for(user)
     row = await service.get_state(db, user.id)
@@ -439,14 +504,17 @@ async def get_plan(user: User = Depends(get_current_user), db: AsyncSession = De
     plan = engine.build_plan(row.data, key, today, path.data.get("stages") if path else None)
     model = engine.build_model(row.data, key)
     done = row.data.get("plan_done", {})
-    week = []
-    for d in engine.plan_window(plan, today):
-        week.append({**d, "blocks": [{**b, "key": f"{d['date']}:{i}", "done": bool(done.get(f"{d['date']}:{i}"))} for i, b in enumerate(d.get("blocks", []))]})
+    wi = max(0, min(week, 26))
+    week_days = []
+    for d in engine.plan_window(plan, today, wi):
+        week_days.append({**d, "blocks": [{**b, "key": f"{d['date']}:{i}", "done": bool(done.get(f"{d['date']}:{i}"))} for i, b in enumerate(d.get("blocks", []))]})
     await db.commit()
     return {
         "exam": exam_info(key), "settings": {"date": row.data.get("plan", {}).get("date") or EXAMS[key]["date"],
-                                             "days": plan["days_per_week"], "min": plan["minutes"]},
-        "week": week, "phases": plan["phases"], "freq": plan["freq"], "studied": plan["studied"], "mocks": plan["mocks"],
+                                             "days": plan["days_per_week"], "min": plan["minutes"],
+                                             "wd": engine.study_days(row.data.get("plan") or {}), "time": (row.data.get("plan") or {}).get("time") or ""},
+        "events": row.data.get("events") or [], "week_index": wi,
+        "week": week_days, "phases": plan["phases"], "freq": plan["freq"], "studied": plan["studied"], "mocks": plan["mocks"],
         "queue": plan["queue"], "end": plan["end"], "total_days": plan["total_days"],
         "tasks": [{"id": t["id"], "n": t["n"], "name": t["name"], "risk": t["risk"], "from": t.get("from")} for t in model["tasks"]],
         "root": model["root"], "root_name": NODE_BY_ID[model["root"]]["name"] if model["root"] else None,
