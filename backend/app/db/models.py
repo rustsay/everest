@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -357,3 +357,30 @@ class EmailCode(Base):
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class PushSubscription(Base):
+    """One browser or phone that agreed to push notifications. The endpoint is the address of the push service."""
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    endpoint: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    p256dh: Mapped[str] = mapped_column(String(120), nullable=False)
+    auth: Mapped[str] = mapped_column(String(40), nullable=False)
+    tz: Mapped[str] = mapped_column(String(60), default="")          # time zone of the device, e.g. Europe/Moscow
+    tzo: Mapped[int] = mapped_column(Integer, default=-180)          # JS getTimezoneOffset(): minutes, UTC minus local time
+    agent: Mapped[str] = mapped_column(String(120), default="")      # short name of the device for the settings list
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_ok: Mapped[datetime | None] = mapped_column(DateTime)
+    fails: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class UserActivity(Base):
+    """A day of one user: which sections he opened (number of requests per section). Feeds the admin panel."""
+    __tablename__ = "user_activity"
+
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True, index=True)
+    hits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sections: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)

@@ -4,12 +4,12 @@ import type { Dashboard, Me } from '../types'
 import { hush, reduceMotion, speak } from '../design/ui'
 
 export type ViewName =
-  | 'home' | 'plan' | 'check' | 'session' | 'trajectory' | 'video' | 'chat' | 'awards' | 'teacher' | 'materials' | 'tchat' | 'task' | 'bank' | 'practice' | 'variants' | 'variant' | 'path' | 'paths' | 'diag' | 'report'
+  | 'home' | 'plan' | 'check' | 'session' | 'trajectory' | 'video' | 'chat' | 'awards' | 'teacher' | 'materials' | 'tchat' | 'task' | 'bank' | 'practice' | 'variants' | 'variant' | 'path' | 'paths' | 'diag' | 'report' | 'admin'
 export interface View { v: ViewName; id?: string }
 
 export function parseHash(h: string): View {
   const [v, id] = h.replace(/^#/, '').split('/')
-  const known: ViewName[] = ['home', 'plan', 'check', 'session', 'trajectory', 'video', 'chat', 'awards', 'teacher', 'materials', 'tchat', 'task', 'bank', 'practice', 'variants', 'variant', 'path', 'paths', 'diag', 'report']
+  const known: ViewName[] = ['home', 'plan', 'check', 'session', 'trajectory', 'video', 'chat', 'awards', 'teacher', 'materials', 'tchat', 'task', 'bank', 'practice', 'variants', 'variant', 'path', 'paths', 'diag', 'report', 'admin']
   return known.includes(v as ViewName) ? { v: v as ViewName, id: id ? decodeURIComponent(id) : undefined } : { v: 'home' }
 }
 export const viewHash = (v: View) => '#' + v.v + (v.id ? '/' + encodeURIComponent(v.id) : '')

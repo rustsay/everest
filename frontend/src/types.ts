@@ -130,6 +130,8 @@ export interface Me {
   diag_done?: boolean
   diag_in_progress?: boolean
   classes?: { id: number; name: string }[]
+  /** the email is in ADMIN_EMAILS on the server */
+  admin?: boolean
   settings: {
     plan?: { date?: string; days?: number; min?: number }
     care?: { breaks?: boolean; sleep?: boolean; every?: number }
@@ -359,4 +361,22 @@ export interface ClassWeek {
   from: string; to: string
   classes: { id: number; name: string; students: { id: number; name: string; active: number; solved: number; ok: number; acc: number | null; checks: number; checks1: number
     fixed: number; forecast: number; delta: number | null; pct: boolean; max: number; gap: number | null; redo_due: number; flag: string | null }[] }[]
+}
+
+export interface PushSettings { key: string; devices: number; remind: boolean; time: string; student: boolean }
+
+export interface AdminStats {
+  today: string; days: number; from: string; admins: number
+  users: { total: number; students: number; teachers: number; tutors: number; demo: number; new7: number; new: number; push: number; in_class: number }
+  active: { today: number; week: number; period: number }
+  series: { date: string; active: number; students: number; new: number }[]
+  sections: { name: string; users7: number; users: number; hits: number }[]
+  actions: { name: string; value: number }[]
+  funnel: { name: string; value: number }[]
+}
+
+export interface AdminUser {
+  id: number; name: string; email: string; role: Role; grade: string | null; exam: string | null
+  created: string | null; last: string | null; days30: number; sections: string[]
+  solved: number; ok: number; checks: number; diags: number; push: boolean; classes: number
 }

@@ -187,6 +187,12 @@ frontend/src/
 | GET/POST | /api/path, /api/path/generate, /api/path/follow | ученик | Своя траектория; один - сразу действует, в классе - ждёт учителя; вкл/выкл (только один) |
 | GET/POST | /api/teacher/paths, /api/teacher/paths/generate | учитель | Ждут утверждения, классы, ученики; собрать для ученика или класса (черновик) |
 | GET/PUT/POST | /api/teacher/paths/{id}, /approve, /reject | учитель | Открыть, поправить этапы и комментарий, утвердить, вернуть / удалить черновик |
+| GET | /api/push/key | — | Публичный VAPID-ключ для подписки |
+| GET/PUT | /api/push/settings | ✓ | Сколько устройств подписано, напоминание о занятиях вкл/выкл, время |
+| POST | /api/push/subscribe, /api/push/unsubscribe | ✓ | Подписать / отписать это устройство (до 10 на пользователя) |
+| POST | /api/push/renew | — | Браузер сменил подписку (sw.js); доказательство - старый адрес |
+| POST | /api/push/test | ✓ | Пробное уведомление на свои устройства |
+| GET | /api/admin/stats?days=, /api/admin/users | админ | Статистика использования и список пользователей |
 
 ## WebSocket события
 
@@ -225,6 +231,10 @@ VLM видит формулы и чертежи напрямую; OCR-текст
 | SECRET_KEY | Секрет для JWT подписи — **сменить в продакшене** |
 | EMAIL_CONFIRM | Код из письма при регистрации (по умолчанию true) |
 | SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, SMTP_FROM | Почта для кодов; порт 465 - SSL, иначе STARTTLS. Пусто - код в логе backend |
+| ADMIN_EMAILS | Почты администраторов через запятую (админка #admin) |
+| STATS_UTC_OFFSET | Часовой пояс дней в админке, часы от UTC (по умолчанию 3) |
+| VAPID_PRIVATE_KEY, VAPID_SUBJECT | Ключ push-уведомлений (пусто - создаётся в uploads/vapid_private.pem) и контакт mailto:/https: |
+| PUSH_REMIND_TIME | Время напоминания, если ученик не указал своё (по умолчанию 17:00) |
 
 ## Разработка без Docker
 
@@ -344,3 +354,23 @@ npm run dev   # vite proxy → localhost:8000
 - Свои дела (`state.data["events"]`, до 30): `engine.day_events` кладёт их в дни расписания; `busy` - математики в этот день нет,
   очередь сдвигается; больше 5 часов занятий в день - `heavy`. Дни математики `plan.wd` (любые из Пн-Вс; выбор числа дней
   сбрасывает `wd`), время `plan.time` только для показа.
+
+## Установка на телефон, push-уведомления, админка (ноябрь 2026)
+
+- PWA: `frontend/public/manifest.webmanifest`, значки `public/icons` (рисунок логотипа), `public/sw.js`. Service worker только
+  показывает уведомления и открывает `/#go` по нажатию; страницы не кэширует. `src/pwa.ts`: регистрация, кнопка установки
+  (`beforeinstallprompt`), подписка. В профиле блок «Телефон и уведомления» (`components/PhonePush.tsx`); на iPhone push
+  работает только после «На экран "Домой"». Нужен https (или localhost).
+- Web Push без сторонних библиотек: `app/webpush.py` (VAPID ES256 + шифрование aes128gcm по RFC 8291), проверено на примере
+  из RFC 8291, Appendix A (`tests/test_webpush.py`). Запросы уходят только на адреса сервисов браузеров (`PUSH_HOSTS`).
+- `api/push.py`: таблица `push_subscriptions`. Каждый `service.notify` после commit уходит и push (`queue_push` + событие
+  `after_commit`; при откате не уходит). 404/410 - подписка удаляется, 20 неудач подряд - тоже. `remind_loop` раз в 5 минут:
+  ученику в день занятий (`study_days`, не «весь день занят», до экзамена) после его времени `plan.time` или `PUSH_REMIND_TIME`,
+  не позже 22:00 по времени устройства, один раз в день (`state.data["push"]["last"]`), если сегодня он ещё не занимался;
+  в тексте минуты и задачи работы над ошибками. Выключается `push.remind = false`. `reminder_text` - чистая функция.
+- Учёт активности: middleware в `main.py` → `activity.track` (id из токена, раздел по пути `SECTIONS`, опросы статуса не считаются)
+  → буфер → `user_activity` (user_id, day, hits, sections) раз в минуту. Хранятся только счётчики, без содержимого.
+- Админка (#admin, `pages/Admin.tsx`, `api/admin.py`): доступ по `ADMIN_EMAILS` (`auth.deps.require_admin`, `me.admin`).
+  Пользователи и активные за день / 7 / N дней, графики по дням, путь ученика (регистрация → профиль → диагностика →
+  задачи → 3 дня → заходил за неделю), разделы, действия за период (таблицы + счётчики `state.data["days"]`), список
+  пользователей с поиском. Демо не считается.

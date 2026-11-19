@@ -114,6 +114,7 @@ import type {
   Me, Dashboard, PlanData, DiagRun, DiagResult, NotificationItem, ChatMsg, TeacherOverview, StudentDetail, Textbook, MaterialOut,
   TaskMapData, TmAnswer, TmFile, SkillExplain, BankItem, BankTask, PracticeItem, VariantSummary, VariantFull,
   MyPath, PathOut, PathStage, TeacherPaths, DiagWork, Target, Walkthrough, DiagListItem, DiagAnalytics, Check1Result, Check1Item, RedoItem, WeekReport, ClassWeek, MyEvent,
+  PushSettings, AdminStats, AdminUser,
 } from '../types'
 
 export const authConfig = (): Promise<{ email_confirm: boolean }> => apiFetch('/auth/config')
@@ -322,3 +323,20 @@ export const editVariant = (id: number, body: { title?: string; items?: string[]
 export const deleteVariant = (id: number) => apiFetch(`/variants/${id}`, { method: 'DELETE' })
 export const submitVariant = (id: number, answers: Record<string, string>): Promise<{ score: number; max: number }> =>
   apiFetch(`/variants/${id}/submit`, { method: 'POST', body: JSON.stringify({ answers }) })
+
+// Push notifications
+export const getPushSettings = (): Promise<PushSettings> => apiFetch('/push/settings')
+export const pushSubscribe = (subscription: PushSubscriptionJSON): Promise<PushSettings> => apiFetch('/push/subscribe', {
+  method: 'POST',
+  body: JSON.stringify({
+    subscription, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || '', tzo: new Date().getTimezoneOffset(),
+    agent: navigator.userAgent.slice(0, 120),
+  }),
+})
+export const pushUnsubscribe = (endpoint: string): Promise<PushSettings> => apiFetch('/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint }) })
+export const putPushSettings = (remind: boolean): Promise<PushSettings> => apiFetch('/push/settings', { method: 'PUT', body: JSON.stringify({ remind }) })
+export const pushTest = (): Promise<{ sent: number }> => apiFetch('/push/test', { method: 'POST' })
+
+// Admin panel
+export const adminStats = (days = 30): Promise<AdminStats> => apiFetch(`/admin/stats?days=${days}`)
+export const adminUsers = (): Promise<{ users: AdminUser[]; today: string }> => apiFetch('/admin/users')

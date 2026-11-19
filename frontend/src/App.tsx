@@ -23,6 +23,7 @@ import PathPage, { TeacherPaths } from './pages/Path'
 import DiagReport from './pages/DiagReport'
 import WeekPage, { ClassReport } from './pages/Week'
 import Videos from './pages/Videos'
+import Admin from './pages/Admin'
 import type { DiagResult, Me } from './types'
 
 type Stage = 'loading' | 'onb' | 'profile' | 'diag' | 'result' | 'app'
@@ -133,6 +134,7 @@ function Main() {
     case 'variants': page = teacher ? <Variants /> : <Practice />; break
     case 'variant': page = view.id ? <VariantPage id={Number(view.id)} /> : teacher ? <Variants /> : <Practice />; break
     case 'chat': page = teacher ? <Chat teacher /> : <Chat teacher={false} />; break
+    case 'admin': page = me.admin ? <Admin /> : teacher ? <Teacher /> : <Home />; break
     case 'awards': page = teacher ? <Teacher /> : <Stars />; break
     default: page = teacher ? <Teacher /> : <Home />
   }

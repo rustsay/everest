@@ -3,6 +3,7 @@ import { getNotifications, joinClass, putSettings, readNotifications, sendEvent 
 import type { NotificationItem } from '../types'
 import { Icon, Orn, SideMountains, StarBot, StarIcon, Typed, WideMountains, hush, plural, speak } from '../design/ui'
 import { Logo } from '../pages/Onboarding'
+import PhonePush from '../components/PhonePush'
 import { useApp, ViewName } from './store'
 
 const NAV_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['path', 'Траектория', 'flag'], ['plan', 'Расписание', 'cal'], ['check', 'Проверка', 'check'], ['task', 'Карты заданий', 'map'], ['practice', 'Банк задач', 'book'], ['video', 'Разборы', 'play'], ['diag', 'Разбор диагностики', 'bulb'], ['report', 'Итоги недели', 'clock'], ['chat', 'Помощник', 'chat'], ['awards', 'Звёзды', 'star']]
@@ -33,7 +34,8 @@ export default function Shell({ children }: { children: ReactNode }) {
   const app = useApp()
   const { me, dash, view, go } = app
   const teacher = me.role !== 'student'
-  const nav = teacher ? NAV_T.map(([v, l, i]) => (v === 'teacher' && me.role === 'tutor' ? [v, 'Мои ученики', i] : [v, l, i]) as [ViewName, string, string]) : NAV_S
+  const nav = [...(teacher ? NAV_T.map(([v, l, i]) => (v === 'teacher' && me.role === 'tutor' ? [v, 'Мои ученики', i] : [v, l, i]) as [ViewName, string, string]) : NAV_S),
+    ...(me.admin ? [['admin', 'Админка', 'chart'] as [ViewName, string, string]] : [])]
   const bot = teacher ? BOT_T : BOT_S
   const [pop, setPop] = useState<NotificationItem[] | null>(null)
   const sayIdx = useRef<Record<string, number>>({})
@@ -199,7 +201,7 @@ export default function Shell({ children }: { children: ReactNode }) {
 
 /* ---------- profile modal ---------- */
 function Profile() {
-  const { me, dash, setMe, logout, toast, closeModal, voice, setVoice } = useApp()
+  const { me, dash, setMe, logout, toast, closeModal, voice, setVoice, go } = useApp()
   const [care, setCare] = useState({ breaks: me.settings.care?.breaks ?? true, sleep: me.settings.care?.sleep ?? true })
   const [code, setCode] = useState('')
   const [msg, setMsg] = useState('')
@@ -239,8 +241,10 @@ function Profile() {
         <button className={`btn btn-sm ${care.sleep ? 'btn-em' : 'btn-ghost'}`} onClick={() => toggle('sleep')}><Icon n="moon" s={16} />Напоминать про сон: {care.sleep ? 'вкл' : 'выкл'}</button>
         <button className="btn btn-sm btn-ghost" onClick={() => { closeModal(); window.dispatchEvent(new Event('everest:break')) }}>Сделать перерыв сейчас</button>
       </div>
+      <PhonePush />
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
         <button className="btn btn-ghost" onClick={() => { const v = !voice; setVoice(v); putSettings({ voice: v }).catch(() => null) }}><Icon n={voice ? 'vol' : 'mute'} s={18} />Голос Звёздочки: {voice ? 'вкл' : 'выкл'}</button>
+        {me.admin && <button className="btn btn-ghost" onClick={() => go('admin')}><Icon n="chart" s={18} />Админка</button>}
         <button className="btn btn-line" onClick={() => { closeModal(); logout() }}><Icon n="logout" s={18} />Выйти</button>
       </div>
     </>

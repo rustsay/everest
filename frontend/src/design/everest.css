@@ -923,3 +923,22 @@ small.up{color:var(--em-ink);font-weight:700}small.down{color:var(--bad);font-we
 .myev-i.own{border-left-color:var(--gold)}
 .myev-form{display:flex;flex-direction:column;gap:12px;margin-top:12px;padding:14px;border-radius:14px;background:var(--surface-2)}
 .qchips button.on{background:var(--em);color:#fff;border-color:var(--em)}
+
+/* ---------- admin panel ---------- */
+.adm-chart{display:flex;gap:8px;margin-top:10px}
+.adm-y{display:flex;flex-direction:column;justify-content:space-between;font-size:11px;color:var(--muted);text-align:right;min-width:26px}
+.adm-plot{position:relative;display:flex;align-items:flex-end;gap:2px;border-bottom:1px solid var(--line)}
+.adm-grid{position:absolute;left:0;right:0;border-top:1px dashed var(--line);pointer-events:none}
+.adm-bar{flex:1;min-width:0;height:100%;display:flex;align-items:flex-end;background:none;border:0;padding:0;cursor:pointer}
+.adm-bar span{display:block;width:100%;max-width:22px;margin:0 auto;background:var(--em-3);border-radius:4px 4px 0 0;min-height:0;transition:opacity .15s}
+.adm-bar:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.adm-tip{position:absolute;top:0;transform:translate(-50%,-6px);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:6px 9px;font-size:12.5px;white-space:nowrap;box-shadow:0 6px 18px rgba(0,0,0,.12);pointer-events:none;z-index:2}
+.adm-x{display:flex;gap:2px;font-size:10.5px;color:var(--muted);margin-top:4px}
+.adm-x span{flex:1;min-width:0;white-space:nowrap;overflow:visible}
+.adm-funnel{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.adm-row{display:flex;align-items:center;gap:10px;font-size:13.5px}
+.adm-name{flex:0 0 230px;min-width:0}
+.adm-track{flex:1;height:12px;border-radius:6px;background:var(--surface-2);overflow:hidden}
+.adm-fill{display:block;height:100%;background:var(--em-3);border-radius:6px}
+.adm-row b{min-width:34px;text-align:right}
+@media (max-width:640px){.adm-name{flex-basis:130px;font-size:12.5px}}

@@ -84,6 +84,8 @@ async def history(db: AsyncSession, user_id: int, limit: int = 30) -> list[Measu
 
 async def notify(db: AsyncSession, user_id: int, text: str, go: str | None = None) -> None:
     db.add(Notification(user_id=user_id, text=text[:300], go=go))
+    from app.api.push import queue_push  # the same text goes to the phone after the commit
+    queue_push(db, user_id, text[:300], go)
 
 
 def count(row: LearnerState, k: str, n: int = 1) -> None:

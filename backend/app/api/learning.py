@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import get_current_user
+from app.auth.deps import get_current_user, is_admin
 from app.config import NO_LLM, settings
 from app.db import crud_learning as crud
 from app.db.database import get_db
@@ -42,6 +42,7 @@ def me_payload(user: User, state: dict, extra: dict | None = None) -> dict:
         "diag_required": user.role == "student" and engine.diag_required(user.grade),
         "settings": {k: state.get(k) for k in ("plan", "care", "sound", "voice", "onb")},
         "llm_ready": settings.llm_ready,
+        "admin": is_admin(user),
         **(extra or {}),
     }
 
