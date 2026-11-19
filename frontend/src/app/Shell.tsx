@@ -7,9 +7,9 @@ import PhonePush from '../components/PhonePush'
 import { useApp, ViewName } from './store'
 
 const NAV_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['path', 'Траектория', 'flag'], ['plan', 'Расписание', 'cal'], ['check', 'Проверка', 'check'], ['task', 'Карты заданий', 'map'], ['practice', 'Банк задач', 'book'], ['video', 'Разборы', 'play'], ['diag', 'Разбор диагностики', 'bulb'], ['report', 'Итоги недели', 'clock'], ['chat', 'Помощник', 'chat'], ['awards', 'Звёзды', 'star']]
-const BOT_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['path', 'Путь', 'flag'], ['plan', 'План', 'cal'], ['check', 'Проверка', 'check'], ['practice', 'Банк', 'book'], ['chat', 'Помощник', 'chat']]
+const BOT_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['plan', 'План', 'cal'], ['check', 'Проверка', 'check'], ['practice', 'Банк', 'book'], ['chat', 'Помощник', 'chat']]
 const NAV_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['paths', 'Траектории', 'flag'], ['materials', 'Конспекты и презентации', 'slides'], ['task', 'Карты заданий', 'map'], ['bank', 'Банк задач', 'book'], ['variants', 'Варианты', 'pen'], ['tchat', 'Помощник учителя', 'chat'], ['report', 'Итоги недели', 'clock'], ['check', 'Проверка', 'check']]
-const BOT_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['paths', 'Пути', 'flag'], ['bank', 'Банк', 'book'], ['variants', 'Варианты', 'pen'], ['tchat', 'Помощник', 'chat'], ['check', 'Проверка', 'check']]
+const BOT_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['paths', 'Пути', 'flag'], ['bank', 'Банк', 'book'], ['variants', 'Варианты', 'pen'], ['tchat', 'Помощник', 'chat']]
 
 const MLINES: Partial<Record<ViewName, string[]>> = {
   check: ['Сфотографируй решение целиком, вместе с номером задания. Чем ровнее фото, тем точнее проверка.', 'Три эксперта проверяют решение независимо, а если они расходятся, решает судья.'],
@@ -37,6 +37,10 @@ export default function Shell({ children }: { children: ReactNode }) {
   const nav = [...(teacher ? NAV_T.map(([v, l, i]) => (v === 'teacher' && me.role === 'tutor' ? [v, 'Мои ученики', i] : [v, l, i]) as [ViewName, string, string]) : NAV_S),
     ...(me.admin ? [['admin', 'Админка', 'chart'] as [ViewName, string, string]] : [])]
   const bot = teacher ? BOT_T : BOT_S
+  // on the phone the side menu is hidden: everything that is not in the bottom bar opens from «Ещё»
+  const more = nav.filter(([v]) => !bot.some(([b]) => b === v))
+  const cur = view.v === 'session' || view.v === 'trajectory' ? 'check' : view.v === 'variant' ? (teacher ? 'variants' : 'practice') : view.v
+  const inMore = more.some(([v]) => v === cur)
   const [pop, setPop] = useState<NotificationItem[] | null>(null)
   const sayIdx = useRef<Record<string, number>>({})
   const clicks = useRef<number[]>([])
@@ -162,8 +166,9 @@ export default function Shell({ children }: { children: ReactNode }) {
 
       <nav className="bottom" aria-label="Разделы">
         {bot.map(([v, l, i]) => (
-          <button key={v} data-v={v} onClick={() => go(v)} aria-current={view.v === v || (v === 'practice' && view.v === 'variant') || (v === 'variants' && view.v === 'variant') ? 'page' : undefined}><Icon n={i} s={22} />{l}</button>
+          <button key={v} data-v={v} onClick={() => go(v)} aria-current={view.v === v || (v === 'practice' && view.v === 'variant') || (v === 'variants' && view.v === 'variant') || (v === 'check' && view.v === 'session') ? 'page' : undefined}><Icon n={i} s={22} />{l}</button>
         ))}
+        <button data-v="more" onClick={() => app.openModal('Все разделы', <MoreMenu items={more} />)} aria-current={inMore ? 'page' : undefined} aria-label="Ещё разделы"><Icon n="more" s={22} />Ещё</button>
       </nav>
 
       {pop && (
@@ -195,6 +200,18 @@ export default function Shell({ children }: { children: ReactNode }) {
         </div>
       )}
       <Care />
+    </div>
+  )
+}
+
+/* ---------- «Ещё» on the phone: the sections that do not fit into the bottom bar ---------- */
+function MoreMenu({ items }: { items: [ViewName, string, string][] }) {
+  const { go, view } = useApp()
+  return (
+    <div className="more-grid">
+      {items.map(([v, l, i]) => (
+        <button key={v} className={`more-item ${view.v === v ? 'on' : ''}`} onClick={() => go(v)}><Icon n={i} s={22} /><span>{l}</span></button>
+      ))}
     </div>
   )
 }
