@@ -338,8 +338,15 @@ export const weekReport = (): Promise<WeekReport> => apiFetch('/report/week')
 export const classWeek = (): Promise<ClassWeek> => apiFetch('/teacher/report/week')
 export const setParentEmail = (email: string | null): Promise<{ parent_email: string | null; smtp: boolean }> =>
   apiFetch('/me/parent', { method: 'PUT', body: JSON.stringify({ email }) })
-export const getWalkthrough = (ref: string): Promise<Walkthrough> =>
-  apiFetch('/walkthrough', { method: 'POST', body: JSON.stringify({ ref }) })
+const walkthroughPending = new Map<string, Promise<Walkthrough>>()
+export const getWalkthrough = (ref: string): Promise<Walkthrough> => {
+  const current = walkthroughPending.get(ref)
+  if (current) return current
+  const request = (apiFetch('/walkthrough', { method: 'POST', body: JSON.stringify({ ref }) }) as Promise<Walkthrough>)
+    .finally(() => walkthroughPending.delete(ref))
+  walkthroughPending.set(ref, request)
+  return request
+}
 export const getPractice = (task?: number, proto?: string, exam?: string): Promise<{ items: PracticeItem[]; counts: Record<string, number>; tasks: BankTask[]; total?: number; exam?: string }> =>
   apiFetch(`/practice?${task ? `task=${task}` : ''}${proto ? `&proto=${proto}` : ''}${ex(exam, '&')}`)
 export const variantCandidates = (task: number): Promise<{ items: PracticeItem[] }> => apiFetch(`/variants/candidates?task=${task}`)

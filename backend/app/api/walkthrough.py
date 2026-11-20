@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import get_current_user
@@ -47,6 +48,20 @@ def from_solution(sol: str, answer: str | None) -> list[dict]:
 
 class RefIn(BaseModel):
     ref: str = Field(..., max_length=40)
+
+
+async def _persist_walkthrough(db: AsyncSession, ref: str, source: str, steps: list) -> ProblemWalkthrough:
+    """Insert once and return the winner when several requests build the same problem concurrently."""
+    await db.execute(
+        pg_insert(ProblemWalkthrough)
+        .values(ref=ref, source=source, steps=steps)
+        .on_conflict_do_nothing(index_elements=[ProblemWalkthrough.ref])
+    )
+    await db.commit()
+    row = (await db.execute(select(ProblemWalkthrough).where(ProblemWalkthrough.ref == ref))).scalars().first()
+    if row is None:  # defensive: the insert or the competing transaction must have produced a row
+        raise HTTPException(503, "Не удалось сохранить разбор. Попробуйте ещё раз.")
+    return row
 
 
 @router.post("/walkthrough")
@@ -97,9 +112,7 @@ async def walkthrough(body: RefIn, user: User = Depends(get_current_user), db: A
             steps, source = from_solution(p["sol"], p["a"]), "solution"
         if steps is None:
             raise HTTPException(503, "Для этой задачи пока нет решения в банке, а ИИ не подключён: разбор не из чего собрать")
-        row = ProblemWalkthrough(ref=body.ref, source=source, steps=steps)
-        db.add(row)
-        await db.commit()
+        row = await _persist_walkthrough(db, body.ref, source, steps)
     return {**meta, "source": row.source, "steps": row.steps}
 
 
