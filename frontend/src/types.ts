@@ -291,8 +291,9 @@ export interface StudentDetail {
   taskmap?: { done: number; ok: number }
 }
 export interface Textbook { id: number; title: string; authors: string; grade: string; filename: string | null; chars: number; pages?: number }
-export interface Slide { title: string; bullets: string[]; note: string; formula?: string; fig?: string; kind?: string; page?: string }
-export interface MaterialOut { id: number; kind: 'conspect' | 'slides'; topic: string; text?: string; slides?: Slide[]; pages?: string[] }
+export interface Slide { title: string; bullets: string[]; note: string; formula?: string; fig?: string; kind?: string; page?: string; steps?: string[]; question?: string; answer?: string }
+export interface MaterialHead { id: number; kind: 'conspect' | 'slides'; topic: string; section?: string; textbook_id?: number | null; created_at?: string | null; pages?: string[]; theme?: string; count?: number; edited?: boolean }
+export interface MaterialOut extends MaterialHead { text?: string; slides?: Slide[] }
 
 // ---------- task maps (knowledge map of one exam task) ----------
 export interface TmStat { pct: number | null; ok: number; count: number }

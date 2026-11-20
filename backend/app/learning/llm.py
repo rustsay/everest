@@ -134,26 +134,38 @@ async def conspect(topic: str, book: dict, section: str, who: str, minutes: str,
     return await complete([{"role": "user", "content": prompt}], 0.3)
 
 
+SLIDE_KINDS = {"title", "goal", "def", "theorem", "example", "task", "quiz", "exam", "summary", "other"}
+THEMES = {"everest", "board", "paper", "night"}
+
+
+def clean_slide(s: dict) -> dict | None:
+    """One slide from the model or from the teacher's editor: known fields only, short strings."""
+    if not isinstance(s, dict) or not str(s.get("title") or "").strip():
+        return None
+    lst = lambda v, n, ln: [str(b).strip()[:ln] for b in (v or [])[:n] if str(b).strip()] if isinstance(v, list) else []
+    fig = str(s.get("fig") or "").strip()
+    kind = str(s.get("kind") or "other").strip()
+    return {"title": str(s["title"]).strip()[:140], "kind": kind if kind in SLIDE_KINDS else "other",
+            "bullets": lst(s.get("bullets"), 6, 240), "steps": lst(s.get("steps"), 8, 240),
+            "question": str(s.get("question") or "").strip()[:300], "answer": str(s.get("answer") or "").strip()[:300],
+            "formula": str(s.get("formula") or "").strip()[:160], "fig": fig if fig in SLIDE_FIGS else "",
+            "page": str(s.get("page") or "").strip()[:30], "note": str(s.get("note") or "").strip()[:400]}
+
+
 async def slides(topic: str, book: dict, section: str, who: str, minutes: str, text: str, exam_link: str, extra: bool = True) -> list[dict]:
     figs = "; ".join(f"{k} - {v}" for k, v in SLIDE_FIGS.items())
     prompt = _material_head("slides", topic, book, section, who, minutes, text, exam_link, extra) + \
-        f"\nСделай 8-12 слайдов по разделам шаблона: {'; '.join(CONSPECT_TEMPLATE)}. На слайде до 5 коротких пунктов. К каждому слайду заметка учителю.\n" \
+        f"\nСделай 9-13 слайдов по разделам шаблона: {'; '.join(CONSPECT_TEMPLATE)}. На слайде до 5 коротких пунктов, без длинных фраз. К каждому слайду заметка учителю.\n" \
+        "Презентация для показа на уроке, пункты появляются по щелчку, поэтому каждый пункт - одна мысль.\n" \
         "Слайд должен быть наглядным: главную формулу слайда вынеси в поле formula (одна строка), " \
         f"а если по смыслу подходит рисунок, укажи его ключ в поле fig, только из списка: {figs}. Не подходит - fig пустой.\n" \
-        "Поле kind: title (первый слайд), def (определение), theorem (теорема, формула), example (разобранный пример), task (задачи), exam (экзамен), other.\n" \
-        'Ответь только JSON: {"slides":[{"title":"...","kind":"def","bullets":["..."],"formula":"","fig":"","page":"стр. 112","note":"..."}]}'
+        "Поле kind: title (первый слайд: тема, в bullets одна строка - что узнаем), goal (цель урока), def (определение), " \
+        "theorem (теорема, формула), example (разобранный пример: условие в bullets, решение по шагам в steps, каждый шаг - одна строка), " \
+        "task (задачи), quiz (проверь себя: вопрос в question, короткий ответ в answer), exam (связь с экзаменом), summary (главное за урок), other.\n" \
+        "Обязательно: первый слайд title, хотя бы один example со steps, один-два quiz, последний слайд summary.\n" \
+        'Ответь только JSON: {"slides":[{"title":"...","kind":"def","bullets":["..."],"steps":[],"question":"","answer":"","formula":"","fig":"","page":"стр. 112","note":"..."}]}'
     data = parse_json(await complete([{"role": "user", "content": prompt}], 0.3))
-    out = []
-    kinds = {"title", "def", "theorem", "example", "task", "exam", "other"}
-    for s in (data.get("slides") or [])[:14]:
-        if isinstance(s, dict) and s.get("title"):
-            fig = str(s.get("fig") or "").strip()
-            kind = str(s.get("kind") or "other").strip()
-            out.append({"title": str(s["title"])[:140], "bullets": [str(b)[:240] for b in (s.get("bullets") or [])[:6]],
-                        "note": str(s.get("note") or "")[:400], "formula": str(s.get("formula") or "")[:160],
-                        "fig": fig if fig in SLIDE_FIGS else "", "kind": kind if kind in kinds else "other",
-                        "page": str(s.get("page") or "")[:30]})
-    return out
+    return [c for c in (clean_slide(x) for x in (data.get("slides") or [])[:16]) if c]
 
 
 # ---------- task bank: problems out of a document ----------

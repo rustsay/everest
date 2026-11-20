@@ -874,13 +874,27 @@ class CodeIn(BaseModel):
     code: str = Field(..., min_length=4, max_length=12)
 
 
+@router.get("/invite/{code}")
+async def invite_info(code: str, db: AsyncSession = Depends(get_db)):
+    """Public: who invites by this link. Only the class name and the teacher's name, nothing about students."""
+    from app.db.models import ClassGroup
+    cg = (await db.execute(select(ClassGroup).where(ClassGroup.code == code.strip().upper()[:12]))).scalar_one_or_none()
+    if cg is None:
+        raise HTTPException(404, "Ссылка устарела или класс удалён")
+    t = await db.get(User, cg.teacher_id)
+    return {"code": cg.code, "class": cg.name, "teacher": (t.name if t else "") or "", "role": (t.role if t else "teacher") or "teacher"}
+
+
 @router.post("/classes/join")
 async def join_class(body: CodeIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     if user.role != "student":
         raise HTTPException(400, "Вступить в класс может ученик")
+    before = {c.id for c in await crud.student_classes(db, user.id)}
     cg = await crud.join_class(db, user.id, body.code)
     if cg is None:
         raise HTTPException(404, "Класс с таким кодом не найден")
+    if cg.id in before:
+        return {"id": cg.id, "name": cg.name, "already": True}
     await service.notify(db, cg.teacher_id, f"{user.name or user.email} вступил(а) в «{cg.name}»", "teacher")
     await db.commit()
     return {"id": cg.id, "name": cg.name}

@@ -3,6 +3,7 @@ import { createAssignment, createClass, deleteAssignment, reviewTask, teacherOve
 import { useApp } from '../app/store'
 import type { StudentDetail, TeacherOverview } from '../types'
 import { Icon, fmtD, taskLabel } from '../design/ui'
+import { inviteLink } from '../invite'
 
 export default function Teacher() {
   const app = useApp()
@@ -21,6 +22,14 @@ export default function Teacher() {
     app.toast(`Класс создан, код ${c.code}`)
     load()
   }
+  const invite = async (name: string, code: string) => {
+    const url = inviteLink(code)
+    const text = `Присоединяйся к ${tutor ? 'группе' : 'классу'} «${name}» в «Эвересте»: ${url}`
+    // on a phone the share sheet opens (Telegram, WhatsApp, VK); on a computer the link is copied
+    if (navigator.share && matchMedia('(pointer: coarse)').matches) { try { await navigator.share({ title: 'Эверест', text, url }); return } catch { /* cancelled */ return } }
+    try { await navigator.clipboard.writeText(text); app.toast('Ссылка скопирована. Отправьте её ученикам в чат класса') }
+    catch { app.openModal('Ссылка для учеников', <p style={{ userSelect: 'all', wordBreak: 'break-all' }}>{text}</p>) }
+  }
   const shade = (g: number | undefined, m: number): [string, string] => g == null ? ['var(--surface-2)', 'var(--muted)'] : g === 0 ? ['var(--gold-soft)', 'var(--gold-ink)'] : g === m ? ['var(--em)', 'var(--on-em)'] : g / m > 0.5 ? ['var(--em-3)', '#0F2A22'] : ['var(--em-soft)', 'var(--ink)']
   const avg = o.students.length ? Math.round(o.students.reduce((a, s) => a + (s.pct ? s.forecast : (s.forecast / s.max) * 100), 0) / o.students.length) : 0
 
@@ -35,9 +44,10 @@ export default function Teacher() {
       </div>
 
       <section className="card">
-        <div className="card-h"><h2>{tutor ? 'Группы' : 'Классы'}</h2><span className="muted" style={{ fontSize: 13 }}>ученик вводит код в своём профиле</span></div>
+        <div className="card-h"><h2>{tutor ? 'Группы' : 'Классы'}</h2><span className="muted" style={{ fontSize: 13 }}>пригласите по ссылке или дайте код: ученик вводит его в профиле</span></div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {o.classes.map((c) => <div key={c.id} className="item" style={{ cursor: 'default', flex: '1 1 220px' }}><span style={{ flex: 1 }}><span className="t-strong">{c.name}</span><span className="t-sub">{c.student_ids.length} учеников</span></span><span className="pill p-gold class-code">{c.code}</span></div>)}
+          {o.classes.map((c) => <div key={c.id} className="item" style={{ cursor: 'default', flex: '1 1 260px', flexWrap: 'wrap' }}><span style={{ flex: 1 }}><span className="t-strong">{c.name}</span><span className="t-sub">{c.student_ids.length} учеников</span></span><span className="pill p-gold class-code">{c.code}</span>
+            <button className="btn btn-sm btn-line" onClick={() => invite(c.name, c.code)}><Icon n="link" s={16} />Ссылка для учеников</button></div>)}
           <form onSubmit={newClass} style={{ display: 'flex', gap: 8, flex: '1 1 280px' }}>
             <input name="name" className="input" placeholder={tutor ? 'Название группы' : 'Например, 11 А'} maxLength={80} />
             <button className="btn btn-em" type="submit">Создать</button>

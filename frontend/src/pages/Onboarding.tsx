@@ -1,5 +1,7 @@
-import { FormEvent, useState } from 'react'
-import { authConfig, demoLogin, login, putProfile, registerFull, resetPassword, sendCode } from '../api/client'
+import { FormEvent, useEffect, useState } from 'react'
+import { authConfig, demoLogin, inviteInfo, login, putProfile, registerFull, resetPassword, sendCode } from '../api/client'
+import type { InviteInfo } from '../api/client'
+import { clearInvite, pendingInvite } from '../invite'
 import type { Me } from '../types'
 import { Icon, Orn, StarBot, Typed, WideMountains } from '../design/ui'
 
@@ -35,6 +37,13 @@ export default function Onboarding({ me, onToken, onProfile }: Props) {
   const [resetEmail, setResetEmail] = useState('')
   const [info, setInfo] = useState('')
   const fail = (e2: unknown) => setErr(String(e2).replace('Error: ', ''))
+  // invite link of a class (?join=CODE): who invites; the class is joined after sign-up or sign-in (App.route)
+  const [inv, setInv] = useState<InviteInfo | null>(null)
+  const [invBad, setInvBad] = useState(false)
+  useEffect(() => {
+    const c = !me && pendingInvite()
+    if (c) inviteInfo(c).then(setInv).catch(() => { setInvBad(true); clearInvite() })
+  }, [me])
 
   const show = (s: Step) => { setBack((b) => [...b, step]); setStep(s); setErr('') }
   const goBack = () => setBack((b) => { const nb = [...b]; const p = nb.pop(); if (p) setStep(p); return nb })
@@ -113,6 +122,7 @@ export default function Onboarding({ me, onToken, onProfile }: Props) {
 
   const demo = async () => {
     setBusy(true)
+    clearInvite()  // the demo student must not join a real class
     try { const r = await demoLogin(); onToken(r.token, r.email) } catch (e2) { setErr(String(e2).replace('Error: ', '')) } finally { setBusy(false) }
   }
 
@@ -121,10 +131,15 @@ export default function Onboarding({ me, onToken, onProfile }: Props) {
     body = (
       <div className="ob-hello">
         <svg className="hello-svg" viewBox="0 0 520 170" role="img" aria-label="привет"><text x="50%" y="120" textAnchor="middle" className="hello-t">привет</text></svg>
-        <p className="ob-l1">Хочешь вместе готовиться к профильной математике?</p>
-        <p className="ob-l2">Тогда проверь свои силы сейчас</p>
+        {inv ? (<>
+          <p className="ob-l1">{inv.teacher ? `${inv.teacher} приглашает тебя` : 'Тебя приглашают'} в {inv.role === 'tutor' ? 'группу' : 'класс'} «{inv.class}»</p>
+          <p className="ob-l2">Создай аккаунт или войди: {inv.role === 'tutor' ? 'репетитор' : 'учитель'} будет видеть твои результаты и выдавать задания</p>
+        </>) : (<>
+          <p className="ob-l1">Хочешь вместе готовиться к профильной математике?</p>
+          <p className="ob-l2">{invBad ? 'Ссылка-приглашение устарела. Попроси у учителя новую или код класса' : 'Тогда проверь свои силы сейчас'}</p>
+        </>)}
         <div className="ob-l3">
-          <button className="btn btn-em ob-go" onClick={() => show('role')}>Начать</button>
+          <button className="btn btn-em ob-go" onClick={() => { if (inv) { setD({ ...d, role: 'student' }); show('name') } else show('role') }}>{inv ? 'Я ученик, начать' : 'Начать'}</button>
           <button className="ob-link" onClick={() => show('login')}>У меня уже есть аккаунт</button>
           <button className="ob-link" onClick={demo} disabled={busy}>Посмотреть пример</button>
           {err && <p className="auth-msg">{err}</p>}

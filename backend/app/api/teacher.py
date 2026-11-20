@@ -367,7 +367,10 @@ async def delete_textbook(book_id: int, teacher: User = Depends(require_teacher)
         raise HTTPException(404, "Учебник не найден")
     from sqlalchemy import delete as sql_delete
     from app.db.models import SkillExplanation
+    from sqlalchemy import update as sql_update
     await db.execute(sql_delete(SkillExplanation).where(SkillExplanation.textbook_id == b.id))
+    # saved conspects and presentations stay in «Мои материалы» without the link to the book
+    await db.execute(sql_update(Material).where(Material.textbook_id == b.id).values(textbook_id=None))
     await db.delete(b)
     await db.commit()
     return {"ok": True}
@@ -476,11 +479,69 @@ async def generate_material(body: MaterialIn, teacher: User = Depends(require_te
     db.add(m)
     await db.commit()
     await db.refresh(m)
-    return {"id": m.id, "kind": m.kind, "topic": m.topic, **content}
+    return {**content, **_mat_head(m)}
+
+
+def _mat_head(m: Material) -> dict:
+    c = m.content or {}
+    return {"id": m.id, "kind": m.kind, "topic": m.topic, "section": m.section, "textbook_id": m.textbook_id,
+            "created_at": m.created_at.isoformat() if m.created_at else None, "pages": c.get("pages") or [],
+            "theme": c.get("theme") or "everest", "count": len(c.get("slides") or []), "edited": bool(c.get("edited"))}
+
+
+async def _mine(db: AsyncSession, teacher: User, material_id: int) -> Material:
+    m = await db.get(Material, material_id)
+    if m is None or m.owner_id != teacher.id:
+        raise HTTPException(404, "Материал не найден")
+    return m
 
 
 @router.get("/materials")
 async def list_materials(teacher: User = Depends(require_teacher), db: AsyncSession = Depends(get_db)):
-    return {"materials": [{"id": m.id, "kind": m.kind, "topic": m.topic, "section": m.section, "textbook_id": m.textbook_id,
-                           "created_at": m.created_at.isoformat() if m.created_at else None, **(m.content or {})}
-                          for m in await crud.materials(db, teacher.id)]}
+    """«Мои материалы»: all saved conspects and presentations, without their text (it comes by id)."""
+    return {"materials": [_mat_head(m) for m in await crud.materials(db, teacher.id, limit=500)]}
+
+
+@router.get("/materials/{material_id}")
+async def get_material(material_id: int, teacher: User = Depends(require_teacher), db: AsyncSession = Depends(get_db)):
+    m = await _mine(db, teacher, material_id)
+    return {**(m.content or {}), **_mat_head(m)}
+
+
+class MaterialEdit(BaseModel):
+    topic: str | None = Field(None, min_length=1, max_length=200)
+    theme: str | None = None
+    text: str | None = Field(None, max_length=60000)
+    slides: list[dict] | None = None
+
+
+@router.put("/materials/{material_id}")
+async def edit_material(material_id: int, body: MaterialEdit, teacher: User = Depends(require_teacher), db: AsyncSession = Depends(get_db)):
+    """Rename, pick the look of a presentation, fix the text of a conspect or of slides."""
+    m = await _mine(db, teacher, material_id)
+    c = dict(m.content or {})
+    if body.topic is not None:
+        m.topic = body.topic.strip()
+    if body.theme is not None:
+        if body.theme not in llm.THEMES:
+            raise HTTPException(400, "Нет такого оформления")
+        c["theme"] = body.theme
+    if body.text is not None and m.kind == "conspect":
+        c["text"], c["edited"] = body.text, True
+    if body.slides is not None and m.kind == "slides":
+        slides = [x for x in (llm.clean_slide(s) for s in body.slides[:30]) if x]
+        if not slides:
+            raise HTTPException(400, "В презентации должен остаться хотя бы один слайд с заголовком")
+        c["slides"], c["edited"] = slides, True
+    m.content = c
+    await db.commit()
+    return {**c, **_mat_head(m)}
+
+
+@router.delete("/materials/{material_id}")
+async def delete_material(material_id: int, teacher: User = Depends(require_teacher), db: AsyncSession = Depends(get_db)):
+    await db.delete(await _mine(db, teacher, material_id))
+    await db.commit()
+    return {"ok": True}
+
+

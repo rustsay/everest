@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
-import { getMe, putSettings } from './api/client'
+import { getMe, joinClass, putSettings } from './api/client'
+import { clearInvite, pendingInvite } from './invite'
 import Shell from './app/Shell'
 import { AppProvider, useApp, viewHash } from './app/store'
 import Chat from './pages/Chat'
@@ -46,6 +47,15 @@ export default function App() {
 
   const route = useCallback((m: Me) => {
     setMe(m)
+    const inv = pendingInvite()
+    if (inv) {
+      // a student joins the class of the invite link right after signing in; the message is shown in the app
+      clearInvite()
+      if (m.role === 'student') {
+        joinClass(inv).then((c) => sessionStorage.setItem('joined', c.already ? `Ты уже в классе «${c.name}»` : `Ты в классе «${c.name}». Учитель видит твои результаты`))
+          .catch((e) => sessionStorage.setItem('joined', String(e).replace('Error: ', '')))
+      } else sessionStorage.setItem('joined', 'Это ссылка-приглашение для учеников. Отправьте её ученикам')
+    }
     if (m.role === 'student' && m.needs_profile) return setStage('profile')
     // the diagnostic is offered once after sign-up and can be skipped; later it starts from the home screen
     if (m.role === 'student' && !m.diag_done && m.settings.onb === 'new') return setStage('diag')
@@ -110,6 +120,12 @@ function Main() {
     return () => removeEventListener('everest:mock', on)
   }, [])
   const teacher = me.role !== 'student'
+  useEffect(() => {
+    // the result of joining by an invite link (App.route) arrives a moment later
+    const t = setInterval(() => { const m = sessionStorage.getItem('joined'); if (m) { sessionStorage.removeItem('joined'); app.toast(m); app.reload() } }, 700)
+    setTimeout(() => clearInterval(t), 8000)
+    return () => clearInterval(t)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (mockRes) return <Result r={mockRes} name={me.name} sound={me.settings.sound !== false} onGo={() => { setMockRes(null); app.reload(); app.go('home') }} />
   if (mock) return <Diagnostic mode="mock" required={false} exam={me.exam_info} onFinished={(r) => { setMock(false); setMockRes(r) }} onPause={() => { setMock(false); app.toast('Пробник на паузе. Продолжишь из расписания') }} />

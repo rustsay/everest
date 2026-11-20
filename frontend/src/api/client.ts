@@ -111,7 +111,7 @@ export function openWs(sessionId: string): WebSocket {
 
 // ---------------- new design: profile, learning model, teacher ----------------
 import type {
-  Me, Dashboard, PlanData, DiagRun, DiagResult, NotificationItem, ChatMsg, TeacherOverview, StudentDetail, Textbook, MaterialOut,
+  Me, Dashboard, PlanData, DiagRun, DiagResult, NotificationItem, ChatMsg, TeacherOverview, StudentDetail, Textbook, MaterialOut, MaterialHead, Slide,
   TaskMapData, TmAnswer, TmFile, SkillExplain, BankItem, BankTask, PracticeItem, VariantSummary, VariantFull,
   MyPath, PathOut, PathStage, TeacherPaths, DiagWork, Target, Walkthrough, DiagListItem, DiagAnalytics, Check1Result, Check1Item, RedoItem, WeekReport, ClassWeek, MyEvent,
   PushSettings, AdminStats, AdminUser,
@@ -206,8 +206,10 @@ export const postChat = (kind: 'student' | 'teacher', text: string, images: stri
 export const clearChat = (kind: 'student' | 'teacher') => apiFetch(`/chat/${kind}`, { method: 'DELETE' })
 export const mapAnalysis = (): Promise<{ text: string }> => apiFetch('/map/analysis', { method: 'POST' })
 
-export const joinClass = (code: string): Promise<{ id: number; name: string }> =>
+export const joinClass = (code: string): Promise<{ id: number; name: string; already?: boolean }> =>
   apiFetch('/classes/join', { method: 'POST', body: JSON.stringify({ code }) })
+export interface InviteInfo { code: string; class: string; teacher: string; role: string }
+export const inviteInfo = (code: string): Promise<InviteInfo> => apiFetch(`/invite/${encodeURIComponent(code)}`)
 export const assignmentDone = (id: number) => apiFetch(`/assignments/${id}/done`, { method: 'POST' })
 
 export const teacherOverview = (): Promise<TeacherOverview> => apiFetch('/teacher/overview')
@@ -237,6 +239,11 @@ export const deleteTextbook = (id: number) => apiFetch(`/textbooks/${id}`, { met
 export const generateMaterial = (body: {
   kind: 'conspect' | 'slides'; topic: string; textbook_id: number; section: string; paragraph: string; pages: string; extra: boolean; who: string; minutes: string
 }): Promise<MaterialOut> => apiFetch('/materials/generate', { method: 'POST', body: JSON.stringify(body) })
+export const listMaterials = (): Promise<{ materials: MaterialHead[] }> => apiFetch('/materials')
+export const getMaterial = (id: number): Promise<MaterialOut> => apiFetch(`/materials/${id}`)
+export const editMaterial = (id: number, body: { topic?: string; theme?: string; text?: string; slides?: Slide[] }): Promise<MaterialOut> =>
+  apiFetch(`/materials/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+export const deleteMaterial = (id: number) => apiFetch(`/materials/${id}`, { method: 'DELETE' })
 
 // ---------- task maps ----------
 export const listTaskMaps = (): Promise<{ maps: { n: number; name: string }[] }> => apiFetch('/taskmaps')
