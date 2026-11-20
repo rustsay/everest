@@ -191,7 +191,7 @@ export function VariantPage({ id }: { id: number }) {
               ) : it.check === 'answer' ? (
                 <input className="input" style={{ marginTop: 10, maxWidth: 260 }} inputMode="decimal" placeholder="Ответ" value={ans[it.ref] ?? ''} onChange={(e) => setAns({ ...ans, [it.ref]: e.target.value })} aria-label={`Ответ к заданию ${it.task}`} />
               ) : (
-                <button className="btn btn-sm btn-line" style={{ marginTop: 10 }} onClick={() => app.go('check')}><Icon n="check" s={16} />Решить и проверить по фото</button>
+                <button className="btn btn-sm btn-line" style={{ marginTop: 10 }} onClick={() => app.go({ v: 'check', id: 'p2' })}><Icon n="check" s={16} />Решить и проверить по фото</button>
               )}
             </li>
           )

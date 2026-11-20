@@ -375,6 +375,8 @@ export interface Check1Result {
   kind: 'ok' | 'ok_doubt' | 'slip' | 'method'; first?: boolean; sol?: string
 }
 export interface Check1Item extends Check1Result { at: string; task: number; ref: string | null; problem: string; answer: string }
+export interface Check2Result { score: number; max: number; comment: string; keyed: boolean; ans_img?: string | null; answer_text?: string | null }
+export interface Check2Item extends Check2Result { at: string; task: number; ref: string | null; problem: string }
 export interface RedoItem extends PracticeItem { step: number; added: string; tries: number }
 
 // ---------- weekly report ----------

@@ -15,6 +15,9 @@ cp .env.example .env       # заполнить LLM_BASE_URL, LLM_API_KEY, LLM_M
 docker compose up --build  # поднимает backend + frontend + postgres
 ```
 
+Обновление сервера: `git pull && docker compose up -d --build backend`. Фронтенд подключён папкой и обновляется сам,
+а backend скопирован в образ: без `--build` работает старый код (тогда у базы и ОГЭ видны задачи профиля, `components/StaleServer.tsx` предупреждает).
+
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8000/api
 - Swagger docs: http://localhost:8000/docs
@@ -180,7 +183,8 @@ frontend/src/
 | GET | /api/fipi/img/{N.png\|aN.png} | — | Картинка задачи / ответа 13-19 открытого банка ФИПИ |
 | GET | /api/diagnostics, /api/diagnostics/{id}/analytics | ✓ | Мои диагностики и пробники; аналитика (старые пересобираются из ответов) |
 | GET | /api/diagnostics/open/{mode} | ✓ | Незаконченная диагностика / пробник (спросить перед новым) |
-| POST/GET | /api/check1 | ✓ | Проверка 1 части: task, answer, ref или problem, files; история последних 30 |
+| POST/GET | /api/check1 | ✓ | Проверка части с коротким ответом своего экзамена (профиль 1-12, ОГЭ 1-19, база 1-21): task, answer, ref или problem, files; история по экзамену |
+| POST/GET | /api/check2 | ✓ | ОГЭ 20-25 по фото: 0-2 балла (`llm.grade_long` с ответом сборника), балл идёт в прогноз (`on_task_checked`) |
 | GET | /api/redo | ✓ | Работа над ошибками: задачи на сегодня без ответов, сколько позже, сколько исправлено |
 | GET | /api/report/week, /api/teacher/report/week | ✓ / учитель | Итоги последних 7 дней: ученик / все ученики классов учителя |
 | PUT | /api/me/parent | ученик | Почта родителя для письма с итогами недели (нужен SMTP) |
@@ -458,3 +462,9 @@ npm run dev   # vite proxy → localhost:8000
   night; хранится в `content.theme`. Размеры в cqw, длинный текст уменьшается сам (`--k`). Показ `SlideShow`: пункты, шаги, ответ, формула,
   рисунок появляются по щелчку (пробел, стрелки, пульт PageDown), переходы между слайдами, N - заметки, B - тёмный экран, таймер, свайп.
   Печать в PDF - все слайды в выбранном оформлении. `prefers-reduced-motion` выключает анимацию.
+
+## Проверка по фото: одно окно по экзамену (ноябрь 2026)
+
+- `pages/Check.tsx`: сверху переключатель «Первая часть / Вторая часть» (`#check` и `#check/p2`) у профиля и ОГЭ, у базы одна часть 1-21.
+  Первая часть - `components/Check1.tsx` с диапазоном экзамена (`api/check1.PARTS`), вторая у профиля - сессии трёх экспертов
+  (13-19), у ОГЭ - `components/Check2.tsx` (20-25). Учитель видит переключатель экзамена (`ExamSwitch`). Задача чужого экзамена отклоняется.

@@ -5,6 +5,7 @@ import type { BankItem, BankTask } from '../types'
 import { Icon } from '../design/ui'
 import NoLlm from '../components/NoLlm'
 import ExamSwitch from '../components/ExamSwitch'
+import StaleServer from '../components/StaleServer'
 import { EXAM_NAMES } from '../app/store'
 
 /** Teacher / methodist: import problems from files, check them and publish them into the task maps. */
@@ -126,12 +127,13 @@ function BankRow({ it, task, onChanged }: { it: BankItem; task?: BankTask; onCha
 /** OGE and EGE base: the open FIPI bank of the exam with every problem and answer. Own imports are for the profile exam so far. */
 function ExamBank() {
   const app = useApp()
-  const [d, setD] = useState<{ counts: Record<string, number>; tasks: BankTask[]; total?: number } | null>(null)
+  const [d, setD] = useState<{ counts: Record<string, number>; tasks: BankTask[]; total?: number; exam?: string } | null>(null)
   useEffect(() => { setD(null); getPractice(undefined, undefined, app.exam).then(setD).catch(() => setD({ counts: {}, tasks: [] })) }, [app.exam])
   const name = EXAM_NAMES[app.exam]
   return (
     <>
       <div className="card-h" style={{ margin: 0 }}><div><p className="muted">Кабинет учителя</p><h1>Банк задач</h1></div><ExamSwitch /></div>
+      {d && d.tasks.length > 0 && <StaleServer want={app.exam} got={d.exam ?? 'prof'} />}
       <section className="card" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
         <Icon n="book" s={24} />
         <div style={{ flex: '1 1 260px' }}>
