@@ -24,7 +24,7 @@ from app.api.teacher import _extract_text, require_teacher
 from app.config import NO_LLM, settings
 from app.db.database import get_db
 from app.db.models import BankProblem, User
-from app.learning import llm
+from app.learning import fipi, llm
 from app.learning.taskmaps import PART2, TASK_MAPS, proto_ids
 
 log = logging.getLogger(__name__)
@@ -98,7 +98,7 @@ async def import_file(task: int = Form(...), file: UploadFile = File(...), teach
             rows.append({"task": n, "proto": str(r.get("proto") or "").strip(), "text": str(r.get("text") or "").strip(),
                          "answer": (str(r.get("answer")).strip() or None) if r.get("answer") not in (None, "") else None,
                          "solution": str(r.get("solution") or "").strip(), "source": str(r.get("source") or file.filename or "")[:300]})
-    elif ext in (".pdf", ".txt", ".md"):
+    elif ext in (".pdf", ".txt", ".md", ".docx"):
         if not settings.llm_ready:
             raise HTTPException(503, NO_LLM)
         text = _extract_text(name, data)
@@ -114,7 +114,7 @@ async def import_file(task: int = Form(...), file: UploadFile = File(...), teach
                 raise HTTPException(502, "Разбор документа сейчас недоступен. Попробуйте через минуту.")
             rows += [{**f, "task": task, "source": (file.filename or "")[:300]} for f in found]
     else:
-        raise HTTPException(400, "Можно JSON, CSV, PDF с текстом или TXT")
+        raise HTTPException(400, "Можно JSON, CSV, PDF с текстом, Word (.docx) или TXT")
 
     existing = (await db.execute(select(BankProblem.task_n, BankProblem.text))).all()
     seen = {(t, _norm(x)) for t, x in existing}
@@ -144,7 +144,10 @@ async def list_bank(task: int | None = None, status: str = "draft", teacher: Use
     for t, st in (await db.execute(select(BankProblem.task_n, BankProblem.status))).all():
         c = counts.setdefault(t, {"approved": 0, "draft": 0})
         c[st] = c.get(st, 0) + 1
-    return {"items": [_view(b, teacher) for b in items], "counts": counts}
+    fipi_counts: dict[int, int] = {}
+    for p in fipi.problems():
+        fipi_counts[p["task"]] = fipi_counts.get(p["task"], 0) + 1
+    return {"items": [_view(b, teacher) for b in items], "counts": counts, "fipi": fipi_counts, "fipi_source": fipi.SOURCE}
 
 
 class BankEdit(BaseModel):

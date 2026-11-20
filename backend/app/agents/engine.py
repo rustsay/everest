@@ -16,7 +16,10 @@ async def check_task(
     ocr_text: str,
     image_bytes_list: list[bytes],
     emit: Emitter | None = None,
+    problem: str = "",
+    problem_image: bytes | None = None,
 ) -> tuple[list[AgentVerdict], JudgeDecision]:
+    """problem / problem_image: the statement, when it is known (a problem chosen in the diagnostic)."""
     async def _emit(event: dict) -> None:
         if emit:
             await emit(event)
@@ -32,6 +35,8 @@ async def check_task(
                     ocr_text=ocr_text,
                     image_bytes_list=image_bytes_list,
                     temperature=temp,
+                    problem=problem,
+                    problem_image=problem_image,
                 )
                 for agent_id, temp in _TEMPERATURE_CONFIGS
             ]

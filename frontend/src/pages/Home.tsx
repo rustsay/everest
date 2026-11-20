@@ -39,8 +39,15 @@ export default function Home() {
         <Route d={d} />
       </div>
       <Rises d={d} />
+      {(d.redo?.due ?? 0) > 0 && (
+        <section className="card redo-cta" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ flex: '1 1 240px' }}><b>Работа над ошибками: {d.redo!.due} {plural(d.redo!.due, 'задача', 'задачи', 'задач')} на сегодня</b>
+            <p className="muted" style={{ fontSize: 13.5 }}>Задачи, где была ошибка. Реши заново: две верные подряд, и ошибка исправлена.</p></div>
+          <button className="btn btn-gold" onClick={() => { app.go('practice'); setTimeout(() => document.getElementById('redo')?.scrollIntoView({ behavior: 'smooth' }), 400) }}>Исправить</button>
+        </section>
+      )}
       <div className="grid2 stagger">
-        {d.diag_done === false ? <DiagOffer /> : <RootCard d={d} />}
+        {d.diag_done === false ? <DiagOffer open={d.diag_open} /> : <RootCard d={d} />}
         <Daily d={d} />
       </div>
       <div className="grid2 stagger">
@@ -122,10 +129,11 @@ function Hero({ d }: { d: Dashboard }) {
         )}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
           {d.diag_done === false
-            ? <button className="btn btn-sm btn-gold" onClick={() => dispatchEvent(new Event('everest:diag'))}>Пройти диагностику</button>
+            ? <button className="btn btn-sm btn-gold" onClick={() => dispatchEvent(new Event('everest:diag'))}>{d.diag_open ? 'Продолжить диагностику' : 'Пройти диагностику'}</button>
             : <>
               <button className="btn btn-sm btn-gold" onClick={() => app.openModal('Как считается прогноз', <Forecast d={d} />, true)}>Как считается</button>
               <button className="btn btn-sm" style={{ background: 'rgba(255,255,255,.1)', color: 'var(--on-em)' }} onClick={() => app.go({ v: 'task', id: String(rootTaskN(d) ?? 1) })}>Что поднимет балл</button>
+              <button className="btn btn-sm" style={{ background: 'rgba(255,255,255,.1)', color: 'var(--on-em)' }} onClick={() => app.go('diag')}>Разбор диагностики</button>
             </>}
         </div>
       </div>
@@ -184,9 +192,11 @@ function Route({ d }: { d: Dashboard }) {
   const cur = blocks.findIndex((b) => b && !b.done)
   return (
     <section className="card" style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: 10 }} aria-label="Маршрут на сегодня">
-      <div className="card-h" style={{ margin: 0 }}><h2>Маршрут на сегодня</h2><span className="muted num">{done} из {blocks.length || 0}</span></div>
+      <div className="card-h" style={{ margin: 0 }}><h2>Маршрут на сегодня{d.today.time ? ` · ${d.today.time}` : ''}</h2><span className="muted num">{done} из {blocks.length || 0}</span></div>
       <div className="bar"><i style={{ width: `${blocks.length ? (done / blocks.length) * 100 : 0}%`, background: 'var(--em)' }} /></div>
-      <RouteNote basis={d.route_basis} exam={d.exam} />
+      <RouteNote basis={d.route_basis} exam={d.exam} stage={d.path_stage} />
+      {(d.today.events ?? []).map((e) => <div key={e.id} className={`pev ${e.kind}`}><b>{e.start ? `${e.start} ` : ''}{e.title}</b>{e.min ? <small>{e.min} мин</small> : null}</div>)}
+      {d.today.busy && <div className="item" style={{ cursor: 'default' }}><Icon n="cal" /><span style={{ flex: 1 }}><span className="t-strong">Сегодня день занят</span><span className="t-sub">математика перенесена на следующий день</span></span><button className="btn btn-sm btn-line" onClick={() => app.go('plan')}>Неделя</button></div>}
       {d.today.rest && <div className="item" style={{ cursor: 'default' }}><Icon n="moon" /><span style={{ flex: 1 }}><span className="t-strong">Сегодня отдых</span><span className="t-sub">выходной день в расписании</span></span><button className="btn btn-sm btn-line" onClick={() => app.go('plan')}>Неделя</button></div>}
       {blocks.map((b, i) => b && (
         <div key={b.key} className={`item ${i === cur ? 'current' : ''}`} style={{ cursor: 'default' }}>
@@ -264,13 +274,20 @@ function rootTaskN(d: Dashboard): number | null {
   return t && typeof t.n === 'number' ? t.n : null
 }
 
-function DiagOffer() {
+function DiagOffer({ open }: { open?: { done: number; total: number } | null }) {
   return (
     <section className="card" aria-label="Диагностика" style={{ borderColor: 'var(--gold)', borderWidth: 1.5 }}>
       <span className="pill p-gold">Диагностика</span>
-      <h2 style={{ fontSize: 19, marginTop: 10 }}>Узнай свой прогноз и слабое место</h2>
-      <p className="muted" style={{ marginTop: 8 }}>Задания из демоверсии: по ответам посчитаем прогноз, найдём, где теряются баллы, и подстроим расписание. Её можно поставить на паузу.</p>
-      <button className="btn btn-em" style={{ marginTop: 14 }} onClick={() => dispatchEvent(new Event('everest:diag'))}>Начать диагностику</button>
+      {open ? <>
+        <h2 style={{ fontSize: 19, marginTop: 10 }}>Диагностика на паузе</h2>
+        <p className="muted" style={{ marginTop: 8 }}>Сделано {open.done} из {open.total}. Ответы и фото сохранены, продолжишь с того же места.</p>
+        <div className="bar" style={{ marginTop: 10 }} aria-hidden="true"><i style={{ width: `${Math.round((open.done / open.total) * 100)}%`, background: 'var(--gold)' }} /></div>
+        <button className="btn btn-em" style={{ marginTop: 14 }} onClick={() => dispatchEvent(new Event('everest:diag'))}>Продолжить диагностику</button>
+      </> : <>
+        <h2 style={{ fontSize: 19, marginTop: 10 }}>Узнай свой прогноз и слабое место</h2>
+        <p className="muted" style={{ marginTop: 8 }}>Задания из демоверсии: по ответам посчитаем прогноз, найдём, где теряются баллы, и подстроим расписание. Её можно поставить на паузу.</p>
+        <button className="btn btn-em" style={{ marginTop: 14 }} onClick={() => dispatchEvent(new Event('everest:diag'))}>Начать диагностику</button>
+      </>}
     </section>
   )
 }
@@ -291,16 +308,19 @@ function RootCard({ d }: { d: Dashboard }) {
   const root = M.root ? nodes[M.root] : null
   const rootTasks = M.tasks.filter((t) => M.root_tasks.includes(t.id))
   const title = !root ? 'Явной первопричины нет: все проверенные темы выше 50%'
+    : M.basics ? `Почти все задания пока не получились: начинаем с основ, с темы «${root.name}»`
     : ex.pct ? `«${root.name}» тянет вниз ${rootTasks.length} ${plural(rootTasks.length, 'тему', 'темы', 'тем')}`
       : `Около ${fmt1(M.at_risk)} ${ex.unit === 'б.' ? 'баллов' : 'первичных баллов'} теряется из-за темы «${root.name}»`
   return (
     <section className="card" aria-label="Первопричина" style={{ borderColor: 'var(--bad)', borderWidth: 1.5 }}>
       <div className="card-h"><span className="pill p-bad">Первопричина</span><span className="muted" style={{ fontSize: 13 }}>{d.history.length ? `по ${d.history.length} ${plural(d.history.length, 'замеру', 'замерам', 'замерам')}` : 'пока нет замеров'}</span></div>
       <h2 style={{ fontSize: 19 }}>{title}</h2>
-      <p className="muted" style={{ marginTop: 8 }}>{root
+      <p className="muted" style={{ marginTop: 8 }}>{root && M.basics
+        ? <>Когда не получилось почти ничего, выбирать «главную» слабую тему наугад нечестно. Начинаем с базовых тем по порядку, расписание идёт от лёгкого к сложному.</>
+        : root
         ? <>Слабое место: <b style={{ color: 'var(--ink)' }}>{root.name}</b> ({Math.round(root.m * 100)}%). От неё зависят: {rootTasks.slice(0, 8).map(taskLabel).join(', ') || 'задания выше по карте'}.</>
         : 'Продолжай по расписанию: оно уже чередует задания так, чтобы ничего не забылось.'}</p>
-      {root && <p style={{ marginTop: 10, fontWeight: 700 }}>Закрыть пробел: примерно <span style={{ color: 'var(--em-ink)' }}>+{ex.pct ? Math.round((d.gain / ex.max) * 100) + '%' : fmt1(d.gain)}</span> к прогнозу</p>}
+      {root && !M.basics && <p style={{ marginTop: 10, fontWeight: 700 }}>Закрыть пробел: примерно <span style={{ color: 'var(--em-ink)' }}>+{ex.pct ? Math.round((d.gain / ex.max) * 100) + '%' : fmt1(d.gain)}</span> к прогнозу</p>}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
         {rootTaskN(d) != null && <button className="btn btn-em" onClick={() => { sendEvent('ach', 'root').catch(() => null); app.go({ v: 'task', id: String(rootTaskN(d)) }) }}>Карта задания № {rootTaskN(d)}</button>}
         <button className="btn btn-line" onClick={() => app.openModal('Подробный разбор пробелов', <Analysis />, true)}>Подробный разбор</button>

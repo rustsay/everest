@@ -69,11 +69,80 @@ const FIGS: Record<string, ReactElement> = {
     <path d="M30 22 V70" {...D} />
     <text x={52} y={52} fontSize={15} fontWeight={800} fill="currentColor">S</text>
   </>),
+  // figures for slides: functions and solids
+  unit: (<>
+    <path d="M8 42 H112 M60 4 V80" {...S} strokeWidth={1.2} />
+    <circle cx={60} cy={42} r={34} {...S} />
+    <path d="M60 42 L84 18" {...A} /><path d="M84 18 V42" {...D} />
+    {dot(84, 18)}
+    <path d="M72 42 a12 12 0 0 0 -3.5 -8.5" {...A} />
+    <text x={88} y={16} fontSize={11} fontWeight={800} fill="currentColor">M</text><text x={74} y={38} fontSize={10} fontWeight={800} fill="currentColor">α</text>
+  </>),
+  parab: (<>
+    <path d="M8 70 H112 M60 4 V80" {...S} strokeWidth={1.2} />
+    <path d="M26 8 Q60 132 94 8" {...A} />
+    <text x={96} y={18} fontSize={11} fontWeight={800} fill="currentColor">y = x²</text>
+  </>),
+  expg: (<>
+    <path d="M8 70 H112 M50 4 V80" {...S} strokeWidth={1.2} />
+    <path d="M8 68 C40 66 52 60 62 48 S80 12 86 4" {...A} />
+    {dot(50, 58)}<text x={54} y={64} fontSize={10} fontWeight={800} fill="currentColor">1</text>
+    <text x={88} y={16} fontSize={11} fontWeight={800} fill="currentColor">y = aˣ</text>
+  </>),
+  logg: (<>
+    <path d="M8 50 H112 M20 4 V80" {...S} strokeWidth={1.2} />
+    <path d="M22 80 C24 60 28 52 36 50 S70 38 112 30" {...A} />
+    {dot(36, 50)}<text x={32} y={62} fontSize={10} fontWeight={800} fill="currentColor">1</text>
+    <text x={70} y={26} fontSize={11} fontWeight={800} fill="currentColor">y = logₐx</text>
+  </>),
+  sing: (<>
+    <path d="M4 42 H116 M14 6 V78" {...S} strokeWidth={1.2} />
+    <path d="M14 42 C24 12 34 12 44 42 S64 72 74 42 S94 12 104 42" {...A} />
+    <text x={40} y={56} fontSize={10} fontWeight={800} fill="currentColor">π</text><text x={70} y={34} fontSize={10} fontWeight={800} fill="currentColor">2π</text>
+  </>),
+  tangent: (<>
+    <path d="M8 74 H112 M16 4 V80" {...S} strokeWidth={1.2} />
+    <path d="M18 70 C40 66 60 50 70 34 S90 8 100 4" {...S} />
+    <path d="M30 76 L104 8" {...A} />{dot(66, 40)}
+    <path d="M66 40 V74" {...D} /><text x={62} y={84} fontSize={10} fontWeight={800} fill="currentColor">x₀</text>
+  </>),
+  line: (<>
+    <path d="M6 46 H114" {...S} /><path d="M108 41 l6 5 -6 5" {...S} />
+    <path d="M30 46 Q48 20 66 46" {...A} />
+    <circle cx={30} cy={46} r={3.5} fill="var(--surface, #fff)" stroke="currentColor" strokeWidth={2} />
+    <circle cx={66} cy={46} r={3.5} fill="currentColor" />
+    <text x={26} y={64} fontSize={11} fontWeight={800} fill="currentColor">a</text><text x={62} y={64} fontSize={11} fontWeight={800} fill="currentColor">b</text>
+  </>),
+  cube: (<>
+    <path d="M18 30 H74 V78 H18 Z M18 30 L44 8 H100 L74 30 M100 8 V56 L74 78" {...S} />
+    <path d="M18 78 L44 56 H100 M44 56 V8" {...D} />
+  </>),
+  pyramid: (<>
+    <path d="M14 70 L76 70 L104 52 M14 70 L60 8 L76 70 M60 8 L104 52" {...S} />
+    <path d="M14 70 L42 52 H104 M42 52 L60 8" {...D} />
+    <path d="M60 8 V61" {...A} />
+  </>),
+  cyl: (<>
+    <ellipse cx={60} cy={16} rx={32} ry={9} {...S} />
+    <path d="M28 16 V68 M92 16 V68" {...S} />
+    <path d="M28 68 A32 9 0 0 0 92 68" {...S} /><path d="M28 68 A32 9 0 0 1 92 68" {...D} />
+    <path d="M60 16 H92" {...A} />
+  </>),
+  cone: (<>
+    <path d="M28 66 L60 8 L92 66" {...S} />
+    <path d="M28 66 A32 9 0 0 0 92 66" {...S} /><path d="M28 66 A32 9 0 0 1 92 66" {...D} />
+    <path d="M60 8 V66 H92" {...A} />
+  </>),
+  sphere: (<>
+    <circle cx={60} cy={42} r={36} {...S} />
+    <path d="M24 42 A36 10 0 0 0 96 42" {...S} /><path d="M24 42 A36 10 0 0 1 96 42" {...D} />
+    <path d="M60 42 L94 30" {...A} />{dot(60, 42)}
+  </>),
 }
 
-export default function GeoFig({ k, w = 72 }: { k: string; w?: number }) {
+export default function GeoFig({ k, w = 72, color = 'var(--ink)' }: { k: string; w?: number; color?: string }) {
   return (
-    <svg viewBox="0 0 120 84" width={w} height={(w * 84) / 120} aria-hidden="true" style={{ flex: 'none', color: 'var(--ink)' }}>
+    <svg viewBox="0 0 120 84" width={w} height={(w * 84) / 120} aria-hidden="true" style={{ flex: 'none', color }}>
       {FIGS[k] ?? null}
     </svg>
   )

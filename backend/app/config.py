@@ -17,6 +17,24 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_days: int = 30
 
+    # email codes (registration and «Забыли пароль»). No SMTP_HOST: the code is written to the backend log
+    email_confirm: bool = False  # temporarily register without an email code
+    smtp_host: str = ""
+    smtp_port: int = 465
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+
+    # push notifications. Empty key: it is created once and kept in uploads/vapid_private.pem
+    vapid_private_key: str = ""
+    vapid_subject: str = ""          # mailto:... or https://...; empty - SMTP_FROM, else the project page
+    push_remind_time: str = "17:00"  # daily reminder when the student did not set his own time of lessons
+
+    # admin panel: emails separated by commas. Empty - nobody has it
+    admin_emails: str = ""
+    # days in the admin panel are counted in this time zone (hours from UTC; Moscow +3)
+    stats_utc_offset: int = 3
+
     class Config:
         env_file = ".env"
 
@@ -24,6 +42,14 @@ class Settings(BaseSettings):
     def llm_ready(self) -> bool:
         url, key = self.llm_base_url.strip(), self.llm_api_key.strip()
         return bool(url and key) and "your-llm-server" not in url and key != "your-api-key"
+
+    @property
+    def admins(self) -> set[str]:
+        return {e.strip().lower() for e in self.admin_emails.split(",") if e.strip()}
+
+    @property
+    def smtp_ready(self) -> bool:
+        return bool(self.smtp_host.strip())
 
 
 settings = Settings()

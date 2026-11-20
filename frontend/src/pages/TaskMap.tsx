@@ -1,7 +1,10 @@
+import ProblemText, { AnswerPic } from '../components/ProblemText'
 import { FormEvent, ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { answerTaskMap, deleteTaskFile, downloadTaskFile, explainSkill, getTaskMap, listTaskMaps, uploadTaskFile } from '../api/client'
 import { useApp } from '../app/store'
+import { examRange } from '../types'
+import ExamSwitch from '../components/ExamSwitch'
 import type { SkillExplain, TaskMapData, TmAnswer, TmProblem, TmProto, TmSkill, TmStat } from '../types'
 import { Icon, Md } from '../design/ui'
 import GeoFig from '../components/GeoFig'
@@ -27,26 +30,27 @@ export default function TaskMap({ n }: { n: number }) {
   const [err, setErr] = useState('')
   const [sel, setSel] = useState<Sel>(null)
   const [hover, setHover] = useState<string | null>(null)
-  const load = useCallback(() => getTaskMap(n).then((m) => { setD(m); setErr('') }).catch((e) => setErr(String(e).replace('Error: ', ''))), [n])
+  const exam = app.me.role === 'student' ? undefined : app.exam
+  const load = useCallback(() => getTaskMap(n, exam).then((m) => { setD(m); setErr('') }).catch((e) => setErr(String(e).replace('Error: ', ''))), [n, exam])
   useEffect(() => { load() }, [load])
-  useEffect(() => { listTaskMaps().then((r) => setMaps(r.maps)).catch(() => null) }, [])
+  useEffect(() => { listTaskMaps(exam).then((r) => setMaps(r.maps)).catch(() => null) }, [exam])
 
-  if (err) return <p className="muted">{err}</p>
+  if (err) return <><ExamSwitch onChange={() => app.go({ v: 'task', id: '1' })} /><p className="muted" style={{ marginTop: 10 }}>{err}</p></>
   if (!d) return <p className="muted">Загружаю карту задания…</p>
-  const teacher = app.me.role !== 'student'
   const start = [...d.protos].filter((p) => p.count).sort((a, b) => (a.pct ?? 0) - (b.pct ?? 0))[0] ?? d.protos.find((p) => !p.count)
 
   return (
     <>
       <div className="card-h" style={{ margin: 0, alignItems: 'flex-end' }}>
         <div>
-          <p className="muted">Карта задания · {d.part === 2 ? 'вторая часть' : 'первая часть'} · {d.protos.length} прототипов</p>
+          <p className="muted">Карта задания{d.exam && d.exam !== 'prof' ? ` · ${d.exam === 'oge' ? 'ОГЭ' : 'ЕГЭ база'}` : ''} · {d.part === 2 ? 'вторая часть' : 'первая часть'} · {d.protos.length} {d.exam && d.exam !== 'prof' ? 'типов' : 'прототипов'}</p>
           <h1>Задание № {d.n} · {d.name}</h1>
+          <div style={{ marginTop: 8 }}><ExamSwitch onChange={() => app.go({ v: 'task', id: '1' })} /></div>
         </div>
         <div className="tm-tabs" role="tablist" aria-label="Задания">
-          {Array.from({ length: 19 }, (_, i) => i + 1).map((k) => {
+          {Array.from({ length: examRange(d.exam).n }, (_, i) => i + 1).map((k) => {
             const m = maps.find((x) => x.n === k)
-            return <button key={k} role="tab" aria-selected={k === n} disabled={!m} title={m ? m.name : 'Скоро'} className={`${k === n ? 'on' : ''} ${k >= 13 ? 'p2' : ''}`} onClick={() => app.go({ v: 'task', id: String(k) })}>{k}</button>
+            return <button key={k} role="tab" aria-selected={k === n} disabled={!m} title={m ? m.name : 'Скоро'} className={`${k === n ? 'on' : ''} ${k >= examRange(d.exam).p2 ? 'p2' : ''}`} onClick={() => app.go({ v: 'task', id: String(k) })}>{k}</button>
           })}
         </div>
       </div>
@@ -300,18 +304,24 @@ export function Problem({ n, i, q, onDone }: { n: number; i: number; q: TmProble
   const was = q.done
   return (
     <div className={`tm-prob ${res ? (res.ok ? 'ok' : 'no') : was === 1 ? 'ok' : was === 0 ? 'no' : ''}`}>
-      <p><b>{i + 1}.</b> {q.q}</p>
+      <div className="prob-q"><b>{i + 1}.</b> <ProblemText q={q.q} img={q.img} ctx={q.ctx_img} small /></div>
       {q.src && <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>Источник: {q.src}</p>}
       {q.check === 'photo' && !res && was == null ? (
-        <button className="btn btn-sm btn-line" style={{ marginTop: 10 }} onClick={() => app.go('check')}><Icon n="check" s={16} />Решить и проверить по фото</button>
+        <><button className="btn btn-sm btn-line" style={{ marginTop: 10 }} onClick={() => app.go('check')}><Icon n="check" s={16} />Решить и проверить по фото</button><AnswerPic src={q.ans_img} /></>
       ) : res ? (
-        <p className="tm-res"><b>{res.ok ? 'Верно.' : `Неверно, ответ ${res.answer}.`}</b> {res.sol}{!res.first && <span className="muted"> В процент идёт первая попытка.</span>}</p>
+        <p className="tm-res"><b>{res.ok ? 'Верно.' : `Неверно, ответ ${res.answer}.`}</b> {res.sol}{!res.first && !res.redo && <span className="muted"> В процент идёт первая попытка.</span>}
+          {res.redo === 'added' && <span className="muted"> Задача вернётся в «Работе над ошибками» через 3 дня.</span>}
+          {res.redo === 'next' && <span className="muted"> Исправлено! Ещё раз через 7 дней, чтобы закрепить.</span>}
+          {res.redo === 'done' && <span className="muted"> Ошибка исправлена окончательно: +40 м.</span>}
+          {res.redo === 'again' && <span className="muted"> Пока не вышло: задача вернётся через 3 дня.</span>}</p>
       ) : was != null ? (
         <p className="tm-res"><b>{was ? 'Решено с первой попытки.' : 'С первой попытки не получилось.'}</b> {q.sol}</p>
       ) : (
         <form className="tm-ans" onSubmit={submit}>
           <input className="input" inputMode="decimal" placeholder="Ответ" value={v} onChange={(e) => setV(e.target.value)} aria-label={`Ответ к задаче ${i + 1}`} />
           <button className="btn btn-em" type="submit" disabled={busy || !v.trim()}>Проверить</button>
+          {n <= 12 && <button type="button" className="btn btn-ghost" title="Ответ и фото решения: найдём ошибку"
+            onClick={() => app.go({ v: 'check', id: `1-${n}-${/^[fb]\d+$/.test(q.id) ? q.id : `s${n}:${q.id}`}` })}><Icon n="check" s={16} />По фото</button>}
         </form>
       )}
     </div>

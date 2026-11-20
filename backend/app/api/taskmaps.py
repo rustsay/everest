@@ -19,6 +19,7 @@ from app.db.database import get_db
 from app.db.models import BankProblem, Diagnostic, SkillExplanation, TaskFile, Textbook, User
 from app.learning import engine, llm, service, textbook_search
 from app.learning.content import PROF_P1
+from app.learning import fipi
 from app.learning.taskmaps import AVAILABLE, PART2, SKILLS, TASK_MAPS, problem_index
 
 log = logging.getLogger(__name__)
@@ -28,14 +29,57 @@ FILE_EXT = {".pdf", ".png", ".jpg", ".jpeg", ".docx", ".pptx"}
 MAX_FILE = 20 * 1024 * 1024
 
 
-def _map(n: int) -> dict:
-    if n not in TASK_MAPS:
+def _key(user: User, exam: str | None = None) -> str:
+    """A student sees his exam; a teacher or tutor chooses (?exam=prof|base|oge)."""
+    if user.role != "student" and exam in ("prof", "base", "oge"):
+        return exam
+    return service.key_for(user)
+
+
+def _maps(user: User, exam: str | None = None) -> dict[int, dict]:
+    """Maps of the user's exam: the profile has the methodist's maps, OGE and base - the types of the open FIPI bank."""
+    key = _key(user, exam)
+    if key in ("oge", "base"):
+        from app.learning import exambank
+        from app.learning.content import EXAMS
+        return exambank.task_maps(key, {t["n"]: t["name"] for t in EXAMS[key]["tasks"]})
+    return TASK_MAPS
+
+
+def _map(n: int, user: User | None = None, exam: str | None = None) -> dict:
+    maps = _maps(user, exam) if user is not None else TASK_MAPS
+    if n not in maps:
         raise HTTPException(404, "Карта этого задания ещё не готова")
-    return TASK_MAPS[n]
+    return maps[n]
+
+
+def _part(key: str, n: int) -> int:
+    if key == "oge":
+        return 2 if n >= 20 else 1
+    if key == "base":
+        return 1
+    return 2 if n in PART2 else 1
+
+
+PER_TYPE = 12  # problems of one type on the map: prototypes first, then analogs; all of them are in «Банк задач»
 
 
 async def _diag_entries(db: AsyncSession, user: User, n: int) -> list[tuple[str, int]]:
     """(prototype, 0/1) for this task's item in every finished diagnostic and mock."""
+    key = service.key_for(user)
+    if key in ("oge", "base"):
+        from app.learning.diag_types import bank_items
+        res = await db.execute(select(Diagnostic).where(Diagnostic.user_id == user.id, Diagnostic.finished.is_(True), Diagnostic.exam_key == key))
+        out = []
+        for d in res.scalars():
+            if (d.answers or {}).get("_fmt") != "types":
+                continue
+            for it in bank_items(key):
+                if it.get("n") == n and it.get("type"):
+                    ans = (d.answers or {}).get(it["id"])
+                    if ans == "?" or (ans and it.get("a")):
+                        out.append((it["proto"], 1 if ans != "?" and engine.same_ans(ans, it["a"]) else 0))
+        return out
     tm = TASK_MAPS[n]
     if service.key_for(user) != "prof" or n not in PROF_P1 or not tm["diag"]:
         return []
@@ -43,6 +87,16 @@ async def _diag_entries(db: AsyncSession, user: User, n: int) -> list[tuple[str,
                                                     Diagnostic.exam_key == "prof"))
     out = []
     for d in res.scalars():
+        if (d.answers or {}).get("_fmt") == "types":  # the diagnostic by types: every prototype of the task was asked
+            from app.learning.diag_types import prof_items
+            for it in prof_items():
+                if it.get("n") == n and it.get("type"):
+                    ans = (d.answers or {}).get(it["id"])
+                    if ans and ans != "?":
+                        out.append((it["proto"], 1 if engine.same_ans(ans, it["a"]) else 0))
+                    elif ans == "?":
+                        out.append((it["proto"], 0))
+            continue
         vi = d.variant % len(PROF_P1[n])
         proto = tm["diag"].get(vi)
         if proto is None:
@@ -69,9 +123,17 @@ async def _bank(db: AsyncSession, n: int) -> list[BankProblem]:
     return list(res.scalars())
 
 
-def _problems(n: int, pr: dict, bank: list[BankProblem]) -> list[dict]:
+def _problems(n: int, pr: dict, bank: list[BankProblem], key: str = "prof") -> list[dict]:
     """Static problems of the prototype + approved bank problems, one shape: id, q, a, sol, skills."""
+    if key in ("oge", "base"):
+        from app.learning import exambank
+        ps = sorted(exambank.problems(key, n, pr["id"]), key=lambda p: (p["analog"], "OLD" in p["tags"]))[:PER_TYPE]
+        return [{"id": p["pid"], "q": p["q"], "a": p["a"], "sol": "", "skills": [], "src": p["src"], "img": p["img"],
+                 "ans_img": p["ans_img"], "ctx_img": p.get("ctx_img")} for p in ps]
     out = [{"id": p["id"], "q": p["q"], "a": p["a"], "sol": p["sol"], "skills": p["skills"], "src": ""} for p in pr["problems"]]
+    for p in fipi.problems(n, pr["id"]):
+        out.append({"id": p["pid"], "q": p["q"], "a": p["a"], "sol": p["sol"], "skills": pr["skills"], "src": p["src"],
+                    "img": p["img"], "ans_img": p["ans_img"]})
     for b in bank:
         if b.proto == pr["id"]:
             out.append({"id": f"b{b.id}", "q": b.text, "a": b.answer, "sol": b.solution or "", "skills": pr["skills"], "src": b.source})
@@ -79,24 +141,26 @@ def _problems(n: int, pr: dict, bank: list[BankProblem]) -> list[dict]:
 
 
 @router.get("/taskmaps")
-async def list_maps(user: User = Depends(get_current_user)):
-    return {"maps": [{"n": n, "name": TASK_MAPS[n]["name"]} for n in AVAILABLE]}
+async def list_maps(exam: str | None = None, user: User = Depends(get_current_user)):
+    maps = _maps(user, exam)
+    return {"maps": [{"n": n, "name": maps[n]["name"]} for n in sorted(maps)], "exam": _key(user, exam)}
 
 
 @router.get("/taskmaps/{n}")
-async def get_map(n: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    tm = _map(n)
+async def get_map(n: int, exam: str | None = None, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    tm = _map(n, user, exam)
+    key = _key(user, exam)
     row = await service.get_state(db, user.id)
     done: dict = row.data.get("tm", {})
-    diag = await _diag_entries(db, user, n)
-    files = await _files_visible(db, user, n)
-    bank = await _bank(db, n)
+    diag = await _diag_entries(db, user, n) if user.role == "student" else []
+    files = await _files_visible(db, user, n) if key == "prof" else []
+    bank = await _bank(db, n) if key == "prof" else []
     used = [s for pr in tm["protos"] for s in pr["skills"]]
     skill_vals: dict[str, list[int]] = {k: [] for k in dict.fromkeys(used)}
     all_vals: list[int] = []
     protos = []
     for pr in tm["protos"]:
-        probs = _problems(n, pr, bank)
+        probs = _problems(n, pr, bank, key)
         vals = []
         for p in probs:
             if p["id"] in done:
@@ -115,11 +179,12 @@ async def get_map(n: int, user: User = Depends(get_current_user), db: AsyncSessi
             "from_diag": sum(1 for proto, _ in diag if proto == pr["id"]),
             "problems": [{"id": p["id"], "q": p["q"], "done": done.get(p["id"]), "src": p["src"],
                           "check": "answer" if p["a"] else "photo",
-                          "sol": p["sol"] if p["id"] in done else None} for p in probs],
+                          "sol": p["sol"] if p["id"] in done else None, "img": p.get("img"), "ans_img": p.get("ans_img"),
+                          "ctx_img": p.get("ctx_img")} for p in probs],
             "files": [{"id": f.id, "name": f.name, "size": f.size, "mine": f.owner_id == user.id} for f in files if f.proto == pr["id"]],
         })
     return {
-        "n": n, "name": tm["name"], "part": 2 if n in PART2 else 1,
+        "n": n, "name": tm["name"], "part": _part(key, n), "exam": key, "count": len(_maps(user, exam)),
         "skills": [{"id": k, "name": SKILLS[k]["name"], "short": SKILLS[k]["short"], "know": SKILLS[k]["know"], "fig": SKILLS[k]["fig"],
                     **_stat(skill_vals[k])} for k in skill_vals],
         "protos": protos,
@@ -129,15 +194,27 @@ async def get_map(n: int, user: User = Depends(get_current_user), db: AsyncSessi
 
 
 class AnswerIn(BaseModel):
-    problem_id: str = Field(..., max_length=20)
+    problem_id: str = Field(..., max_length=24)
     answer: str = Field("", max_length=40)
 
 
 @router.post("/taskmaps/{n}/answer")
 async def answer(n: int, body: AnswerIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    _map(n)
+    _map(n, user)
     pid = body.problem_id
-    if pid.startswith("b") and pid[1:].isdigit():
+    from app.learning import exambank
+    if exambank.is_ref(pid):
+        ep = exambank.find(pid)
+        # a teacher may try problems of any exam; a student only of his own
+        if ep is None or ep["task"] != n or (user.role == "student" and ep["exam"] != service.key_for(user)):
+            raise HTTPException(404, "Нет такой задачи")
+        right, sol = ep["a"], ""
+    elif pid.startswith("f") and pid[1:].isdigit():
+        fp = fipi.by_ref().get(pid)
+        if fp is None or fp["task"] != n:
+            raise HTTPException(404, "Нет такой задачи")
+        right, sol = fp["a"], fp["sol"]
+    elif pid.startswith("b") and pid[1:].isdigit():
         b = await db.get(BankProblem, int(pid[1:]))
         if b is None or b.status != "approved" or b.task_n != n:
             raise HTTPException(404, "Нет такой задачи")
@@ -153,13 +230,19 @@ async def answer(n: int, body: AnswerIn, user: User = Depends(get_current_user),
     row = await service.get_state(db, user.id)
     done = row.data.setdefault("tm", {})
     first = pid not in done
+    redo = None
     if first:  # the percentage counts the first attempt only: after it the solution is shown
         done[pid] = 1 if ok else 0
         service.on_practice(user, row, n, ok)
         service.gain(row, 30 if ok else 5)
+        if not ok and user.role == "student":
+            service.redo_add(row, service.redo_ref(n, pid), n)
+            redo = "added"
+    else:
+        redo = service.redo_answer(row, service.redo_ref(n, pid), ok)
     service.touch(row)
     await db.commit()
-    return {"ok": ok, "first": first, "answer": right, "sol": sol or "Решение к этой задаче не добавлено."}
+    return {"ok": ok, "first": first, "answer": right, "sol": sol or "Решение к этой задаче не добавлено.", "redo": redo}
 
 
 # ---------- explanation of a skill from the textbook ----------

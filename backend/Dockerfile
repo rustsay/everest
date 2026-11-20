@@ -19,6 +19,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY video-requirements.txt .
 RUN pip install --no-cache-dir -r video-requirements.txt
 
+COPY upload-requirements.txt .
+RUN pip install --no-cache-dir -r upload-requirements.txt
+
 COPY app/ ./app/
 
 EXPOSE 8000

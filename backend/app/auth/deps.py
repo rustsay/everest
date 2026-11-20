@@ -23,3 +23,14 @@ async def get_current_user(
     if result is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Пользователь не найден")
     return result
+
+
+def is_admin(user: User) -> bool:
+    from app.config import settings
+    return (user.email or "").lower() in settings.admins and not user.is_demo
+
+
+async def require_admin(user: User = Depends(get_current_user)) -> User:
+    if not is_admin(user):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Только для администратора")
+    return user

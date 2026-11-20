@@ -143,6 +143,7 @@ export default function Session({ sessionId, onBack, onOpenTrajectory, onChecked
       <div className="sess-grid">
         {TASK_IDS.filter((tid) => mode === 'manual' || results[tid]).map((tid) => (
           <TaskCard
+            sessionId={sessionId}
             key={tid}
             taskId={tid}
             result={results[tid]}

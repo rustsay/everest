@@ -111,11 +111,18 @@ export function openWs(sessionId: string): WebSocket {
 
 // ---------------- new design: profile, learning model, teacher ----------------
 import type {
-  Me, Dashboard, PlanData, DiagRun, DiagResult, NotificationItem, ChatMsg, TeacherOverview, StudentDetail, Textbook, MaterialOut,
+  Me, Dashboard, PlanData, DiagRun, DiagResult, NotificationItem, ChatMsg, TeacherOverview, StudentDetail, Textbook, MaterialOut, MaterialHead, Slide,
   TaskMapData, TmAnswer, TmFile, SkillExplain, BankItem, BankTask, PracticeItem, VariantSummary, VariantFull,
+  MyPath, PathOut, PathStage, TeacherPaths, DiagWork, Target, Walkthrough, DiagListItem, DiagAnalytics, Check1Result, Check1Item, RedoItem, WeekReport, ClassWeek, MyEvent,
+  PushSettings, AdminStats, AdminUser,
 } from '../types'
 
-export async function registerFull(body: { email: string; password: string; name?: string; role: string; grade?: string | null; exam?: string | null }) {
+export const authConfig = (): Promise<{ email_confirm: boolean }> => apiFetch('/auth/config')
+export const sendCode = (email: string, purpose: 'register' | 'reset'): Promise<{ sent: boolean }> =>
+  apiFetch('/auth/code', { method: 'POST', body: JSON.stringify({ email, purpose }) })
+export const resetPassword = (email: string, code: string, password: string) =>
+  apiFetch('/auth/reset', { method: 'POST', body: JSON.stringify({ email, code, password }) })
+export async function registerFull(body: { email: string; password: string; name?: string; role: string; grade?: string | null; exam?: string | null; code?: string }) {
   return apiFetch('/auth/register', { method: 'POST', body: JSON.stringify(body) })
 }
 export const demoLogin = () => apiFetch('/auth/demo', { method: 'POST' })
@@ -124,15 +131,53 @@ export const putProfile = (body: Partial<Pick<Me, 'name' | 'role' | 'grade' | 'e
   apiFetch('/me/profile', { method: 'PUT', body: JSON.stringify(body) })
 export const putSettings = (body: Record<string, unknown>) => apiFetch('/me/settings', { method: 'PUT', body: JSON.stringify(body) })
 
-export const startDiagnostic = (mode: 'first' | 'mock'): Promise<DiagRun> =>
-  apiFetch('/diagnostics', { method: 'POST', body: JSON.stringify({ mode }) })
+export const startDiagnostic = (mode: 'first' | 'mock', exam = false): Promise<DiagRun> =>
+  apiFetch('/diagnostics', { method: 'POST', body: JSON.stringify({ mode, exam }) })
+export const openDiagnostic = (mode: 'first' | 'mock'): Promise<({ open: true } & DiagRun) | { open: false }> => apiFetch(`/diagnostics/open/${mode}`)
 export const saveAnswer = (id: number, item_id: string, answer: string, position: number) =>
   apiFetch(`/diagnostics/${id}/answer`, { method: 'PUT', body: JSON.stringify({ item_id, answer, position }) })
 export const finishDiagnostic = (id: number): Promise<DiagResult> => apiFetch(`/diagnostics/${id}/finish`, { method: 'POST' })
+export async function uploadDiagWork(id: number, item: string, files: File[]): Promise<{ work: Record<string, DiagWork> }> {
+  const form = new FormData()
+  files.forEach((f) => form.append('files', f))
+  const r = await fetch(`${BASE}/diagnostics/${id}/items/${encodeURIComponent(item)}/work`, { method: 'POST', headers: authHeader(), body: form })
+  if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail ?? `Ошибка загрузки (${r.status})`)
+  return r.json()
+}
+export const setDiagMode = (id: number, item: string, mode: 'dont_know' | 'oral' | 'clear'): Promise<{ work: Record<string, DiagWork> }> =>
+  apiFetch(`/diagnostics/${id}/items/${encodeURIComponent(item)}/mode`, { method: 'PUT', body: JSON.stringify({ mode }) })
+export const getDiagWork = (id: number): Promise<{ work: Record<string, DiagWork> }> => apiFetch(`/diagnostics/${id}/work`)
+/** Part 2 of the diagnostic by types: which type the student solves. */
+export const setDiagChoice = (id: number, item: string, type: string): Promise<{ work: Record<string, DiagWork>; choice: Record<string, string> }> =>
+  apiFetch(`/diagnostics/${id}/items/${item}/choice`, { method: 'PUT', body: JSON.stringify({ type }) })
+/** «Не знаю» twice in a row: the rest of the types of task n become «не знаю». */
+export const skipDiagTask = (id: number, n: number): Promise<{ work: Record<string, DiagWork> }> =>
+  apiFetch(`/diagnostics/${id}/tasks/${n}/skip`, { method: 'POST' })
 export const skipDiagnostic = () => apiFetch('/diagnostics/skip', { method: 'POST' })
 
 export const getDashboard = (): Promise<Dashboard> => apiFetch('/dashboard')
-export const getPlan = (): Promise<PlanData> => apiFetch('/plan')
+export const getPlan = (week = 0): Promise<PlanData> => apiFetch(`/plan?week=${week}`)
+export const putEvents = (events: MyEvent[]): Promise<{ events: MyEvent[] }> => apiFetch('/me/events', { method: 'PUT', body: JSON.stringify({ events }) })
+export const setTarget = (test: number): Promise<{ target: Target }> => apiFetch('/me/target', { method: 'PUT', body: JSON.stringify({ test }) })
+/** OGE and base: the goal is the mark. */
+export const setGradeTarget = (grade: number): Promise<{ target: Target }> => apiFetch('/me/target', { method: 'PUT', body: JSON.stringify({ grade }) })
+
+// Educational trajectory
+const post = (body?: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body ?? {}) })
+export const getMyPath = (): Promise<MyPath> => apiFetch('/path')
+export const generateMyPath = (): Promise<PathOut> => apiFetch('/path/generate', post())
+export const editMyPath = (stages: PathStage[], comment: string): Promise<PathOut> =>
+  apiFetch('/path/mine', { method: 'PUT', body: JSON.stringify({ stages, comment }) })
+export const pathAdvice = (question: string, stages: PathStage[]): Promise<{ text: string }> =>
+  apiFetch('/path/advice', { method: 'POST', body: JSON.stringify({ question, stages }) })
+export const followPath = (follow: boolean): Promise<{ follow: boolean }> => apiFetch('/path/follow', post({ follow }))
+export const teacherPaths = (): Promise<TeacherPaths> => apiFetch('/teacher/paths')
+export const teacherPath = (id: number): Promise<PathOut> => apiFetch(`/teacher/paths/${id}`)
+export const teacherGenPath = (target: { student_id?: number; class_id?: number }): Promise<PathOut> => apiFetch('/teacher/paths/generate', post(target))
+export const teacherEditPath = (id: number, body: { stages?: PathStage[]; summary?: string; note?: string }): Promise<PathOut> =>
+  apiFetch(`/teacher/paths/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+export const teacherApprovePath = (id: number): Promise<PathOut> => apiFetch(`/teacher/paths/${id}/approve`, post())
+export const teacherRejectPath = (id: number, note = ''): Promise<{ ok: boolean }> => apiFetch(`/teacher/paths/${id}/reject`, post({ note }))
 export const togglePlanBlock = (key: string): Promise<{ done: boolean; xp: number }> =>
   apiFetch('/plan/done', { method: 'POST', body: JSON.stringify({ key }) })
 export const dailyHint = (): Promise<{ hints: string[] }> => apiFetch('/daily/hint', { method: 'POST' })
@@ -147,13 +192,24 @@ export const getNotifications = (): Promise<{ notifications: NotificationItem[] 
 export const readNotifications = (id?: number) => apiFetch('/notifications/read', { method: 'POST', body: JSON.stringify({ id: id ?? null }) })
 
 export const getChat = (kind: 'student' | 'teacher'): Promise<{ messages: ChatMsg[] }> => apiFetch(`/chat/${kind}`)
-export const postChat = (kind: 'student' | 'teacher', text: string, image?: string): Promise<{ reply: string }> =>
-  apiFetch(`/chat/${kind}`, { method: 'POST', body: JSON.stringify({ text, image: image ?? null }) })
+export interface ReviewChatSummary {
+  id: string; session_id: string; task_id: number; title: string
+  created_at: string; updated_at: string; checked_at: string; message_count: number; last_message: string
+}
+export interface ReviewChatDetail extends ReviewChatSummary { messages: ChatMsg[]; score: number; max_score: number }
+export const listReviewChats = (): Promise<{ chats: ReviewChatSummary[] }> => apiFetch('/review-chats')
+export const openReviewChat = (sid: string, task: number): Promise<ReviewChatDetail> => apiFetch(`/sessions/${sid}/tasks/${task}/chat`, { method: 'POST' })
+export const getReviewChat = (id: string): Promise<ReviewChatDetail> => apiFetch(`/review-chats/${id}`)
+export const askReviewChat = (id: string, text: string): Promise<ReviewChatDetail> => apiFetch(`/review-chats/${id}/messages`, { method: 'POST', body: JSON.stringify({ text }) })
+export const postChat = (kind: 'student' | 'teacher', text: string, images: string[] = [], files: { name: string; data: string }[] = []): Promise<{ reply: string }> =>
+  apiFetch(`/chat/${kind}`, { method: 'POST', body: JSON.stringify({ text, images, files }) })
 export const clearChat = (kind: 'student' | 'teacher') => apiFetch(`/chat/${kind}`, { method: 'DELETE' })
 export const mapAnalysis = (): Promise<{ text: string }> => apiFetch('/map/analysis', { method: 'POST' })
 
-export const joinClass = (code: string): Promise<{ id: number; name: string }> =>
+export const joinClass = (code: string): Promise<{ id: number; name: string; already?: boolean }> =>
   apiFetch('/classes/join', { method: 'POST', body: JSON.stringify({ code }) })
+export interface InviteInfo { code: string; class: string; teacher: string; role: string }
+export const inviteInfo = (code: string): Promise<InviteInfo> => apiFetch(`/invite/${encodeURIComponent(code)}`)
 export const assignmentDone = (id: number) => apiFetch(`/assignments/${id}/done`, { method: 'POST' })
 
 export const teacherOverview = (): Promise<TeacherOverview> => apiFetch('/teacher/overview')
@@ -181,12 +237,18 @@ export async function addTextbook(title: string, authors: string, grade: string,
 }
 export const deleteTextbook = (id: number) => apiFetch(`/textbooks/${id}`, { method: 'DELETE' })
 export const generateMaterial = (body: {
-  kind: 'conspect' | 'slides'; topic: string; textbook_id: number; section: string; paragraph: string; who: string; minutes: string
+  kind: 'conspect' | 'slides'; topic: string; textbook_id: number; section: string; paragraph: string; pages: string; extra: boolean; who: string; minutes: string
 }): Promise<MaterialOut> => apiFetch('/materials/generate', { method: 'POST', body: JSON.stringify(body) })
+export const listMaterials = (): Promise<{ materials: MaterialHead[] }> => apiFetch('/materials')
+export const getMaterial = (id: number): Promise<MaterialOut> => apiFetch(`/materials/${id}`)
+export const editMaterial = (id: number, body: { topic?: string; theme?: string; text?: string; slides?: Slide[] }): Promise<MaterialOut> =>
+  apiFetch(`/materials/${id}`, { method: 'PUT', body: JSON.stringify(body) })
+export const deleteMaterial = (id: number) => apiFetch(`/materials/${id}`, { method: 'DELETE' })
 
 // ---------- task maps ----------
-export const listTaskMaps = (): Promise<{ maps: { n: number; name: string }[] }> => apiFetch('/taskmaps')
-export const getTaskMap = (n: number): Promise<TaskMapData> => apiFetch(`/taskmaps/${n}`)
+const ex = (exam?: string, first = '?') => (exam ? `${first}exam=${exam}` : '')
+export const listTaskMaps = (exam?: string): Promise<{ maps: { n: number; name: string }[] }> => apiFetch(`/taskmaps${ex(exam)}`)
+export const getTaskMap = (n: number, exam?: string): Promise<TaskMapData> => apiFetch(`/taskmaps/${n}${ex(exam)}`)
 export const answerTaskMap = (n: number, problem_id: string, answer: string): Promise<TmAnswer> =>
   apiFetch(`/taskmaps/${n}/answer`, { method: 'POST', body: JSON.stringify({ problem_id, answer }) })
 export async function uploadTaskFile(n: number, proto: string, file: File): Promise<TmFile> {
@@ -217,7 +279,7 @@ export const explainSkill = (id: string, textbook_id?: number): Promise<SkillExp
 
 // ---------- task bank ----------
 export const bankTasks = (): Promise<{ tasks: BankTask[] }> => apiFetch('/bank/protos')
-export const listBank = (status: 'draft' | 'approved', task?: number): Promise<{ items: BankItem[]; counts: Record<string, { approved: number; draft: number }> }> =>
+export const listBank = (status: 'draft' | 'approved', task?: number): Promise<{ items: BankItem[]; counts: Record<string, { approved: number; draft: number }>; fipi?: Record<string, number>; fipi_source?: string }> =>
   apiFetch(`/bank?status=${status}${task ? `&task=${task}` : ''}`)
 export const editBank = (id: number, body: Partial<Pick<BankItem, 'text' | 'answer' | 'solution' | 'proto' | 'status'>>): Promise<BankItem> =>
   apiFetch(`/bank/${id}`, { method: 'PUT', body: JSON.stringify(body) })
@@ -245,8 +307,28 @@ export async function downloadBankTemplate(): Promise<void> {
 }
 
 // ---------- practice bank and variants ----------
-export const getPractice = (task?: number, proto?: string): Promise<{ items: PracticeItem[]; counts: Record<string, number>; tasks: BankTask[] }> =>
-  apiFetch(`/practice?${task ? `task=${task}` : ''}${proto ? `&proto=${proto}` : ''}`)
+export const listDiagnostics = (): Promise<{ items: DiagListItem[] }> => apiFetch('/diagnostics')
+export const getDiagAnalytics = (id: number): Promise<DiagResult & { date: string | null; analytics: DiagAnalytics }> => apiFetch(`/diagnostics/${id}/analytics`)
+export async function checkFirstPart(body: { task: number; answer: string; ref?: string; problem?: string; files: File[] }): Promise<Check1Result> {
+  const fd = new FormData()
+  fd.append('task', String(body.task)); fd.append('answer', body.answer)
+  if (body.ref) fd.append('ref', body.ref)
+  if (body.problem) fd.append('problem', body.problem)
+  body.files.forEach((f) => fd.append('files', f))
+  const res = await fetch(`${BASE}/check1`, { method: 'POST', headers: authHeader(), body: fd })
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(typeof e.detail === 'string' ? e.detail : `HTTP ${res.status}`) }
+  return res.json()
+}
+export const check1History = (): Promise<{ items: Check1Item[] }> => apiFetch('/check1')
+export const getRedo = (): Promise<{ items: RedoItem[]; later: number; next: string | null; done: number }> => apiFetch('/redo')
+export const weekReport = (): Promise<WeekReport> => apiFetch('/report/week')
+export const classWeek = (): Promise<ClassWeek> => apiFetch('/teacher/report/week')
+export const setParentEmail = (email: string | null): Promise<{ parent_email: string | null; smtp: boolean }> =>
+  apiFetch('/me/parent', { method: 'PUT', body: JSON.stringify({ email }) })
+export const getWalkthrough = (ref: string): Promise<Walkthrough> =>
+  apiFetch('/walkthrough', { method: 'POST', body: JSON.stringify({ ref }) })
+export const getPractice = (task?: number, proto?: string, exam?: string): Promise<{ items: PracticeItem[]; counts: Record<string, number>; tasks: BankTask[]; total?: number; exam?: string }> =>
+  apiFetch(`/practice?${task ? `task=${task}` : ''}${proto ? `&proto=${proto}` : ''}${ex(exam, '&')}`)
 export const variantCandidates = (task: number): Promise<{ items: PracticeItem[] }> => apiFetch(`/variants/candidates?task=${task}`)
 export const listVariants = (): Promise<{ variants: VariantSummary[] }> => apiFetch('/variants')
 export const getVariant = (id: number): Promise<VariantFull> => apiFetch(`/variants/${id}`)
@@ -257,3 +339,20 @@ export const editVariant = (id: number, body: { title?: string; items?: string[]
 export const deleteVariant = (id: number) => apiFetch(`/variants/${id}`, { method: 'DELETE' })
 export const submitVariant = (id: number, answers: Record<string, string>): Promise<{ score: number; max: number }> =>
   apiFetch(`/variants/${id}/submit`, { method: 'POST', body: JSON.stringify({ answers }) })
+
+// Push notifications
+export const getPushSettings = (): Promise<PushSettings> => apiFetch('/push/settings')
+export const pushSubscribe = (subscription: PushSubscriptionJSON): Promise<PushSettings> => apiFetch('/push/subscribe', {
+  method: 'POST',
+  body: JSON.stringify({
+    subscription, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || '', tzo: new Date().getTimezoneOffset(),
+    agent: navigator.userAgent.slice(0, 120),
+  }),
+})
+export const pushUnsubscribe = (endpoint: string): Promise<PushSettings> => apiFetch('/push/unsubscribe', { method: 'POST', body: JSON.stringify({ endpoint }) })
+export const putPushSettings = (remind: boolean): Promise<PushSettings> => apiFetch('/push/settings', { method: 'PUT', body: JSON.stringify({ remind }) })
+export const pushTest = (): Promise<{ sent: number }> => apiFetch('/push/test', { method: 'POST' })
+
+// Admin panel
+export const adminStats = (days = 30): Promise<AdminStats> => apiFetch(`/admin/stats?days=${days}`)
+export const adminUsers = (): Promise<{ users: AdminUser[]; today: string }> => apiFetch('/admin/users')

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { putSettings } from '../api/client'
-import type { DiagResult } from '../types'
+import type { DiagResult, Target } from '../types'
+import { TargetPick } from './Plan'
 import { StarBot, Typed, chime, reduceMotion } from '../design/ui'
 
 /** Dark calm screen: the star lights up with a chime, the score counts up, the star speaks. */
@@ -13,6 +14,8 @@ export default function Result({ r, name, sound, onGo }: { r: DiagResult; name: 
   const [cards, setCards] = useState(reduceMotion)
   const [go, setGo] = useState(reduceMotion)
   const [snd, setSnd] = useState(sound)
+  const [target, setTargetV] = useState<Target | null>(null)
+  const needGoal = r.exam.key === 'prof' && r.mode === 'first'
   const sndRef = useRef(snd)
   sndRef.current = snd
 
@@ -39,7 +42,7 @@ export default function Result({ r, name, sound, onGo }: { r: DiagResult; name: 
   const delta = r.prev != null ? r.value - r.prev : null
   const line = r.mode === 'mock'
     ? `Пробник № ${r.mocks} готов. ${ex.pct ? 'Готовность' : 'Прогноз'}: ${r.value}${ex.pct ? '%' : ''}. ${delta == null ? '' : delta >= 0 ? `Это взлёт: +${delta}.` : `Небольшое падение: ${delta}. Бывает, расписание уже перестроено.`}`
-    : `Привет, ${name}! Я Звёздочка. Я посмотрела твою диагностику: ${r.right} из ${r.of} заданий с ответом решены верно. ${r.strong.length ? 'Сильнее всего: ' + r.strong.map((s) => s.toLowerCase()).join(', ') + '. ' : ''}${r.root_name ? `Ошибки тянутся из темы «${r.root_name.toLowerCase()}», с неё и начнём. ` : ''}Я уже собрала тебе расписание. Пойдём, покажу платформу?`
+    : `Привет, ${name}! Я Звёздочка. Я посмотрела твою диагностику: ${r.right} из ${r.of} заданий с ответом решены верно. ${r.strong.length ? 'Сильнее всего: ' + r.strong.map((s) => s.toLowerCase()).join(', ') + '. ' : ''}${r.root_name ? (r.basics ? `Почти все задания пока не получились, поэтому начнём с основ: «${r.root_name.toLowerCase()}». ` : `Ошибки тянутся из темы «${r.root_name.toLowerCase()}», с неё и начнём. `) : ''}Я уже собрала тебе расписание. Пойдём, покажу платформу?`
 
   return (
     <div className="ob dark">
@@ -59,11 +62,22 @@ export default function Result({ r, name, sound, onGo }: { r: DiagResult; name: 
           <div className={`res-cards ${cards ? 'on' : ''}`}>
             <div className="rc"><span className="label">Получилось</span><b>{r.right} из {r.of}</b><small>задания с ответом</small></div>
             <div className="rc"><span className="label">Сильные</span><b>{r.strong.length ? r.strong.join(', ') : 'пока не выделились'}</b></div>
-            <div className="rc"><span className="label">Начнём с</span><b>{r.root_name ?? (r.weak[0] || 'закрепления')}</b>{r.root_name && <small>первопричина ошибок</small>}</div>
+            <div className="rc"><span className="label">Начнём с</span><b>{r.root_name ?? (r.weak[0] || 'закрепления')}</b>{r.root_name && <small>{r.basics ? 'начинаем с основ' : 'первопричина ошибок'}</small>}</div>
             <div className="rc"><span className="label">Расписание</span><b>{r.plan.studied} занятий</b><small>{r.plan.days} дней в неделю по {r.plan.min} минут</small></div>
           </div>
+          {r.analytics && <div className={`res-an ${cards ? 'on' : ''}`}>
+            <p className="res-label on">Где теряются баллы</p>
+            {r.analytics.summary && <p className="res-an-say">{r.analytics.summary}</p>}
+            {r.analytics.gains.length > 0 && <ul>{r.analytics.gains.slice(0, 3).map((g) => <li key={g.task}><b>{g.task}</b> {g.name}: {g.why}</li>)}</ul>}
+            {r.id && (!needGoal || target) && <button className="ob-link light" onClick={() => { onGo(); setTimeout(() => { location.hash = '#diag/' + r.id }, 50) }}>Подробный разбор каждого задания</button>}
+          </div>}
+          {needGoal && <div className={`res-goal ${go ? 'on' : ''}`}>
+            <p className="res-label on">На сколько баллов хочешь сдать?</p>
+            <TargetPick value={target} onSaved={setTargetV} />
+            <small>От цели зависит, какие задания нужны и будет ли в расписании вторая часть. Поменять можно в расписании.</small>
+          </div>}
           <div className={`res-go ${go ? 'on' : ''}`}>
-            <button className="btn btn-gold ob-go" onClick={onGo}>{r.mode === 'mock' ? 'К платформе' : 'Покажи платформу'}</button>
+            <button className="btn btn-gold ob-go" disabled={needGoal && !target} onClick={onGo}>{r.mode === 'mock' ? 'К платформе' : 'Покажи платформу'}</button>
             <button className="ob-link light" onClick={() => { const v = !snd; setSnd(v); putSettings({ sound: v }).catch(() => null) }}>{snd ? 'звук включён' : 'звук выключен'}</button>
           </div>
         </div>

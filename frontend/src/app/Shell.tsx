@@ -3,20 +3,25 @@ import { getNotifications, joinClass, putSettings, readNotifications, sendEvent 
 import type { NotificationItem } from '../types'
 import { Icon, Orn, SideMountains, StarBot, StarIcon, Typed, WideMountains, hush, plural, speak } from '../design/ui'
 import { Logo } from '../pages/Onboarding'
+import PhonePush from '../components/PhonePush'
 import { useApp, ViewName } from './store'
 
-const NAV_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['plan', 'Расписание', 'cal'], ['check', 'Проверка', 'check'], ['task', 'Карты заданий', 'map'], ['practice', 'Банк задач', 'book'], ['video', 'Разборы', 'play'], ['chat', 'Помощник', 'chat'], ['awards', 'Звёзды', 'star']]
-const BOT_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['plan', 'План', 'cal'], ['check', 'Проверка', 'check'], ['task', 'Карты', 'map'], ['practice', 'Банк', 'book'], ['chat', 'Помощник', 'chat']]
-const NAV_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['materials', 'Конспекты и презентации', 'slides'], ['task', 'Карты заданий', 'map'], ['bank', 'Банк задач', 'book'], ['variants', 'Варианты', 'pen'], ['tchat', 'Помощник учителя', 'chat'], ['check', 'Проверка', 'check']]
-const BOT_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['materials', 'Материалы', 'slides'], ['bank', 'Банк', 'book'], ['variants', 'Варианты', 'pen'], ['tchat', 'Помощник', 'chat'], ['check', 'Проверка', 'check']]
+const NAV_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['path', 'Траектория', 'flag'], ['plan', 'Расписание', 'cal'], ['check', 'Проверка', 'check'], ['task', 'Карты заданий', 'map'], ['practice', 'Банк задач', 'book'], ['video', 'Разборы', 'play'], ['diag', 'Разбор диагностики', 'bulb'], ['report', 'Итоги недели', 'clock'], ['chat', 'Помощник', 'chat'], ['awards', 'Звёзды', 'star']]
+const BOT_S: [ViewName, string, string][] = [['home', 'Главная', 'home'], ['plan', 'План', 'cal'], ['check', 'Проверка', 'check'], ['practice', 'Банк', 'book'], ['chat', 'Помощник', 'chat']]
+const NAV_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['paths', 'Траектории', 'flag'], ['materials', 'Конспекты и презентации', 'slides'], ['task', 'Карты заданий', 'map'], ['bank', 'Банк задач', 'book'], ['variants', 'Варианты', 'pen'], ['tchat', 'Помощник учителя', 'chat'], ['report', 'Итоги недели', 'clock'], ['check', 'Проверка', 'check']]
+const BOT_T: [ViewName, string, string][] = [['teacher', 'Класс', 'class'], ['paths', 'Пути', 'flag'], ['bank', 'Банк', 'book'], ['variants', 'Варианты', 'pen'], ['tchat', 'Помощник', 'chat']]
 
 const MLINES: Partial<Record<ViewName, string[]>> = {
   check: ['Сфотографируй решение целиком, вместе с номером задания. Чем ровнее фото, тем точнее проверка.', 'Три эксперта проверяют решение независимо, а если они расходятся, решает судья.'],
   bank: ['Загрузите файл с задачами, проверьте условие и ответ, потом опубликуйте.'],
   task: ['Нажми на прототип: там всё, что нужно знать, задачи для проверки и материалы.', 'Процент считается по первой попытке в каждой задаче, поэтому решай честно.'],
   practice: ['Решай задачи из банка: в процент карты задания идёт первая попытка.', 'Варианты от учителя появляются здесь же, сверху.'],
+  path: ['Траектория - это этапы до экзамена с целями. Расписание на каждый день идёт по текущему этапу.', 'Если ты в классе, траекторию утверждает учитель.'],
+  paths: ['Ученики присылают траектории на утверждение: поправьте этапы, если нужно, и утвердите.', 'Траектория класса нужна тем, у кого нет своей.'],
   variants: ['Соберите вариант автоматически или выберите задачи сами, потом выдайте классу.'],
-  video: ['Выбери папку с номером задания. Понял разбор, жми «Понял» и иди дальше.', 'Если шаг непонятен, жми «Не понял». Разберём его в чате.'],
+  video: ['Выбери номер задания: сверху типовой разбор, ниже задачи банка. Любую можно разобрать на доске.', 'Если шаг непонятен, жми «Не понял». Разберём его в чате.'],
+  diag: ['Сначала смотри, где теряются баллы: ошибка в счёте и незнание способа лечатся по-разному.', 'Задания, которые быстрее всего прибавят баллы, стоят наверху списка.'],
+  report: ['Итоги собираются за последние 7 дней. Каждый понедельник приходит уведомление.'],
   chat: ['Спрашивай. Я не дам сразу ответ, а наведу на него вопросами.'],
   plan: ['Каждый день: разминка, главная тема и шаг второй части. Слабые задания выпадают чаще, но ни одно не пропадает.', 'Каждая четвёртая неделя заканчивается пробником. После него я пересоберу расписание.', 'Воскресенье всегда выходной. Отдых тоже часть подготовки.'],
   teacher: ['Здесь ваши ученики. Спорные работы ждут вашего решения.', 'Конспект или презентацию к уроку можно собрать в разделе «Конспекты и презентации».'],
@@ -31,8 +36,13 @@ export default function Shell({ children }: { children: ReactNode }) {
   useEffect(() => () => clearTimeout(bubbleTimer.current), [app.speech?.id])
   const { me, dash, view, go } = app
   const teacher = me.role !== 'student'
-  const nav = teacher ? NAV_T.map(([v, l, i]) => (v === 'teacher' && me.role === 'tutor' ? [v, 'Мои ученики', i] : [v, l, i]) as [ViewName, string, string]) : NAV_S
+  const nav = [...(teacher ? NAV_T.map(([v, l, i]) => (v === 'teacher' && me.role === 'tutor' ? [v, 'Мои ученики', i] : [v, l, i]) as [ViewName, string, string]) : NAV_S),
+    ...(me.admin ? [['admin', 'Админка', 'chart'] as [ViewName, string, string]] : [])]
   const bot = teacher ? BOT_T : BOT_S
+  // on the phone the side menu is hidden: everything that is not in the bottom bar opens from «Ещё»
+  const more = nav.filter(([v]) => !bot.some(([b]) => b === v))
+  const cur = view.v === 'session' || view.v === 'trajectory' ? 'check' : view.v === 'variant' ? (teacher ? 'variants' : 'practice') : view.v
+  const inMore = more.some(([v]) => v === cur)
   const [pop, setPop] = useState<NotificationItem[] | null>(null)
   const sayIdx = useRef<Record<string, number>>({})
   const clicks = useRef<number[]>([])
@@ -158,8 +168,9 @@ export default function Shell({ children }: { children: ReactNode }) {
 
       <nav className="bottom" aria-label="Разделы">
         {bot.map(([v, l, i]) => (
-          <button key={v} data-v={v} onClick={() => go(v)} aria-current={view.v === v || (v === 'practice' && view.v === 'variant') || (v === 'variants' && view.v === 'variant') ? 'page' : undefined}><Icon n={i} s={22} />{l}</button>
+          <button key={v} data-v={v} onClick={() => go(v)} aria-current={view.v === v || (v === 'practice' && view.v === 'variant') || (v === 'variants' && view.v === 'variant') || (v === 'check' && view.v === 'session') ? 'page' : undefined}><Icon n={i} s={22} />{l}</button>
         ))}
+        <button data-v="more" onClick={() => app.openModal('Все разделы', <MoreMenu items={more} />)} aria-current={inMore ? 'page' : undefined} aria-label="Ещё разделы"><Icon n="more" s={22} />Ещё</button>
       </nav>
 
       {pop && (
@@ -195,9 +206,21 @@ export default function Shell({ children }: { children: ReactNode }) {
   )
 }
 
+/* ---------- «Ещё» on the phone: the sections that do not fit into the bottom bar ---------- */
+function MoreMenu({ items }: { items: [ViewName, string, string][] }) {
+  const { go, view } = useApp()
+  return (
+    <div className="more-grid">
+      {items.map(([v, l, i]) => (
+        <button key={v} className={`more-item ${view.v === v ? 'on' : ''}`} onClick={() => go(v)}><Icon n={i} s={22} /><span>{l}</span></button>
+      ))}
+    </div>
+  )
+}
+
 /* ---------- profile modal ---------- */
 function Profile() {
-  const { me, dash, setMe, logout, toast, closeModal, voice, setVoice } = useApp()
+  const { me, dash, setMe, logout, toast, closeModal, voice, setVoice, go } = useApp()
   const [care, setCare] = useState({ breaks: me.settings.care?.breaks ?? true, sleep: me.settings.care?.sleep ?? true })
   const [code, setCode] = useState('')
   const [msg, setMsg] = useState('')
@@ -237,8 +260,10 @@ function Profile() {
         <button className={`btn btn-sm ${care.sleep ? 'btn-em' : 'btn-ghost'}`} onClick={() => toggle('sleep')}><Icon n="moon" s={16} />Напоминать про сон: {care.sleep ? 'вкл' : 'выкл'}</button>
         <button className="btn btn-sm btn-ghost" onClick={() => { closeModal(); window.dispatchEvent(new Event('everest:break')) }}>Сделать перерыв сейчас</button>
       </div>
+      <PhonePush />
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16 }}>
         <button className="btn btn-ghost" onClick={() => { const v = !voice; setVoice(v); putSettings({ voice: v }).catch(() => null) }}><Icon n={voice ? 'vol' : 'mute'} s={18} />Голос Звёздочки: {voice ? 'вкл' : 'выкл'}</button>
+        {me.admin && <button className="btn btn-ghost" onClick={() => go('admin')}><Icon n="chart" s={18} />Админка</button>}
         <button className="btn btn-line" onClick={() => { closeModal(); logout() }}><Icon n="logout" s={18} />Выйти</button>
       </div>
     </>

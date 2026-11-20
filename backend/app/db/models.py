@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID
@@ -157,6 +157,22 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class ReviewChat(Base):
+    __tablename__ = "review_chats"
+    __table_args__ = (UniqueConstraint("user_id", "session_id", "task_id", "revision"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    session_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sessions.id"), index=True)
+    task_id: Mapped[int] = mapped_column(Integer)
+    revision: Mapped[str] = mapped_column(String(40))
+    title: Mapped[str] = mapped_column(String(200))
+    context: Mapped[dict] = mapped_column(JSONB)
+    messages: Mapped[list] = mapped_column(JSONB, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class ClassGroup(Base):
     """A teacher's class or a tutor's group; students join by code."""
     __tablename__ = "class_groups"
@@ -299,3 +315,72 @@ class VariantAttempt(Base):
     score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class LearningPath(Base):
+    """An educational trajectory for one student or for a whole class.
+    status: draft (teacher works on it) | pending (student in a class asked, waits for the teacher) |
+            active (in use) | archived | rejected."""
+    __tablename__ = "learning_paths"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    student_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"), index=True)
+    class_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("class_groups.id", ondelete="CASCADE"), index=True)
+    author_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="draft", index=True)
+    data: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="")  # the teacher's comment
+    approved_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime)
+
+
+class ProblemWalkthrough(Base):
+    """A board walkthrough of one bank / task map problem, shared by all students (built once)."""
+    __tablename__ = "problem_walkthroughs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    ref: Mapped[str] = mapped_column(String(40), unique=True, nullable=False, index=True)
+    source: Mapped[str] = mapped_column(String(12), nullable=False)  # ai | solution
+    steps: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class EmailCode(Base):
+    """A one-time code sent by email: confirm the address at registration or reset the password."""
+    __tablename__ = "email_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    purpose: Mapped[str] = mapped_column(String(10), nullable=False)  # register | reset
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+
+
+class PushSubscription(Base):
+    """One browser or phone that agreed to push notifications. The endpoint is the address of the push service."""
+    __tablename__ = "push_subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    endpoint: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    p256dh: Mapped[str] = mapped_column(String(120), nullable=False)
+    auth: Mapped[str] = mapped_column(String(40), nullable=False)
+    tz: Mapped[str] = mapped_column(String(60), default="")          # time zone of the device, e.g. Europe/Moscow
+    tzo: Mapped[int] = mapped_column(Integer, default=-180)          # JS getTimezoneOffset(): minutes, UTC minus local time
+    agent: Mapped[str] = mapped_column(String(120), default="")      # short name of the device for the settings list
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    last_ok: Mapped[datetime | None] = mapped_column(DateTime)
+    fails: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class UserActivity(Base):
+    """A day of one user: which sections he opened (number of requests per section). Feeds the admin panel."""
+    __tablename__ = "user_activity"
+
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    day: Mapped[date] = mapped_column(Date, primary_key=True, index=True)
+    hits: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    sections: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)

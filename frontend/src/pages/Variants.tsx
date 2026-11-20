@@ -1,3 +1,4 @@
+import ProblemText from '../components/ProblemText'
 import { FormEvent, useCallback, useEffect, useState } from 'react'
 import { createVariant, deleteVariant, editVariant, getVariant, listVariants, submitVariant, teacherOverview, variantCandidates } from '../api/client'
 import { useApp } from '../app/store'
@@ -73,7 +74,7 @@ export default function Variants() {
                   const on = picked.some((p) => p.ref === c.ref)
                   return (
                     <div key={c.ref} className={`var-cand ${on ? 'on' : ''}`}>
-                      <p style={{ fontSize: 13.5 }}>{c.q}</p>
+                      <div style={{ fontSize: 13.5 }}><ProblemText q={c.q} img={c.img} small /></div>
                       <p className="muted" style={{ fontSize: 12 }}>{c.proto_name}{c.answer ? ` · ответ ${c.answer}` : ' · по фото'}{c.src ? ` · ${c.src}` : ''}</p>
                       <button type="button" className={`btn btn-sm ${on ? 'btn-ghost' : 'btn-line'}`} onClick={() => setPicked(on ? picked.filter((p) => p.ref !== c.ref) : [...picked, c].sort((a, b) => a.task - b.task))}>{on ? 'Убрать' : 'Добавить'}</button>
                     </div>
@@ -181,7 +182,7 @@ export function VariantPage({ id }: { id: number }) {
           return (
             <li key={it.ref} className={`tm-prob ${res === 1 ? 'ok' : res === 0 ? 'no' : ''}`}>
               <p className="muted" style={{ fontSize: 12 }}>Задание № {it.task}{it.proto_name ? ` · ${it.proto_name}` : ''}</p>
-              <p style={{ marginTop: 4 }}>{it.q}</p>
+              <div style={{ marginTop: 4 }}><ProblemText q={it.q} img={it.img} /></div>
               {v.owner || v.attempt ? (
                 <div className="tm-res">
                   <p>{it.answer ? <><b>Ответ: {it.answer}.</b>{!v.owner && v.attempt && it.check === 'answer' ? ` Твой ответ: ${v.attempt.answers[it.ref] || '-'}.` : ''}</> : <b>Решение проверяется по фото.</b>}</p>

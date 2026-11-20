@@ -23,7 +23,7 @@ _SYSTEM = """Ты — эксперт предметной комиссии ЕГ�
 5. ЗАПРЕЩЕНО использовать LaTeX-нотацию (\\frac, \\sqrt, \\cdot и т.д.) — пиши формулы простым текстом: дроби через /, корень как sqrt(), степень через ^."""
 
 
-def _user_content(task_id: int, ocr_text: str, image_b64_list: list[str]) -> list:
+def _user_content(task_id: int, ocr_text: str, image_b64_list: list[str], problem: str = "", problem_b64: str | None = None) -> list:
     cfg = TASK_CONFIGS[task_id]
     n = len(image_b64_list)
     img_note = f"(прикреплено {n} изображени{'е' if n == 1 else 'я' if n < 5 else 'й'})" if n > 1 else ""
@@ -32,11 +32,14 @@ def _user_content(task_id: int, ocr_text: str, image_b64_list: list[str]) -> lis
         f"На листах могут быть решения нескольких заданий. Оценивай только задание {task_id}; "
         "остальные решения игнорируй. Все изображения относятся к одной работе и идут в порядке страниц.\n\n"
         f"{cfg['criteria']}\n\n"
-        f"---\n\n"
+        + (f"## Условие задачи\n{'Условие - на первой картинке (текст ниже может быть с искажёнными формулами). ' if problem_b64 else ''}{problem}\n\n" if problem or problem_b64 else "")
+        + f"---\n\n"
         f"## Распознанный текст решения (OCR — вспомогательно, возможны ошибки распознавания): {img_note}\n\n"
         f"{ocr_text or '(OCR не дал результата — используй только скан)'}"
     )
     content: list = [{"type": "text", "text": text}]
+    if problem_b64:
+        content.append({"type": "image_url", "image_url": {"url": f"data:image/png;base64,{problem_b64}"}})
     for b64 in image_b64_list:
         content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}})
     return content
@@ -73,6 +76,8 @@ async def run_agent(
     image_bytes_list: list[bytes],
     temperature: float,
     model: str | None = None,
+    problem: str = "",
+    problem_image: bytes | None = None,
 ) -> AgentVerdict:
     log.info("agent=%d task=%d temp=%.1f images=%d start", agent_id, task_id, temperature, len(image_bytes_list))
     client = AsyncOpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key)
@@ -83,7 +88,8 @@ async def run_agent(
         model=model or settings.llm_model,
         messages=[
             {"role": "system", "content": _SYSTEM},
-            {"role": "user", "content": _user_content(task_id, ocr_text, image_b64_list)},
+            {"role": "user", "content": _user_content(task_id, ocr_text, image_b64_list, problem,
+                                                      base64.b64encode(problem_image).decode() if problem_image else None)},
         ],
         temperature=temperature,
     )

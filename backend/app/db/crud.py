@@ -1,7 +1,7 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -13,8 +13,8 @@ from app.models.schemas import TaskStatus
 # ---------- Users ----------
 
 async def get_user_by_email(db: AsyncSession, email: str) -> User | None:
-    result = await db.execute(select(User).where(User.email == email))
-    return result.scalar_one_or_none()
+    result = await db.execute(select(User).where(func.lower(User.email) == email.strip().lower()).order_by(User.id))
+    return result.scalars().first()
 
 
 async def create_user(db: AsyncSession, email: str, password_hash: str) -> User:

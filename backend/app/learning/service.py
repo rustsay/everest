@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date, timedelta, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,18 +84,101 @@ async def history(db: AsyncSession, user_id: int, limit: int = 30) -> list[Measu
 
 async def notify(db: AsyncSession, user_id: int, text: str, go: str | None = None) -> None:
     db.add(Notification(user_id=user_id, text=text[:300], go=go))
+    from app.api.push import queue_push  # the same text goes to the phone after the commit
+    queue_push(db, user_id, text[:300], go)
+
+
+def count(row: LearnerState, k: str, n: int = 1) -> None:
+    """Daily counters for the weekly report: solved, ok, checks, checks1, fixed, diag (kept 70 days)."""
+    days = row.data.setdefault("days", {})
+    today = date.today().isoformat()
+    d = days.setdefault(today, {})
+    d[k] = int(d.get(k, 0)) + n
+    if len(days) > 70:
+        for old in sorted(days)[:-70]:
+            days.pop(old)
 
 
 def on_practice(user: User, row: LearnerState, task_n: int, ok: bool) -> None:
     """First attempt at a short-answer problem: feeds the forecast and the schedule of this exam (task maps are ЕГЭ профиль)."""
+    if user.role == "student":
+        count(row, "solved")
+        if ok:
+            count(row, "ok")
     tid = f"T{task_n}"
     if user.role == "student" and any(t["id"] == tid for t in EXAMS[key_for(user)]["tasks"]):
         engine.observe_practice(row.data, tid, ok)
 
 
-async def route_basis(db: AsyncSession, user_id: int, row: LearnerState) -> str:
-    """What today's route rests on: 'diag' - a diagnostic, 'practice' - answers and photo checks, 'start' - nothing yet."""
+# ---------- «Работа над ошибками»: a wrong problem comes back in 3 days, then in 7, until it is solved twice ----------
+
+REDO_STEPS = (3, 7)
+
+
+def redo_ref(task_n: int, pid: str) -> str:
+    """The address of a problem from its id on the task map."""
+    from app.learning.exambank import is_ref
+    if is_ref(pid):  # OGE / base bank: g7.14.3, e12.3
+        return pid
+    return pid if (pid[:1] in ("f", "b") and pid[1:].isdigit()) else f"s{task_n}:{pid}"
+
+
+def redo_add(row: LearnerState, ref: str, task_n: int) -> None:
+    redo = row.data.setdefault("redo", {})
+    redo[ref] = {"task": task_n, "step": 0, "due": (date.today() + timedelta(days=REDO_STEPS[0])).isoformat(),
+                 "added": date.today().isoformat(), "tries": 0}
+
+
+def redo_answer(row: LearnerState, ref: str, ok: bool) -> str | None:
+    """A later answer to a problem from the list: right -> the next interval or done; wrong -> again in 3 days.
+    Returns "next", "done", "again" or None (not in the list)."""
+    redo = row.data.get("redo") or {}
+    r = redo.get(ref)
+    if r is None:
+        return None
+    r["tries"] = int(r.get("tries", 0)) + 1
+    if not ok:
+        r.update(step=0, due=(date.today() + timedelta(days=REDO_STEPS[0])).isoformat())
+        return "again"
+    if r["step"] + 1 >= len(REDO_STEPS):
+        redo.pop(ref)
+        row.data["redo_done"] = int(row.data.get("redo_done", 0)) + 1
+        count(row, "fixed")
+        gain(row, 40)
+        return "done"
+    r.update(step=r["step"] + 1, due=(date.today() + timedelta(days=REDO_STEPS[r["step"] + 1])).isoformat())
+    return "next"
+
+
+def redo_due(row: LearnerState, today: date | None = None) -> list[str]:
+    t = (today or date.today()).isoformat()
+    return sorted((ref for ref, r in (row.data.get("redo") or {}).items() if r["due"] <= t), key=lambda ref: row.data["redo"][ref]["due"])
+
+
+async def active_path(db: AsyncSession, user: User, row: LearnerState):
+    """The trajectory the schedule follows: the student's own approved one, else the class one;
+    a student on his own can switch his off."""
+    from app.db.crud_learning import student_classes
+    from app.db.models import LearningPath
+    classes = await student_classes(db, user.id)
+    if not classes and not row.data.get("path_follow", True):
+        return None
+    res = await db.execute(select(LearningPath).where(LearningPath.student_id == user.id, LearningPath.status == "active").order_by(LearningPath.id.desc()))
+    p = res.scalars().first()
+    if p is None and classes:
+        res = await db.execute(select(LearningPath).where(LearningPath.class_id.in_([c.id for c in classes]), LearningPath.status == "active")
+                               .order_by(LearningPath.id.desc()))
+        p = res.scalars().first()
+    if p is not None and p.data.get("exam") != key_for(user):
+        return None  # a class path for another exam does not fit
+    return p
+
+
+async def route_basis(db: AsyncSession, user_id: int, row: LearnerState, path=None) -> str:
+    """What today's route rests on: 'path' - a trajectory, 'diag' - a diagnostic, 'practice' - answers and photo checks, 'start' - nothing yet."""
     from app.db.crud_learning import last_finished_diagnostic
+    if path is not None:
+        return "path"
     if await last_finished_diagnostic(db, user_id) is not None:
         return "diag"
     return "practice" if row.data.get("prac") or row.data.get("obs") else "start"
@@ -116,6 +199,7 @@ async def on_task_checked(db: AsyncSession, user_id: int, task_id: int, score: i
         if await last_finished_diagnostic(db, user_id) is not None:
             await add_measurement(db, user, row, f"проверка задания {task_id}")
     unlock(row, "first_check")
+    count(row, "checks")
     gain(row, 80)
     touch(row)
     await notify(db, user_id, f"Проверка задания {task_id}: {score} из {max_score}. Прогноз и расписание обновлены", "home")
