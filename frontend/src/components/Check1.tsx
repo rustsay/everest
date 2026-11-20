@@ -10,10 +10,12 @@ const VERDICT: Record<string, [string, string]> = {
   slip: ['Способ верный, ошибка в счёте', 'p-gold'], method: ['Неверно: нужен другой способ', 'p-bad'],
 }
 
-/** Photo check of tasks 1-12: a bank problem (the key decides) or an own problem (the model solves it, no key). */
-export default function Check1({ preset, presetTask }: { preset?: string; presetTask?: number }) {
+/** Photo check of the tasks with a short answer (profile 1-12, OGE 1-19, base 1-21): a bank problem (the key decides)
+    or an own problem (the model solves it, no key). */
+export default function Check1({ preset, presetTask, from = 1, to = 12, title }: { preset?: string; presetTask?: number; from?: number; to?: number; title?: string }) {
   const app = useApp()
-  const [task, setTask] = useState(presetTask || 1)
+  const exam = app.me.role === 'student' ? undefined : app.exam
+  const [task, setTask] = useState(presetTask && presetTask >= from && presetTask <= to ? presetTask : from)
   const [mode, setMode] = useState<'bank' | 'own'>('bank')
   const [items, setItems] = useState<PracticeItem[] | null>(null)
   const [ref, setRef] = useState(preset ?? '')
@@ -23,17 +25,17 @@ export default function Check1({ preset, presetTask }: { preset?: string; preset
   const [busy, setBusy] = useState(false)
   const [res, setRes] = useState<Check1Result | null>(null)
   const [hist, setHist] = useState<Check1Item[]>([])
-  const loadHist = () => check1History().then((r) => setHist(r.items)).catch(() => null)
-  useEffect(() => { loadHist() }, [])
+  const loadHist = () => check1History(exam).then((r) => setHist(r.items)).catch(() => null)
+  useEffect(() => { loadHist() }, [exam]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     setItems(null)
-    getPractice(task).then((r) => {
+    getPractice(task, undefined, exam).then((r) => {
       const list = r.items.filter((x) => x.check === 'answer')
       setItems(list)
       if (preset && list.some((x) => x.ref === preset)) setRef(preset)
       else setRef((v) => (list.some((x) => x.ref === v) ? v : list[0]?.ref ?? ''))
     }).catch(() => setItems([]))
-  }, [task]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [task, exam]) // eslint-disable-line react-hooks/exhaustive-deps
   const cur = items?.find((x) => x.ref === ref)
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -42,20 +44,20 @@ export default function Check1({ preset, presetTask }: { preset?: string; preset
     if (mode === 'bank' && !ref) return app.toast('Выбери задачу из банка')
     setBusy(true); setRes(null)
     try {
-      const r = await checkFirstPart({ task, answer, files, ...(mode === 'bank' ? { ref } : { problem }) })
+      const r = await checkFirstPart({ task, answer, files, exam, ...(mode === 'bank' ? { ref } : { problem }) })
       setRes(r); loadHist(); app.reload()
     } catch (err) { app.toast(String(err).replace('Error: ', '')) } finally { setBusy(false) }
   }
 
   return (
     <section className="card c1">
-      <div className="card-h"><div><h2>Первая часть · задания 1-12</h2>
+      <div className="card-h"><div><h2>{title ?? `Задания ${from}-${to}`}</h2>
         <p className="muted" style={{ fontSize: 13 }}>Ответ и фото решения. Звёздочка скажет, верно ли, и найдёт ошибку: в счёте или в способе.</p></div></div>
       <form onSubmit={submit} className="c1-form">
         <div className="mat-form">
           <div className="field" style={{ flex: '0 1 130px' }}><label htmlFor="c1Task">Задание</label>
             <select id="c1Task" className="input" value={task} onChange={(e) => { setTask(Number(e.target.value)); setRes(null) }}>
-              {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>№ {i + 1}</option>)}</select></div>
+              {Array.from({ length: to - from + 1 }, (_, i) => <option key={from + i} value={from + i}>№ {from + i}</option>)}</select></div>
           <div style={{ flex: '1 1 260px' }}><span className="flabel">Какая задача</span>
             <div className="seg" role="group" aria-label="Какая задача">
               <button type="button" aria-pressed={mode === 'bank'} onClick={() => setMode('bank')}>Из банка</button>
@@ -65,7 +67,7 @@ export default function Check1({ preset, presetTask }: { preset?: string; preset
           <div className="field"><label htmlFor="c1Ref">Задача</label>
             <select id="c1Ref" className="input" value={ref} onChange={(e) => { setRef(e.target.value); setRes(null) }} disabled={!items?.length}>
               {items?.map((x, i) => <option key={x.ref} value={x.ref}>{i + 1}. {x.proto_name ? `${x.proto_name}: ` : ''}{x.q.slice(0, 80)}</option>)}</select>
-            {cur && <div className="c1-q"><ProblemText q={cur.q} img={cur.img} /></div>}
+            {cur && <div className="c1-q"><ProblemText q={cur.q} img={cur.img} ctx={cur.ctx_img} /></div>}
           </div>
         ) : (
           <div className="field"><label htmlFor="c1Prob">Условие задачи</label>
@@ -83,7 +85,7 @@ export default function Check1({ preset, presetTask }: { preset?: string; preset
       </form>
       {res && <Verdict r={res} />}
       {hist.length > 0 && (
-        <details className="c1-hist"><summary>Прошлые проверки первой части ({hist.length})</summary>
+        <details className="c1-hist"><summary>Прошлые проверки ({hist.length})</summary>
           {hist.map((h, i) => (
             <div key={i} className="stu-row">
               <span className={`pill ${VERDICT[h.kind]?.[1] ?? 'p-gold'} num`}>№ {h.task}</span>

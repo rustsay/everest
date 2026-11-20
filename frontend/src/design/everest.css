@@ -1109,3 +1109,6 @@ small.up{color:var(--em-ink);font-weight:700}small.down{color:var(--bad);font-we
 .mat-ic{width:38px;height:38px;border-radius:10px;display:grid;place-items:center;background:var(--em-soft);color:var(--em-ink);flex:0 0 auto}
 .mat-ic.sl{background:var(--gold-soft);color:var(--gold-ink)}
 @media print{.print-slides .deck{break-after:page;margin:0 0 6mm;border-radius:0}}
+/* the switch of the exam parts on top of «Проверка» */
+.check-parts{display:flex;width:100%;max-width:560px}
+.check-parts button{flex:1;padding:10px 14px;font-weight:700}

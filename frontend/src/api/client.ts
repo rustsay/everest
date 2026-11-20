@@ -113,7 +113,7 @@ export function openWs(sessionId: string): WebSocket {
 import type {
   Me, Dashboard, PlanData, DiagRun, DiagResult, NotificationItem, ChatMsg, TeacherOverview, StudentDetail, Textbook, MaterialOut, MaterialHead, Slide,
   TaskMapData, TmAnswer, TmFile, SkillExplain, BankItem, BankTask, PracticeItem, VariantSummary, VariantFull,
-  MyPath, PathOut, PathStage, TeacherPaths, DiagWork, Target, Walkthrough, DiagListItem, DiagAnalytics, Check1Result, Check1Item, RedoItem, WeekReport, ClassWeek, MyEvent,
+  MyPath, PathOut, PathStage, TeacherPaths, DiagWork, Target, Walkthrough, DiagListItem, DiagAnalytics, Check1Result, Check1Item, Check2Result, Check2Item, RedoItem, WeekReport, ClassWeek, MyEvent,
   PushSettings, AdminStats, AdminUser,
 } from '../types'
 
@@ -309,9 +309,10 @@ export async function downloadBankTemplate(): Promise<void> {
 // ---------- practice bank and variants ----------
 export const listDiagnostics = (): Promise<{ items: DiagListItem[] }> => apiFetch('/diagnostics')
 export const getDiagAnalytics = (id: number): Promise<DiagResult & { date: string | null; analytics: DiagAnalytics }> => apiFetch(`/diagnostics/${id}/analytics`)
-export async function checkFirstPart(body: { task: number; answer: string; ref?: string; problem?: string; files: File[] }): Promise<Check1Result> {
+export async function checkFirstPart(body: { task: number; answer: string; ref?: string; problem?: string; files: File[]; exam?: string }): Promise<Check1Result> {
   const fd = new FormData()
   fd.append('task', String(body.task)); fd.append('answer', body.answer)
+  if (body.exam) fd.append('exam', body.exam)
   if (body.ref) fd.append('ref', body.ref)
   if (body.problem) fd.append('problem', body.problem)
   body.files.forEach((f) => fd.append('files', f))
@@ -319,7 +320,19 @@ export async function checkFirstPart(body: { task: number; answer: string; ref?:
   if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(typeof e.detail === 'string' ? e.detail : `HTTP ${res.status}`) }
   return res.json()
 }
-export const check1History = (): Promise<{ items: Check1Item[] }> => apiFetch('/check1')
+export const check1History = (exam?: string): Promise<{ items: Check1Item[] }> => apiFetch(`/check1${ex(exam)}`)
+export async function checkSecondPart(body: { task: number; ref?: string; problem?: string; files: File[]; exam?: string }): Promise<Check2Result> {
+  const fd = new FormData()
+  fd.append('task', String(body.task))
+  if (body.exam) fd.append('exam', body.exam)
+  if (body.ref) fd.append('ref', body.ref)
+  if (body.problem) fd.append('problem', body.problem)
+  body.files.forEach((f) => fd.append('files', f))
+  const res = await fetch(`${BASE}/check2`, { method: 'POST', headers: authHeader(), body: fd })
+  if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.detail ?? `HTTP ${res.status}`) }
+  return res.json()
+}
+export const check2History = (): Promise<{ items: Check2Item[] }> => apiFetch('/check2')
 export const getRedo = (): Promise<{ items: RedoItem[]; later: number; next: string | null; done: number }> => apiFetch('/redo')
 export const weekReport = (): Promise<WeekReport> => apiFetch('/report/week')
 export const classWeek = (): Promise<ClassWeek> => apiFetch('/teacher/report/week')

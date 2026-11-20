@@ -23,7 +23,7 @@ SECTIONS: dict[str, str | None] = {
     "taskmaps": "Карты заданий", "skills": "Карты заданий", "taskfiles": "Карты заданий",
     "practice": "Банк задач", "redo": "Банк задач",
     "variants": "Варианты",
-    "sessions": "Проверка по фото", "check1": "Проверка по фото", "review-chats": "Проверка по фото",
+    "sessions": "Проверка по фото", "check1": "Проверка по фото", "check2": "Проверка по фото", "review-chats": "Проверка по фото",
     "videos": "Разборы", "walkthrough": "Разборы",
     "chat": "Помощник",
     "report": "Итоги недели",

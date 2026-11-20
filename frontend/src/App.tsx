@@ -132,7 +132,7 @@ function Main() {
 
   let page
   switch (view.v) {
-    case 'session': page = view.id ? <Session sessionId={view.id} onBack={() => app.go('check')} onOpenTrajectory={(id) => app.go({ v: 'trajectory', id })} onChecked={app.reload} /> : <Check />; break
+    case 'session': page = view.id ? <Session sessionId={view.id} onBack={() => app.go({ v: 'check', id: 'p2' })} onOpenTrajectory={(id) => app.go({ v: 'trajectory', id })} onChecked={app.reload} /> : <Check />; break
     case 'trajectory': page = view.id ? <TrajectoryPage sessionId={view.id} onBack={() => app.go({ v: 'session', id: view.id })} /> : <Check />; break
     case 'check': page = <Check />; break
     case 'teacher': page = teacher ? <Teacher /> : <Home />; break
