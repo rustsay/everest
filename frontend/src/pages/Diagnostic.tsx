@@ -263,7 +263,7 @@ function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext, onDontKnow, 
       {num && (
         <form className="ob-form" onSubmit={(e) => { e.preventDefault(); if (ready) go() }}>
           <label htmlFor="qIn" className="sr">Ответ</label>
-          <input id="qIn" className="input ob-input" inputMode="decimal" autoComplete="off" placeholder="Ответ" value={ans} onChange={(e) => setAns(e.target.value)} />
+          <input id="qIn" className="input ob-input" inputMode="text" autoComplete="off" placeholder="Ответ" value={ans} onChange={(e) => setAns(e.target.value)} />
         </form>
       )}
       <div className="dw-box">

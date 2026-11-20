@@ -76,7 +76,7 @@ export default function Check1({ preset, presetTask, from = 1, to = 12, title }:
         )}
         <div className="mat-form">
           <div className="field" style={{ flex: '0 1 200px' }}><label htmlFor="c1Ans">Твой ответ</label>
-            <input id="c1Ans" className="input" inputMode="decimal" value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="например, 0,5" /></div>
+            <input id="c1Ans" className="input" inputMode="text" value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="например, 0,5" /></div>
           <div className="field" style={{ flex: '1 1 260px' }}><label htmlFor="c1Files">Фото решения (до 5)</label>
             <input id="c1Files" className="input" type="file" accept="image/*,.pdf,.heic" multiple style={{ paddingTop: 10 }}
               onChange={(e) => setFiles(Array.from(e.target.files ?? []).slice(0, 5))} /></div>

@@ -320,7 +320,7 @@ export function Problem({ n, i, q, onDone }: { n: number; i: number; q: TmProble
         <p className="tm-res"><b>{was ? 'Решено с первой попытки.' : 'С первой попытки не получилось.'}</b> {q.sol}</p>
       ) : (
         <form className="tm-ans" onSubmit={submit}>
-          <input className="input" inputMode="decimal" placeholder="Ответ" value={v} onChange={(e) => setV(e.target.value)} aria-label={`Ответ к задаче ${i + 1}`} />
+          <input className="input" inputMode="text" placeholder="Ответ" value={v} onChange={(e) => setV(e.target.value)} aria-label={`Ответ к задаче ${i + 1}`} />
           <button className="btn btn-em" type="submit" disabled={busy || !v.trim()}>Проверить</button>
           {n <= 12 && <button type="button" className="btn btn-ghost" title="Ответ и фото решения: найдём ошибку"
             onClick={() => app.go({ v: 'check', id: `1-${n}-${/^([fb]\d+|[ge]\d+\.\d+(\.\d+)?)$/.test(q.id) ? q.id : `s${n}:${q.id}`}` })}><Icon n="check" s={16} />По фото</button>}

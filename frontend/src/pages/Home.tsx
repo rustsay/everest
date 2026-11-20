@@ -354,7 +354,7 @@ function Daily({ d }: { d: Dashboard }) {
           <p style={{ fontWeight: 700, fontSize: 16 }}>{d.daily.q}</p>
           <form onSubmit={submit} style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
             <label htmlFor="dailyIn" className="sr">Ответ</label>
-            <input id="dailyIn" name="a" className="input" style={{ flex: '1 1 140px', animation: shake ? 'shake .45s' : undefined }} placeholder="Ответ, например 0,5" inputMode="decimal" autoComplete="off" />
+            <input id="dailyIn" name="a" className="input" style={{ flex: '1 1 140px', animation: shake ? 'shake .45s' : undefined }} placeholder="Ответ, например 0,5" inputMode="text" autoComplete="off" />
             <button className="btn btn-em" type="submit">Проверить</button>
           </form>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' }}>
