@@ -1,4 +1,5 @@
 import { CSSProperties, ReactNode, useEffect, useRef, useState } from 'react'
+export { speak, hush, prepareSpeech, setSpeechRate } from '../utils/speech'
 
 /* ---------- icons ---------- */
 const I: Record<string, string> = {
@@ -206,21 +207,6 @@ export function chime(final: boolean) {
     }
   } catch { /* audio not available */ }
 }
-
-export function speak(text: string) {
-  try {
-    if (!('speechSynthesis' in window)) return
-    speechSynthesis.cancel()
-    const u = new SpeechSynthesisUtterance(text)
-    u.lang = 'ru-RU'
-    const v = speechSynthesis.getVoices().find((x) => /^ru/i.test(x.lang))
-    if (v) u.voice = v
-    u.rate = 1.05
-    u.pitch = 1.3
-    speechSynthesis.speak(u)
-  } catch { /* no voice */ }
-}
-export const hush = () => { try { speechSynthesis.cancel() } catch { /* nothing */ } }
 
 export function Pill({ kind = 'em', children }: { kind?: 'em' | 'gold' | 'bad'; children: ReactNode }) {
   return <span className={`pill p-${kind}`}>{children}</span>

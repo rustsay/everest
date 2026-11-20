@@ -12,6 +12,7 @@ from app.api.router import router
 from app.api.taskmaps import router as taskmaps_router
 from app.api.bank import router as bank_router
 from app.api.practice import router as practice_router
+from app.api.speech import router as speech_router
 from app.api.teacher import router as teacher_router
 from app.auth.router import router as auth_router
 from app.config import settings
@@ -64,3 +65,4 @@ app.include_router(teacher_router, prefix="/api")
 app.include_router(taskmaps_router, prefix="/api")
 app.include_router(bank_router, prefix="/api")
 app.include_router(practice_router, prefix="/api")
+app.include_router(speech_router, prefix="/api")

@@ -27,6 +27,8 @@ const MLINES: Partial<Record<ViewName, string[]>> = {
 
 export default function Shell({ children }: { children: ReactNode }) {
   const app = useApp()
+  const bubbleTimer = useRef<number>()
+  useEffect(() => () => clearTimeout(bubbleTimer.current), [app.speech?.id])
   const { me, dash, view, go } = app
   const teacher = me.role !== 'student'
   const nav = teacher ? NAV_T.map(([v, l, i]) => (v === 'teacher' && me.role === 'tutor' ? [v, 'Мои ученики', i] : [v, l, i]) as [ViewName, string, string]) : NAV_S
@@ -185,7 +187,7 @@ export default function Shell({ children }: { children: ReactNode }) {
               <button className="bub-btn" aria-label="Закрыть" onClick={app.hideSpeech}><Icon n="close" s={18} /></button>
             </span>
           </div>
-          <Typed text={app.speech.text} onTyping={app.setTalking} onDone={() => setTimeout(() => app.hideSpeech(), 9000)} />
+          <Typed text={app.speech.text} onTyping={app.setTalking} onDone={() => { clearTimeout(bubbleTimer.current); bubbleTimer.current = window.setTimeout(() => app.hideSpeech(), 9000) }} />
         </div>
       )}
       <Care />

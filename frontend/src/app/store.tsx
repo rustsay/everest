@@ -101,13 +101,18 @@ export function AppProvider({ me: initialMe, onLogout, children }: { me: Me; onL
   useEffect(() => { reload() }, [reload])
 
   useEffect(() => {
-    const on = () => setView(parseHash(location.hash))
+    const on = () => { hush(); setView(parseHash(location.hash)) }
     addEventListener('hashchange', on)
     return () => removeEventListener('hashchange', on)
   }, [])
   useEffect(() => { document.body.dataset.view = view.v; setSpeech(null) }, [view.v])
+  useEffect(() => {
+    if (!voice) hush()
+  }, [voice])
+  useEffect(() => () => hush(), [])
 
   const go = useCallback((v: ViewName | View) => {
+    hush()
     const nv = typeof v === 'string' ? { v } : v
     if (location.hash !== viewHash(nv)) history.pushState(null, '', viewHash(nv))
     setView(nv)
@@ -126,11 +131,17 @@ export function AppProvider({ me: initialMe, onLogout, children }: { me: Me; onL
     if (voice) speak(text)
   }, [voice])
 
+  useEffect(() => {
+    const onError = () => toast('Не удалось включить озвучку. Нажмите воспроизведение ещё раз.', 'bad')
+    window.addEventListener('voice-error', onError)
+    return () => window.removeEventListener('voice-error', onError)
+  }, [toast])
+
   const value: Ctx = {
     me, setMe, dash, reload, view, go, toast,
     openModal: (title, body, wide) => setModal({ title, body, wide }),
     closeModal: () => setModal(null),
-    say, speech, hideSpeech: () => { setSpeech(null); hush() }, talking, setTalking,
+    say, speech, hideSpeech: () => { setSpeech(null); hush('mascot') }, talking, setTalking,
     confetti: conf.fire, logout: onLogout, voice, setVoice: setVoiceState,
   }
 

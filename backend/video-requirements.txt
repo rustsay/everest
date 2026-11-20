@@ -1,1 +1,2 @@
 beautifulsoup4>=4.12,<5
+edge-tts==7.3.1
