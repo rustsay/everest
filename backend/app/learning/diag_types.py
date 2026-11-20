@@ -112,7 +112,7 @@ PROF: dict[str, tuple] = {
 }
 
 
-def _src(kind: str) -> str:
+def _prof_src(kind: str) -> str:
     return {"demo": "демоверсия ЕГЭ 2027", "fipi": "открытый банк ФИПИ", "own": "по образцу банка ФИПИ"}[kind]
 
 
@@ -123,11 +123,11 @@ def _problem(t: str, n: int) -> dict:
     spec = PROF[t]
     if spec[0] == "demo":
         it = PROF_P1[n][spec[1]]
-        return {"q": it["q"], "a": it["a"], "fig": it.get("fig"), "nodes": it["nodes"], "src": _src("demo")}
+        return {"q": it["q"], "a": it["a"], "fig": it.get("fig"), "nodes": it["nodes"], "src": _prof_src("demo")}
     if spec[0] == "fipi":
         p = fipi.by_ref()[f"f{spec[1]}"]
-        return {"q": p["q"], "a": p["a"], "img": p["img"], "ans_img": p.get("ans_img"), "ref": p["ref"], "src": _src("fipi")}
-    return {"q": spec[1], "a": spec[2], "fig": spec[3] if len(spec) > 3 else None, "own": True, "src": _src("own")}
+        return {"q": p["q"], "a": p["a"], "img": p["img"], "ans_img": p.get("ans_img"), "ref": p["ref"], "src": _prof_src("fipi")}
+    return {"q": spec[1], "a": spec[2], "fig": spec[3] if len(spec) > 3 else None, "own": True, "src": _prof_src("own")}
 
 
 @lru_cache(maxsize=1)
@@ -204,7 +204,7 @@ def _pick(key: str, n: int, t: dict) -> dict:
     return (demo or live or protos)[0]
 
 
-def _src(p: dict) -> str:
+def _bank_src(p: dict) -> str:
     return "демоверсия 2027" if "DEMO" in p["tags"] else "открытый банк ФИПИ"
 
 
@@ -229,19 +229,19 @@ def bank_items(key: str) -> tuple[dict, ...]:
             for t in ts:
                 p = _pick(key, n, t)
                 choices.append({"type": t["type"], "proto": t["id"], "name": t["name"], "q": p["q"], "img": p["img"], "ref": p["ref"],
-                                "a": p.get("answer_text"), "src": _src(p)})
+                                "a": p.get("answer_text"), "src": _bank_src(p)})
             out.append({**base, "id": f"s{n}", "t": "work", "q": "", "max": need[n]["max"], "choices": choices, "src": "выбери тип задания"})
             continue
         if key == "oge" and n <= 5:
             t = next((x for x in ts if x["id"] == plot), ts[0])
             p = _pick(key, n, t)
             out.append({**base, **_item(p), "id": f"t{n}_{t['id']}", "type": t["type"], "proto": t["id"], "type_name": f"сюжет «{t['name']}»",
-                        "of_types": 1, "oral": n in ORAL[key], "src": _src(p)})
+                        "of_types": 1, "oral": n in ORAL[key], "src": _bank_src(p)})
             continue
         for t in ts:
             p = _pick(key, n, t)
             out.append({**base, **_item(p), "id": f"t{n}_{t['id']}", "type": t["type"], "proto": t["id"], "type_name": t["name"],
-                        "of_types": len(ts), "oral": n in ORAL[key], "src": _src(p),
+                        "of_types": len(ts), "oral": n in ORAL[key], "src": _bank_src(p),
                         **({"photo": "optional"} if key == "base" else {})})
     return tuple(out)
 

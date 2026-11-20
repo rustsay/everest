@@ -203,8 +203,7 @@ export default function Onboarding({ me, onToken, onProfile }: Props) {
         <input name="email" className="input ob-input" type="email" autoComplete="email" placeholder="Почта" />
         <input name="password" className="input ob-input" type="password" autoComplete="new-password" placeholder="Пароль, не короче 6 символов" />
         <p className="auth-msg">{err}</p>
-        <button className="btn btn-em" type="submit" disabled={busy}>{busy ? 'Отправляю код…' : 'Дальше'}</button>
-        <p className="muted" style={{ fontSize: 13, textAlign: 'center' }}>На почту придёт код из 6 цифр, чтобы подтвердить адрес.</p>
+        <button className="btn btn-em" type="submit" disabled={busy}>{busy ? 'Создаю…' : 'Создать аккаунт'}</button>
       </form>
     </>)
   } else {
