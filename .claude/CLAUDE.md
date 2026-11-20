@@ -15,6 +15,9 @@ cp .env.example .env       # заполнить LLM_BASE_URL, LLM_API_KEY, LLM_M
 docker compose up --build  # поднимает backend + frontend + postgres
 ```
 
+Обновление сервера: `git pull && docker compose up -d --build backend`. Фронтенд подключён папкой и обновляется сам,
+а backend скопирован в образ: без `--build` работает старый код (тогда у базы и ОГЭ видны задачи профиля, `components/StaleServer.tsx` предупреждает).
+
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:8000/api
 - Swagger docs: http://localhost:8000/docs

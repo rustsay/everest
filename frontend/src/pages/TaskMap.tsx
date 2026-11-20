@@ -5,6 +5,7 @@ import { answerTaskMap, deleteTaskFile, downloadTaskFile, explainSkill, getTaskM
 import { useApp } from '../app/store'
 import { examRange } from '../types'
 import ExamSwitch from '../components/ExamSwitch'
+import StaleServer from '../components/StaleServer'
 import type { SkillExplain, TaskMapData, TmAnswer, TmProblem, TmProto, TmSkill, TmStat } from '../types'
 import { Icon, Md } from '../design/ui'
 import GeoFig from '../components/GeoFig'
@@ -54,6 +55,7 @@ export default function TaskMap({ n }: { n: number }) {
           })}
         </div>
       </div>
+      <StaleServer want={app.exam} got={d.exam ?? 'prof'} />
 
       <section className="card tm-sum">
         <TaskRing s={d.total} size={84} />

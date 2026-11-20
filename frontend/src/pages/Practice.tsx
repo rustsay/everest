@@ -7,13 +7,14 @@ import { Icon, fmtD } from '../design/ui'
 import { Problem } from './TaskMap'
 import Redo from '../components/Redo'
 import ExamSwitch from '../components/ExamSwitch'
+import StaleServer from '../components/StaleServer'
 
 /** The task bank for students: published problems by task and prototype, plus variants from the teacher. */
 export default function Practice() {
   const app = useApp()
   const [task, setTask] = useState<number>(Number(app.view.id) || 1)
   const [proto, setProto] = useState('')
-  const [data, setData] = useState<{ items: PracticeItem[]; counts: Record<string, number>; tasks: BankTask[] } | null>(null)
+  const [data, setData] = useState<{ items: PracticeItem[]; counts: Record<string, number>; tasks: BankTask[]; exam?: string } | null>(null)
   const [vars, setVars] = useState<VariantSummary[]>([])
   const exam = app.exam
   const load = useCallback(() => getPractice(task, proto || undefined, app.me.role === 'student' ? undefined : exam).then(setData).catch(() => null), [task, proto, exam]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -32,6 +33,7 @@ export default function Practice() {
         </div>
       </div>
 
+      {data && <StaleServer want={exam} got={data.exam ?? 'prof'} />}
       {app.me.role === 'student' && <Redo />}
 
       {vars.length > 0 && (
