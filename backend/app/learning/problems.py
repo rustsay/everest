@@ -52,11 +52,14 @@ async def resolve(db: AsyncSession, refs: list[str]) -> dict[str, dict]:
             out[f"b{b.id}"] = _bank_view(b)
     static = {p["ref"]: p for p in builtin()}
     fp = fipi.by_ref()
+    from app.learning import exambank
     for r in refs:
         if r in static:
             out[r] = static[r]
         elif r in fp:
             out[r] = fp[r]
+        elif exambank.is_ref(r) and (ep := exambank.find(r)):
+            out[r] = ep
     return out
 
 

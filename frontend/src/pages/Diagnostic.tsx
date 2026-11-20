@@ -132,8 +132,9 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
           <h1 className="ob-h">Диагностика</h1>
           {run.typed ? (
             <p className="ob-sub">
-              Проверяем каждый тип каждого задания: в первой части {nNum} {plural(nNum, 'задача', 'задачи', 'задач')} (типы 1.1, 1.2 и дальше по порядку),
-              во второй части {nSelf} {plural(nSelf, 'задание', 'задания', 'заданий')}: в каждом выбираешь, какой тип решать. Задачи из демоверсии ЕГЭ 2027 и открытого банка ФИПИ.
+              Проверяем каждый тип каждого задания: {nNum} {plural(nNum, 'задача', 'задачи', 'задач')} с ответом (типы 1.1, 1.2 и дальше по порядку)
+              {nSelf ? <>, во второй части {nSelf} {plural(nSelf, 'задание', 'задания', 'заданий')}: в каждом выбираешь, какой тип решать</> : null}.
+              Задачи из демоверсии {exam.key === 'oge' ? 'ОГЭ' : 'ЕГЭ'} 2027 и открытого банка ФИПИ.
             </p>
           ) : (
             <p className="ob-sub">
@@ -142,7 +143,9 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
             </p>
           )}
           <ul className="ob-rules">
-            <li>К каждому заданию прикрепи фото решения или нажми «Не знаю». {exam.key === 'prof' ? 'Только задание 8 можно отметить «Решил устно». ' : ''}По фото видно, где просто ошибка в счёте, а где непонятен способ.</li>
+            {exam.key === 'base'
+              ? <li>Впиши ответ. Если у тебя есть решение, можешь прикрепить фото: я посмотрю, где ошибка. Можно и без решения.</li>
+              : <li>К каждому заданию прикрепи фото решения или нажми «Не знаю». {exam.key === 'prof' ? 'Только задание 8 можно отметить «Решил устно». ' : exam.key === 'oge' ? 'Задания 1, 11 и 19 можно отметить «Решил устно». ' : ''}По фото видно, где просто ошибка в счёте, а где непонятен способ.</li>}
             <li>Во второй части решение проверяется по критериям ФИПИ, как на экзамене.</li>
             <li>Правильные ответы не показываю до конца: это проверка, а не урок.</li>
             {run.typed && <li>Если два раза подряд нажмёшь «Не знаю» в одном задании, предложу пропустить остальные его типы.</li>}
@@ -177,7 +180,7 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
       {it.choices
         ? <ChoiceBox key={it.id} run={run} item={it} onChoice={(c, w) => setRun((r) => (r ? { ...r, choice: c, work: w } : r))} />
         : <>
-          <div className="q-text">{it.img ? <ProblemText q={it.q} img={it.img} /> : it.q.split('\n').map((l, k) => <span key={k}>{l}<br /></span>)}</div>
+          <div className="q-text">{it.img ? <ProblemText q={it.q} img={it.img} ctx={it.ctx_img} /> : it.q.split('\n').map((l, k) => <span key={k}>{l}<br /></span>)}</div>
           {it.fig && <Figure k={it.fig} />}
           <p className="q-src">{it.src}</p>
         </>}
@@ -229,8 +232,9 @@ function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext, onDontKnow, 
   const fileRef = useRef<HTMLInputElement>(null)
   const w = run.work[item.id]
   const mode = w?.mode && w.mode !== 'dont_know' ? w.mode : null
-  // in exam conditions any task can be left (blank = not solved), and the first part needs only the answer
-  const ready = exam || ((!num || ans.trim() !== '') && (mode === 'photo' || mode === 'oral'))
+  // in exam conditions any task can be left (blank = not solved), and the first part needs only the answer; base: photo optional
+  const optional = item.photo === 'optional'
+  const ready = exam || ((!num || ans.trim() !== '') && (mode === 'photo' || mode === 'oral' || optional))
 
   const upload = async (files: FileList | null) => {
     if (!files?.length) return
@@ -262,7 +266,7 @@ function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext, onDontKnow, 
         </form>
       )}
       <div className="dw-box">
-        <p className="dw-h">{num ? (exam ? 'Решение (по желанию: по фото найдём, где ошибка)' : 'Решение') : `Решение (максимум ${item.max} б.)`}</p>
+        <p className="dw-h">{num ? (exam || optional ? 'Если у тебя есть решение, можешь прикрепить фото: я посмотрю, где ошибка' : 'Решение') : `Решение (максимум ${item.max} б.)`}</p>
         <input ref={fileRef} type="file" accept="image/*,.pdf,.heic,.heif" multiple hidden onChange={(e) => upload(e.target.files)} />
         <div className="dw-btns">
           <button className={`btn ${mode === 'photo' ? 'btn-line' : 'btn-em'}`} disabled={busy || !!locked} onClick={() => fileRef.current?.click()}>
@@ -281,7 +285,8 @@ function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext, onDontKnow, 
         {!exam && <button className="ob-link" disabled={busy} onClick={() => pick('dont_know')}>{num ? 'Не знаю' : 'Не знаю, как решать'}</button>}
       </div>
       {exam && <p className="dw-hint">Можно пропустить и вернуться: номера заданий сверху.</p>}
-      {!ready && <p className="dw-hint">{(num && !ans.trim() ? 'Впиши ответ и п' : 'П') + (item.oral ? 'рикрепи решение или отметь «Решил устно».' : 'рикрепи фото решения.')} Или нажми «Не знаю».</p>}
+      {!ready && optional && <p className="dw-hint">Впиши ответ или нажми «Не знаю».</p>}
+      {!ready && !optional && <p className="dw-hint">{(num && !ans.trim() ? 'Впиши ответ и п' : 'П') + (item.oral ? 'рикрепи решение или отметь «Решил устно».' : 'рикрепи фото решения.')} Или нажми «Не знаю».</p>}
     </div>
   )
 }

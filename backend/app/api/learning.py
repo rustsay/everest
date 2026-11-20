@@ -206,6 +206,8 @@ async def start_diagnostic(body: DiagStart, user: User = Depends(get_current_use
         answers: dict = {}
         if body.mode == "first" and key in engine.TYPED_KEYS:
             answers["_fmt"] = "types"  # every type of every task (diag_types.py); mocks stay one problem per task
+        elif body.mode == "mock" and key in ("oge", "base"):
+            answers["_fmt"] = "bank"  # mocks of OGE and base: problems of the open FIPI bank
         if body.mode == "mock" and body.exam:
             if key not in EXAM_MINUTES:
                 raise HTTPException(400, "Пробник в условиях экзамена есть для ЕГЭ и ОГЭ")
@@ -333,17 +335,26 @@ async def list_diagnostics(user: User = Depends(get_current_user), db: AsyncSess
 
 
 class TargetIn(BaseModel):
-    test: int = Field(..., ge=27, le=100)
+    test: int | None = Field(None, ge=27, le=100)  # profile: test points
+    grade: int | None = Field(None, ge=3, le=5)    # OGE and base: the mark
 
 
 @router.put("/me/target")
 async def set_target(body: TargetIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    """The score the student wants (test points, profile exam): decides which tasks the schedule and the trajectory need."""
+    """The goal: test points (profile) or the mark (OGE, base). It decides the plan of the trajectory and the schedule."""
     from app.learning.content import primary_for_test
-    if service.key_for(user) != "prof":
-        raise HTTPException(400, "Цель в тестовых баллах есть только для профильного ЕГЭ")
+    key = service.key_for(user)
     row = await service.get_state(db, user.id)
-    row.data["target"] = {"test": body.test, "primary": primary_for_test(body.test)}
+    if key == "prof":
+        if body.test is None:
+            raise HTTPException(422, "Укажите тестовые баллы от 27 до 100")
+        row.data["target"] = {"test": body.test, "primary": primary_for_test(body.test)}
+    elif key in ("oge", "base"):
+        if body.grade is None:
+            raise HTTPException(422, "Укажите отметку: 3, 4 или 5")
+        row.data["target"] = {"grade": body.grade, "primary": EXAMS[key]["grades"][body.grade]}
+    else:
+        raise HTTPException(400, "Цель есть для ЕГЭ и ОГЭ")
     service.touch(row)
     await db.commit()
     import asyncio

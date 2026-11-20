@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { getPractice, listVariants } from '../api/client'
 import { useApp } from '../app/store'
+import { examRange } from '../types'
 import type { BankTask, PracticeItem, VariantSummary } from '../types'
 import { Icon, fmtD } from '../design/ui'
 import { Problem } from './TaskMap'
@@ -45,8 +46,8 @@ export default function Practice() {
 
       <section className="card">
         <div className="tm-tabs" aria-label="Задания">
-          {Array.from({ length: 19 }, (_, i) => i + 1).map((k) => (
-            <button key={k} className={`${k === task ? 'on' : ''} ${k >= 13 ? 'p2' : ''}`} onClick={() => { setTask(k); setProto('') }}
+          {Array.from({ length: examRange(app.me.exam_info.key).n }, (_, i) => i + 1).map((k) => (
+            <button key={k} className={`${k === task ? 'on' : ''} ${k >= examRange(app.me.exam_info.key).p2 ? 'p2' : ''}`} onClick={() => { setTask(k); setProto('') }}
               title={data?.tasks.find((x) => x.n === k)?.name}>{k}<sup className="tm-cnt">{data?.counts[String(k)] ?? 0}</sup></button>
           ))}
         </div>
@@ -57,14 +58,14 @@ export default function Practice() {
             {t?.protos.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </div>
-        {data && <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>{data.items.length ? `Задач: ${data.items.length}, решено: ${solved}. В процент карты задания идёт первая попытка.` : 'По этому заданию задач пока нет: их добавляет учитель через банк задач.'}</p>}
+        {data && <p className="muted" style={{ fontSize: 13, marginTop: 8 }}>{data.items.length ? `Задач: ${(data as { total?: number }).total ?? data.items.length}${((data as { total?: number }).total ?? 0) > data.items.length ? ` (показаны первые ${data.items.length}, выбери тип, чтобы увидеть остальные)` : ''}, решено: ${solved}. В процент карты задания идёт первая попытка.` : 'По этому заданию задач пока нет.'}</p>}
       </section>
 
       <div style={{ display: 'grid', gap: 10 }}>
         {data?.items.map((it, i) => (
           <div key={it.ref}>
             {(i === 0 || data.items[i - 1].proto !== it.proto) && <p className="label" style={{ margin: i ? '12px 0 6px 4px' : '0 0 6px 4px' }}>{it.proto_name || 'Без прототипа'}</p>}
-            <Problem n={it.task} i={i} q={{ id: it.pid, q: it.q, done: it.done, sol: it.sol, src: it.src, check: it.check, img: it.img, ans_img: it.ans_img }} onDone={load} />
+            <Problem n={it.task} i={i} q={{ id: it.pid, q: it.q, done: it.done, sol: it.sol, src: it.src, check: it.check, img: it.img, ans_img: it.ans_img, ctx_img: it.ctx_img }} onDone={load} />
           </div>
         ))}
       </div>

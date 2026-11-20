@@ -117,6 +117,9 @@ REDO_STEPS = (3, 7)
 
 def redo_ref(task_n: int, pid: str) -> str:
     """The address of a problem from its id on the task map."""
+    from app.learning.exambank import is_ref
+    if is_ref(pid):  # OGE / base bank: g7.14.3, e12.3
+        return pid
     return pid if (pid[:1] in ("f", "b") and pid[1:].isdigit()) else f"s{task_n}:{pid}"
 
 

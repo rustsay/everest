@@ -40,6 +40,13 @@ async def _photo_errors(db: AsyncSession, ids: list[int], limit: int = 8) -> lis
 
 
 async def _pool(db: AsyncSession, key: str) -> dict[str, list[dict]]:
+    if key in ("oge", "base"):  # prototypes of the open FIPI bank of the exam
+        from app.learning import exambank
+        pool: dict[str, list[dict]] = {}
+        for p in exambank.problems(key, analogs=False):
+            if p["a"] and "OLD" not in p["tags"]:
+                pool.setdefault(f"T{p['task']}", []).append(p)
+        return pool
     if key != "prof":
         return {}
     pool: dict[str, list[dict]] = {}
@@ -70,6 +77,12 @@ async def _build(db: AsyncSession, kind: str, key: str, who: str, model: dict, f
         data = method.build(state.get("types") or {} if kind == "student" else {}, model, target, today, end, dw, mins, names)
         if kind == "class":
             data["why"] = [w.replace("твоего", "класса") for w in data["why"]]
+            data["summary"] = data["summary"].replace("твоего темпа", "темпа класса")
+    elif key in ("oge", "base"):  # the draft of modules for OGE and base approved by the project (learning/method.py)
+        from app.learning import exambank, method
+        names = {t["type"]: t["name"] for ts in exambank.types(key).values() for t in ts}
+        data = method.build_exam(key, state.get("types") or {} if kind == "student" else {}, model, target, today, end, dw, mins, names)
+        if kind == "class":
             data["summary"] = data["summary"].replace("твоего темпа", "темпа класса")
     elif settings.llm_ready:
         try:

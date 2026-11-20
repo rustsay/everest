@@ -187,3 +187,88 @@ def type_scores(items: list[dict], answers: dict, evals: dict[str, dict | None])
             else:
                 out[c["type"]] = UNCHOSEN
     return out
+
+
+# ---------- OGE and EGE base: the diagnostic by types from the open FIPI banks (learning/exambank.py) ----------
+# One problem per type: the prototype of the official demo 2027 (tag DEMO in the bank) if it is of this type, else the first
+# prototype of the type that is still on the FIPI site (not OLD). OGE 1-5: one plot (the demo one) with its five questions.
+ORAL = {"oge": {1, 11, 19}, "base": set()}
+PART2_FROM = {"oge": 20, "base": 99}
+
+
+def _pick(key: str, n: int, t: dict) -> dict:
+    from app.learning import exambank
+    protos = [p for p in exambank.problems(key, n, t["id"], analogs=False)]
+    demo = [p for p in protos if "DEMO" in p["tags"]]
+    live = [p for p in protos if "OLD" not in p["tags"]]
+    return (demo or live or protos)[0]
+
+
+def _src(p: dict) -> str:
+    return "демоверсия 2027" if "DEMO" in p["tags"] else "открытый банк ФИПИ"
+
+
+@lru_cache(maxsize=2)
+def bank_items(key: str) -> tuple[dict, ...]:
+    from app.learning import exambank
+    from app.learning.content import EXAMS
+    need = {t["n"]: t for t in EXAMS[key]["tasks"]}
+    tps = exambank.types(key)
+    out: list[dict] = []
+    plot = None
+    if key == "oge":  # tasks 1-5: the plot of the demo
+        p1 = [p for p in exambank.problems(key, 1, analogs=False) if "DEMO" in p["tags"]] or exambank.problems(key, 1, analogs=False)
+        plot = p1[0]["proto"] if p1 else None
+    for n in sorted(need):
+        ts = tps.get(n) or []
+        if not ts:
+            continue
+        base = {"task": f"T{n}", "n": n, "nodes": need[n]["need"]}
+        if n >= PART2_FROM[key]:
+            choices = []
+            for t in ts:
+                p = _pick(key, n, t)
+                choices.append({"type": t["type"], "proto": t["id"], "name": t["name"], "q": p["q"], "img": p["img"], "ref": p["ref"],
+                                "a": p.get("answer_text"), "src": _src(p)})
+            out.append({**base, "id": f"s{n}", "t": "work", "q": "", "max": need[n]["max"], "choices": choices, "src": "выбери тип задания"})
+            continue
+        if key == "oge" and n <= 5:
+            t = next((x for x in ts if x["id"] == plot), ts[0])
+            p = _pick(key, n, t)
+            out.append({**base, **_item(p), "id": f"t{n}_{t['id']}", "type": t["type"], "proto": t["id"], "type_name": f"сюжет «{t['name']}»",
+                        "of_types": 1, "oral": n in ORAL[key], "src": _src(p)})
+            continue
+        for t in ts:
+            p = _pick(key, n, t)
+            out.append({**base, **_item(p), "id": f"t{n}_{t['id']}", "type": t["type"], "proto": t["id"], "type_name": t["name"],
+                        "of_types": len(ts), "oral": n in ORAL[key], "src": _src(p),
+                        **({"photo": "optional"} if key == "base" else {})})
+    return tuple(out)
+
+
+def _item(p: dict) -> dict:
+    return {"t": "num", "q": p["q"], "a": p.get("answer_text") or "", "img": p["img"], "ctx_img": p.get("ctx_img"), "ref": p["ref"]}
+
+
+def bank_mock(key: str, variant: int) -> list[dict]:
+    """A mock exam of OGE / base from the bank: one problem per task, prototypes change from mock to mock (analogs included)."""
+    from app.learning import exambank
+    from app.learning.content import EXAMS
+    out: list[dict] = []
+    plot_protos = sorted({p["ref"].split(".")[1] for p in exambank.problems(key, 1)}, key=int) if key == "oge" else []
+    plot = plot_protos[variant % len(plot_protos)] if plot_protos else None
+    for t in EXAMS[key]["tasks"]:
+        n = t["n"]
+        pool = [p for p in exambank.problems(key, n) if "OLD" not in p["tags"]] or exambank.problems(key, n)
+        if key == "oge" and n <= 5 and plot:
+            pool = [p for p in pool if p["ref"].split(".")[1] == plot] or pool
+        if not pool:
+            continue
+        p = pool[(variant * 37 + n * 11) % len(pool)]
+        it = {"id": f"m{n}", "task": t["id"], "n": n, "nodes": t["need"], "src": "открытый банк ФИПИ", "img": p["img"],
+              "ctx_img": p.get("ctx_img"), "ref": p["ref"], "q": p["q"]}
+        if t["part"] == 2:
+            out.append({**it, "t": "work", "max": t["max"]})
+        else:
+            out.append({**it, "t": "num", "a": p.get("answer_text") or "", "oral": n in ORAL[key]})
+    return out

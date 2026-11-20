@@ -83,6 +83,16 @@ export function PathTimeline({ p }: { p: PathOut }) {
 function MethodBox({ m }: { m: PathMethod }) {
   const exp = (a: number[]) => (a[0] === a[1] ? `${a[0]}` : `${a[0]}-${a[1]}`)
   const lower = m.expect[0] < m.expect_base[0]
+  if (m.exam === 'oge' || m.exam === 'base') {
+    return (
+      <div className="path-method">
+        <div><span className="label">Цель</span><b>«{m.grade}»</b><small className="muted">план {m.plan_name}</small></div>
+        <div><span className="label">Ожидаемый результат</span><b className="num">«{m.expect_grade}»</b><small className="muted">{exp(m.expect)} баллов, с учётом твоего темпа</small></div>
+        <div><span className="label">Часов в неделю</span><b className="num">{m.hours_week}</b>
+          <small className={m.hours_week + 0.05 < m.hours_need ? 'down' : 'muted'}>по плану нужно около {m.hours_need}</small></div>
+      </div>
+    )
+  }
   return (
     <div className="path-method">
       <div><span className="label">План по методике</span><b>№ {m.plan}</b><small className="muted">{m.plan_name}</small></div>

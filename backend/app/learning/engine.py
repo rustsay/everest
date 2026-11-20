@@ -5,6 +5,8 @@ No DB and no LLM imports, so it is easy to test.
 """
 from __future__ import annotations
 
+import re
+
 from copy import deepcopy
 from datetime import date, timedelta
 
@@ -82,7 +84,7 @@ def diag_items(key: str, grade: str | None, variant: int, today: date) -> list[d
     return out
 
 
-TYPED_KEYS = {"prof"}  # exams whose entrance diagnostic goes by task types (learning/diag_types.py)
+TYPED_KEYS = {"prof", "oge", "base"}  # exams whose entrance diagnostic goes by task types (learning/diag_types.py)
 
 
 def items_of(key: str, grade: str | None, variant: int, today: date, answers: dict | None = None) -> list[dict]:
@@ -91,10 +93,16 @@ def items_of(key: str, grade: str | None, variant: int, today: date, answers: di
     if (answers or {}).get("_fmt") == "types" and key == "prof":
         from app.learning.diag_types import prof_items
         return [dict(it) for it in prof_items()]
+    if (answers or {}).get("_fmt") == "types" and key in ("oge", "base"):
+        from app.learning.diag_types import bank_items
+        return [dict(it) for it in bank_items(key)]
+    if (answers or {}).get("_fmt") == "bank" and key in ("oge", "base"):  # mocks of OGE / base: one problem per task from the bank
+        from app.learning.diag_types import bank_mock
+        return bank_mock(key, variant)
     return diag_items(key, grade, variant, today)
 
 
-_HIDDEN = {"a", "own", "ans_img", "ref"}
+_HIDDEN = {"a", "own", "ans_img", "ref", "answer_text"}
 
 
 def public_item(it: dict) -> dict:
@@ -112,7 +120,22 @@ def norm_ans(v: str | None) -> str:
     return s.replace(",", ".")
 
 
+def _alternatives(a: str) -> list[str] | None:
+    """Answers of the open banks with several right answers: «13 или 256», a list «816 ; 824 ; 864» (any of them)."""
+    s = str(a or "")
+    if "или" in s or ";" in s:
+        return re.findall(r"-?\d+(?:[.,]\d+)?", s) or None
+    return None
+
+
 def same_ans(v: str | None, a: str) -> bool:
+    alts = _alternatives(a)
+    if alts:
+        return any(same_ans(v, x) for x in alts)
+    sa = str(a or "").strip()
+    if sa.startswith("<") and sa.endswith(">"):  # OGE 19: the numbers of the statements in any order
+        need, got = re.sub(r"\D", "", sa), re.sub(r"\D", "", str(v or ""))
+        return bool(got) and sorted(got) == sorted(need)
     x, y = norm_ans(v), norm_ans(a)
     if not x:
         return False

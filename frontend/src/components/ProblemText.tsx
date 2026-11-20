@@ -2,8 +2,18 @@ import { useState } from 'react'
 
 /** The condition of a problem: the picture from the open FIPI bank when there is one (formulas and drawings exactly
  * as in the source), otherwise the text. Pictures are cut at 150 dpi: shown as 2x, so the letters match the page text. */
-export default function ProblemText({ q, img, small }: { q: string; img?: string | null; small?: boolean }) {
+export default function ProblemText({ q, img, small, ctx }: { q: string; img?: string | null; small?: boolean; ctx?: string | null }) {
   const [bad, setBad] = useState(false)
+  if (ctx) {
+    return (
+      <>
+        <details className="prob-ctx" open={!small}><summary>Общее условие к заданиям 1-5</summary>
+          <a className="prob-wrap" href={ctx} target="_blank" rel="noreferrer" title="Открыть крупнее"><img className="prob-img" src={ctx} srcSet={`${ctx} 2x`} alt="Общее условие" loading="lazy" /></a>
+        </details>
+        <ProblemText q={q} img={img} small={small} />
+      </>
+    )
+  }
   if (img && !bad) return <a className="prob-wrap" href={img} target="_blank" rel="noreferrer" title="Открыть крупнее"><img className={`prob-img ${small ? 'sm' : ''}`} src={img} srcSet={`${img} 2x`} alt={q} loading="lazy" onError={() => setBad(true)} /></a>
   return <>{q}</>
 }

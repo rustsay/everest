@@ -5,12 +5,14 @@ import type { VTask, Step } from '../pages/videoData'
 import BoardFig from './BoardFig'
 import ProblemText from './ProblemText'
 
-export default function SolutionBoard({ n, task, onBack, onUnderstood, onNotUnderstood, proto, label, backLabel, doneLabel, img }: {
+export default function SolutionBoard({ n, task, onBack, onUnderstood, onNotUnderstood, proto, label, backLabel, doneLabel, img, ctx }: {
   n?: number; task: VTask; onBack: () => void; onUnderstood: () => void; onNotUnderstood: (step: Step) => void
   /** figure of a task map prototype (bank problems: string or null, so the typical drawing is not shown); label: line above the title */
   proto?: string | null; label?: string; backLabel?: string; doneLabel?: string
   /** picture of the condition (open FIPI bank) */
   img?: string | null
+  /** OGE 1-5: the shared text above the problem */
+  ctx?: string | null
 }) {
   const app = useApp()
   const v = task
@@ -61,7 +63,7 @@ export default function SolutionBoard({ n, task, onBack, onUnderstood, onNotUnde
     <>
       <div className="v-head"><button className="btn btn-sm btn-ghost" onClick={onBack}><Icon n="prev" s={16} />{backLabel ?? 'Все задания'}</button>
         <div style={{ minWidth: 0 }}><p className="muted">{label ?? (n ? 'Разбор · задание ' + n : 'Разбор своей задачи')}</p><h1>{v.t}</h1></div></div>
-      <div className="v-cond"><span className="label">Условие</span>{img ? <ProblemText q={v.c} img={img} /> : <p>{v.c}</p>}</div>
+      <div className="v-cond"><span className="label">Условие</span>{img ? <ProblemText q={v.c} img={img} ctx={ctx} small /> : <p>{v.c}</p>}</div>
       <div className="row">
         <section style={{ flex: '1.5 1 440px', minWidth: 0 }} aria-label="Видеоразбор">
           <div className="board">

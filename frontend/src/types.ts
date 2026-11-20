@@ -218,19 +218,21 @@ export interface PlanData {
   needed?: string[]
 }
 /** The score the student wants: test points and the primary points they need (scale of 2026). */
-export interface Target { test: number; primary: number }
+export interface Target { test?: number; primary: number; grade?: number }
 /** Is the second part in the schedule, and from which day (it waits until the first part is mastered). */
 export interface Part2Info { needed: boolean; open_from: string | null }
 
-export interface DiagChoice { type: string; proto: string; name: string; q: string; img?: string | null; src: string }
+export interface DiagChoice { type: string; proto: string; name: string; q: string; img?: string | null; ctx_img?: string | null; src: string }
 export interface DiagItem {
   id: string; t: 'num' | 'self' | 'work'; task: string; n: number | null; q: string; nodes: string[]; src?: string; fig?: string; max?: number
   /** task 8 of the profile exam: may be solved orally, without a photo */
   oral?: boolean
   /** the diagnostic by types: the type of a first-part item ("1.3"), its name and how many types the task has */
   type?: string; type_name?: string; of_types?: number
-  /** a problem of the open FIPI bank: its picture */
-  img?: string | null
+  /** a problem of the open FIPI bank: its picture; OGE 1-5: the picture of the shared text */
+  img?: string | null; ctx_img?: string | null
+  /** EGE base: the photo of the solution is optional */
+  photo?: 'optional'
   /** part 2 of the diagnostic by types: the student chooses one type */
   choices?: DiagChoice[]
 }
@@ -294,7 +296,7 @@ export interface MaterialOut { id: number; kind: 'conspect' | 'slides'; topic: s
 
 // ---------- task maps (knowledge map of one exam task) ----------
 export interface TmStat { pct: number | null; ok: number; count: number }
-export interface TmProblem { id: string; q: string; done: 0 | 1 | null; sol: string | null; src: string; check: 'answer' | 'photo'; img?: string | null; ans_img?: string | null }
+export interface TmProblem { id: string; q: string; done: 0 | 1 | null; sol: string | null; src: string; check: 'answer' | 'photo'; img?: string | null; ans_img?: string | null; ctx_img?: string | null }
 export interface TmFile { id: number; name: string; size: number; mine: boolean }
 export interface TmProto extends TmStat {
   id: string; name: string; fig: string | null; skills: string[]; know: string[]; added: string | null
@@ -302,7 +304,7 @@ export interface TmProto extends TmStat {
 }
 export interface TmSkill extends TmStat { id: string; name: string; short: string; know: string[]; fig: string | null }
 export interface TaskMapData {
-  n: number; name: string; part: 1 | 2
+  n: number; name: string; part: 1 | 2; exam?: string; count?: number
   skills: TmSkill[]; protos: TmProto[]
   total: TmStat & { covered: number; of: number }
   can_upload: boolean
@@ -315,7 +317,7 @@ export interface BankItem { id: number; task: number; proto: string; text: strin
 export interface BankTask { n: number; name: string; protos: { id: string; name: string }[] }
 
 // ---------- practice bank and variants ----------
-export interface PracticeItem { ref: string; pid: string; task: number; proto: string; proto_name: string; q: string; src: string; check: 'answer' | 'photo'; done: 0 | 1 | null; sol: string | null; answer?: string | null; fig?: string | null; img?: string | null; ans_img?: string | null }
+export interface PracticeItem { ref: string; pid: string; task: number; proto: string; proto_name: string; q: string; src: string; check: 'answer' | 'photo'; done: 0 | 1 | null; sol: string | null; answer?: string | null; fig?: string | null; img?: string | null; ans_img?: string | null; ctx_img?: string | null; analog?: boolean }
 export interface VariantSummary { id: number; title: string; count: number; class_id: number | null; class_name: string | null; due: string | null; attempt: { score: number; max: number } | null }
 export interface VariantFull {
   id: number; title: string; class_id: number | null; due: string | null; owner: boolean; items: PracticeItem[]
@@ -333,6 +335,8 @@ export interface PathStage {
 export interface PathMethod {
   plan: number; plan_name: string; part1_share: number; expect_base: number[]; expect: number[]
   hours_week: number; hours_need: number; cut: string[]; high: boolean; review_weeks: number
+  /** OGE and base: the goal mark and the expected mark */
+  exam?: string; grade?: number; expect_grade?: number
 }
 export interface PathData {
   source: 'ai' | 'rules' | 'method'; fallback?: string; edited?: boolean; summary: string; why: string[]; stages: PathStage[]
@@ -359,7 +363,7 @@ export interface TeacherPaths {
 // ---------- board walkthrough of a bank problem ----------
 export interface Walkthrough {
   ref: string; task: number; q: string; title: string; proto_name: string; fig: string | null; source: 'ai' | 'solution'
-  steps: { title: string; lines: string[]; text: string }[]; img?: string | null
+  steps: { title: string; lines: string[]; text: string }[]; img?: string | null; ctx_img?: string | null
 }
 
 // ---------- photo check of the first part ----------
@@ -399,4 +403,9 @@ export interface AdminUser {
   id: number; name: string; email: string; role: Role; grade: string | null; exam: string | null
   created: string | null; last: string | null; days30: number; sections: string[]
   solved: number; ok: number; checks: number; diags: number; push: boolean; classes: number
+}
+
+/** Tasks of an exam: how many and from which number the second part starts (OGE 20, profile 13, base has none). */
+export function examRange(key?: string): { n: number; p2: number } {
+  return key === 'oge' ? { n: 25, p2: 20 } : key === 'base' ? { n: 21, p2: 99 } : { n: 19, p2: 13 }
 }

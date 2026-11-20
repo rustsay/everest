@@ -27,21 +27,32 @@ def _public(p: dict, done: dict | None = None) -> dict:
     fig = next((x.get("fig") for x in (TASK_MAPS.get(p["task"]) or {}).get("protos", []) if x["id"] == p["proto"]), None)
     return {"ref": p["ref"], "pid": p["pid"], "task": p["task"], "proto": p["proto"], "proto_name": p["proto_name"], "q": p["q"], "fig": fig,
             "src": p["src"], "check": "answer" if p["a"] else "photo", "done": d, "sol": p["sol"] if d is not None else None,
-            "img": p.get("img"), "ans_img": p.get("ans_img")}
+            "img": p.get("img"), "ans_img": p.get("ans_img"), "ctx_img": p.get("ctx_img"), "analog": bool(p.get("analog"))}
 
 
 # ---------- student: the bank ----------
 
 @router.get("/practice")
-async def practice(task: int | None = None, proto: str | None = None, user: User = Depends(get_current_user),
+async def practice(task: int | None = None, proto: str | None = None, exam: str | None = None, user: User = Depends(get_current_user),
                    db: AsyncSession = Depends(get_db)):
     row = await service.get_state(db, user.id)
     done = row.data.get("tm", {})
+    key = exam if user.role != "student" and exam in ("prof", "base", "oge") else service.key_for(user)
+    if key in ("oge", "base"):  # the open FIPI bank of the exam: prototypes first, then analogs
+        from app.learning import exambank
+        from app.learning.content import EXAMS
+        maps = exambank.task_maps(key, {t["n"]: t["name"] for t in EXAMS[key]["tasks"]})
+        items = sorted(exambank.problems(key, task, proto), key=lambda p: (p["task"], p["analog"], "OLD" in p["tags"]))
+        counts: dict[int, int] = {}
+        for p in exambank.problems(key):
+            counts[p["task"]] = counts.get(p["task"], 0) + 1
+        return {"items": [_public(p, done) for p in items[:300]], "counts": counts, "exam": key, "total": len(items),
+                "tasks": [{"n": n, "name": m["name"], "protos": [{"id": p["id"], "name": p["name"]} for p in m["protos"]]} for n, m in maps.items()]}
     items = await problems.approved(db, task, proto)
     counts: dict[int, int] = {}
     for p in await problems.approved(db):
         counts[p["task"]] = counts.get(p["task"], 0) + 1
-    return {"items": [_public(p, done) for p in items[:300]], "counts": counts,
+    return {"items": [_public(p, done) for p in items[:300]], "counts": counts, "exam": key, "total": len(items),
             "tasks": [{"n": n, "name": m["name"], "protos": [{"id": p["id"], "name": p["name"]} for p in m["protos"]]} for n, m in TASK_MAPS.items()]}
 
 

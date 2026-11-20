@@ -129,13 +129,13 @@ function Student({ id }: { id: number }) {
   if (!s) return <p className="muted">Загружаю…</p>
   const errs = (s.checks ?? []).flatMap((c) => c.errors.map((e) => `№ ${c.n}: ${e}`)).slice(0, 6)
   const diagBad = (s.diag?.items ?? []).filter((x) => BAD.has(x.status) || x.status === 'ошибка в счёте').map((x) => `№ ${x.n ?? x.task}: ${x.status}`)
-  const ask = `Что посоветуете для ученика ${s.name}? Прогноз ${s.forecast}${s.target ? `, цель ${s.target.test} баллов` : ''}, первопричина ${s.root ?? 'нет'}.`
+  const ask = `Что посоветуете для ученика ${s.name}? Прогноз ${s.forecast}${s.target ? `, цель ${s.target.test ? `${s.target.test} баллов` : `«${s.target.grade}»`}` : ''}, первопричина ${s.root ?? 'нет'}.`
     + (diagBad.length ? ` Диагностика: ${diagBad.join('; ')}.` : '') + (errs.length ? ` Ошибки проверки по фото: ${errs.join('; ')}.` : '')
   return (
     <div className="stu">
       <div className="stu-sum">
         <div><span className="label">Прогноз</span><b className="num">{s.forecast}{s.pct ? '%' : ` из ${s.max}`}</b><small className="muted">{s.exam}</small></div>
-        {s.target && <div><span className="label">Цель</span><b className="num">{s.target.test}</b><small className="muted">{s.target.primary} первичных</small></div>}
+        {s.target && <div><span className="label">Цель</span><b className="num">{s.target.test ?? `«${s.target.grade}»`}</b><small className="muted">{s.target.primary} {s.target.test ? 'первичных' : 'баллов'}</small></div>}
         {s.diag && <div><span className="label">Диагностика</span><b className="num">{s.diag.right} из {s.diag.count}</b><small className="muted">{s.diag.date ? fmtD(s.diag.date) : ''}</small></div>}
         <div><span className="label">Траектория</span><b>{s.path ? (s.path.stage ?? 'действует') : 'нет'}</b><small className="muted">{s.path ? `${s.path.count} этапов` : 'можно собрать в «Траекториях»'}</small></div>
         {s.taskmap && s.taskmap.done > 0 && <div><span className="label">Задачи банка</span><b className="num">{s.taskmap.ok} из {s.taskmap.done}</b><small className="muted">верно с первой попытки</small></div>}

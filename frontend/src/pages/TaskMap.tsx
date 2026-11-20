@@ -3,6 +3,7 @@ import { FormEvent, ReactNode, useCallback, useEffect, useLayoutEffect, useRef, 
 import { createPortal } from 'react-dom'
 import { answerTaskMap, deleteTaskFile, downloadTaskFile, explainSkill, getTaskMap, listTaskMaps, uploadTaskFile } from '../api/client'
 import { useApp } from '../app/store'
+import { examRange } from '../types'
 import type { SkillExplain, TaskMapData, TmAnswer, TmProblem, TmProto, TmSkill, TmStat } from '../types'
 import { Icon, Md } from '../design/ui'
 import GeoFig from '../components/GeoFig'
@@ -34,20 +35,19 @@ export default function TaskMap({ n }: { n: number }) {
 
   if (err) return <p className="muted">{err}</p>
   if (!d) return <p className="muted">Загружаю карту задания…</p>
-  const teacher = app.me.role !== 'student'
   const start = [...d.protos].filter((p) => p.count).sort((a, b) => (a.pct ?? 0) - (b.pct ?? 0))[0] ?? d.protos.find((p) => !p.count)
 
   return (
     <>
       <div className="card-h" style={{ margin: 0, alignItems: 'flex-end' }}>
         <div>
-          <p className="muted">Карта задания · {d.part === 2 ? 'вторая часть' : 'первая часть'} · {d.protos.length} прототипов</p>
+          <p className="muted">Карта задания{d.exam && d.exam !== 'prof' ? ` · ${d.exam === 'oge' ? 'ОГЭ' : 'ЕГЭ база'}` : ''} · {d.part === 2 ? 'вторая часть' : 'первая часть'} · {d.protos.length} {d.exam && d.exam !== 'prof' ? 'типов' : 'прототипов'}</p>
           <h1>Задание № {d.n} · {d.name}</h1>
         </div>
         <div className="tm-tabs" role="tablist" aria-label="Задания">
-          {Array.from({ length: 19 }, (_, i) => i + 1).map((k) => {
+          {Array.from({ length: examRange(d.exam).n }, (_, i) => i + 1).map((k) => {
             const m = maps.find((x) => x.n === k)
-            return <button key={k} role="tab" aria-selected={k === n} disabled={!m} title={m ? m.name : 'Скоро'} className={`${k === n ? 'on' : ''} ${k >= 13 ? 'p2' : ''}`} onClick={() => app.go({ v: 'task', id: String(k) })}>{k}</button>
+            return <button key={k} role="tab" aria-selected={k === n} disabled={!m} title={m ? m.name : 'Скоро'} className={`${k === n ? 'on' : ''} ${k >= examRange(d.exam).p2 ? 'p2' : ''}`} onClick={() => app.go({ v: 'task', id: String(k) })}>{k}</button>
           })}
         </div>
       </div>
@@ -301,7 +301,7 @@ export function Problem({ n, i, q, onDone }: { n: number; i: number; q: TmProble
   const was = q.done
   return (
     <div className={`tm-prob ${res ? (res.ok ? 'ok' : 'no') : was === 1 ? 'ok' : was === 0 ? 'no' : ''}`}>
-      <div className="prob-q"><b>{i + 1}.</b> <ProblemText q={q.q} img={q.img} /></div>
+      <div className="prob-q"><b>{i + 1}.</b> <ProblemText q={q.q} img={q.img} ctx={q.ctx_img} small /></div>
       {q.src && <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>Источник: {q.src}</p>}
       {q.check === 'photo' && !res && was == null ? (
         <><button className="btn btn-sm btn-line" style={{ marginTop: 10 }} onClick={() => app.go('check')}><Icon n="check" s={16} />Решить и проверить по фото</button><AnswerPic src={q.ans_img} /></>

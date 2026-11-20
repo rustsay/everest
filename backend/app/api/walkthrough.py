@@ -56,9 +56,9 @@ async def walkthrough(body: RefIn, user: User = Depends(get_current_user), db: A
     if p is None:
         raise HTTPException(404, "Нет такой задачи")
     meta = {"ref": body.ref, "task": p["task"], "q": p["q"], "proto_name": p["proto_name"],
-            "fig": None if p.get("img") else _proto_fig(p["task"], p["proto"]), "img": p.get("img"),
+            "fig": None if p.get("img") else _proto_fig(p["task"], p["proto"]), "img": p.get("img"), "ctx_img": p.get("ctx_img"),
             "title": p["proto_name"] or f"Задание № {p['task']}"}
-    if user.role == "student" and p["a"]:
+    if user.role == "student" and p["a"] and p.get("exam", service.key_for(user)) == service.key_for(user):
         # watched before solving: the task map counts this problem as not solved by the student
         st = await service.get_state(db, user.id)
         tm = st.data.setdefault("tm", {})
@@ -72,21 +72,23 @@ async def walkthrough(body: RefIn, user: User = Depends(get_current_user), db: A
         steps, source = None, None
         if settings.llm_ready:
             from app.video.steps import generate_steps
-            hint = f"\nВерный ответ: {p['a']}" if p["a"] else ""
-            image = None
-            if p.get("img"):  # the FIPI picture: formulas and the drawing exactly as in the source; the text is only a hint
-                path = fipi.image_path(p["img"].rsplit("/", 1)[-1])
-                image = base64.b64encode(path.read_bytes()).decode() if path else None
+            from app.learning.exambank import path_of
+            ans = p["a"] or p.get("answer_text")
+            hint = f"\nВерный ответ: {ans}" if ans else ""
+            imgs = []
+            if p.get("ctx_img") and (cp := path_of(p["ctx_img"])):  # OGE 1-5: the shared text (plan, table) comes first
+                imgs.append(base64.b64encode(cp.read_bytes()).decode())
+                hint += "\nОбщее условие (текст, план или таблица) - на первой картинке."
+            if p.get("img") and (path := path_of(p["img"])):  # formulas and the drawing exactly as in the source; the text is only a hint
+                imgs.append(base64.b64encode(path.read_bytes()).decode())
                 hint += "\nТочное условие с формулами и рисунком на картинке, текст выше распознан с ошибками."
-                ap = fipi.image_path(f"a{p['pid'][1:]}.png")
-                if ap:
-                    hint += " Верный ответ - на второй картинке."
+            ap = path_of(p.get("ans_img")) if p.get("ans_img") else (fipi.image_path(f"a{p['pid'][1:]}.png") if p["pid"][:1] == "f" else None)
+            if ap:
+                imgs.append(base64.b64encode(ap.read_bytes()).decode())
+                hint += " Верный ответ - на последней картинке."
             if p["sol"]:
                 hint += f"\nРешение из банка (опирайся на него, ответ не меняй): {p['sol']}"
             try:
-                imgs = [image] if image else []
-                if p.get("img") and (ap := fipi.image_path(f"a{p['pid'][1:]}.png")):
-                    imgs.append(base64.b64encode(ap.read_bytes()).decode())
                 data = await generate_steps(p["q"] + hint, imgs)
                 steps, source = data["steps"], "ai"
             except Exception:  # noqa: BLE001 - fall back to the written solution

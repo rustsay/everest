@@ -7,6 +7,7 @@ import { Icon, plural } from '../design/ui'
 import { VTASK } from './videoData'
 import GeneratedVideos from '../components/GeneratedVideos'
 import ProblemText from '../components/ProblemText'
+import { examRange } from '../types'
 import type { PracticeItem, Walkthrough } from '../types'
 
 /** «Разборы»: tabs 1-19. In each: the typical walkthrough of the task and walkthroughs of the bank problems.
@@ -16,8 +17,9 @@ export default function Videos() {
   const id = app.view.id ?? ''
   if (id.startsWith('custom-')) return <GeneratedVideos detailId={id.slice(7)} />
   if (id.startsWith('p-')) return <BankBoard key={id} r={id.slice(2)} />
-  if (/^\d+$/.test(id) && +id >= 1 && +id <= 19) return <Board key={id} n={+id} />
-  const tab = /^t\d+$/.test(id) ? Math.min(19, Math.max(1, +id.slice(1))) : 1
+  const ex = app.me.exam_info.key
+  if (ex === 'prof' && /^\d+$/.test(id) && +id >= 1 && +id <= 19) return <Board key={id} n={+id} />
+  const tab = /^t\d+$/.test(id) ? Math.min(examRange(ex).n, Math.max(1, +id.slice(1))) : 1
   return <List tab={tab} />
 }
 
@@ -28,8 +30,11 @@ function List({ tab }: { tab: number }) {
   const [items, setItems] = useState<PracticeItem[] | null>(null)
   useEffect(() => {
     setItems(null)
-    getPractice(tab).then((r) => setItems(r.items)).catch(() => setItems([]))
+    getPractice(tab).then((r) => setItems(r.items.filter((x) => !x.analog))).catch(() => setItems([]))  // the board: prototypes only
   }, [tab])
+  const ex = app.me.exam_info.key
+  const prof = ex === 'prof'  // typical walkthroughs are written for the profile exam; OGE and base have the bank problems on the board
+  const range = examRange(ex)
   const v = VTASK[tab]
   const open = (it: PracticeItem) => {
     const go = () => { app.closeModal(); app.go({ v: 'video', id: 'p-' + it.ref }) }
@@ -46,37 +51,37 @@ function List({ tab }: { tab: number }) {
   }
   return (
     <>
-      <div className="card-h" style={{ margin: 0 }}><div><p className="muted">Видеоразборы</p><h1>Разборы заданий</h1></div><span className="pill p-em num">типовых понято {cnt} из 19</span></div>
+      <div className="card-h" style={{ margin: 0 }}><div><p className="muted">Видеоразборы</p><h1>Разборы заданий</h1></div>{prof && <span className="pill p-em num">типовых понято {cnt} из 19</span>}</div>
       <GeneratedVideos />
       <section className="card">
         <div className="tm-tabs" aria-label="Задания">
-          {Array.from({ length: 19 }, (_, i) => i + 1).map((k) => (
-            <button key={k} className={`${k === tab ? 'on' : ''} ${k >= 13 ? 'p2' : ''}`} onClick={() => app.go({ v: 'video', id: 't' + k })}
-              title={VTASK[k].t}>{k}{done[String(k)] ? <sup className="tm-cnt">✓</sup> : null}</button>
+          {Array.from({ length: range.n }, (_, i) => i + 1).map((k) => (
+            <button key={k} className={`${k === tab ? 'on' : ''} ${k >= range.p2 ? 'p2' : ''}`} onClick={() => app.go({ v: 'video', id: 't' + k })}
+              title={prof ? VTASK[k].t : `Задание ${k}`}>{k}{prof && done[String(k)] ? <sup className="tm-cnt">✓</sup> : null}</button>
           ))}
         </div>
-        <div className="vt-typ">
+        {prof && <div className="vt-typ">
           <div style={{ flex: 1, minWidth: 0 }}>
             <p className="label">Типовой разбор · задание {tab}</p>
             <b>{v.t}</b>
             <p className="muted" style={{ fontSize: 13 }}>{v.s.length} {plural(v.s.length, 'шаг', 'шага', 'шагов')}{done[String(tab)] ? ' · понял ✓' : ''}</p>
           </div>
           <button className="btn btn-em" onClick={() => app.go({ v: 'video', id: String(tab) })}><Icon n="play" s={18} />Смотреть</button>
-        </div>
+        </div>}
       </section>
 
       <section>
         <h2 style={{ marginBottom: 6 }}>Задачи банка · задание {tab}</h2>
         <p className="muted" style={{ fontSize: 13, marginBottom: 10 }}>Звёздочка разбирает на доске любую задачу банка. Разбор собирается один раз и потом открывается сразу.</p>
         {items == null && <p className="muted">Загружаю задачи…</p>}
-        {items?.length === 0 && <p className="muted">По этому заданию в банке пока нет задач: их добавляет учитель.</p>}
+        {items?.length === 0 && <p className="muted">По этому заданию в банке пока нет задач.</p>}
         <div style={{ display: 'grid', gap: 10 }}>
           {items?.map((it, i) => (
             <div key={it.ref}>
               {(i === 0 || items[i - 1].proto !== it.proto) && <p className="label" style={{ margin: i ? '12px 0 6px 4px' : '0 0 6px 4px' }}>{it.proto_name || 'Без прототипа'}</p>}
               <div className="card vt-item">
                 {it.fig && !it.img && <div className="vt-fig"><GeoFig k={it.fig} w={96} /></div>}
-                <div className="vt-q"><ProblemText q={it.q} img={it.img} /></div>
+                <div className="vt-q"><ProblemText q={it.q} img={it.img} ctx={it.ctx_img} small /></div>
                 <div className="vt-act">
                   {it.done != null && <span className={`pill ${it.done ? 'p-em' : 'p-gold'}`}>{it.done ? 'решена' : 'не решена'}</span>}
                   <button className="btn btn-sm btn-line" onClick={() => open(it)}><Icon n="play" s={16} />Разбор на доске</button>
@@ -86,7 +91,7 @@ function List({ tab }: { tab: number }) {
           ))}
         </div>
       </section>
-      <p className="muted" style={{ fontSize: 12.5 }}>Типовые разборы собраны на задачах в формате ЕГЭ. Разборы задач банка строятся по условию, ответу и решению из банка. Голос включается в пузыре Звёздочки.</p>
+      <p className="muted" style={{ fontSize: 12.5 }}>{prof ? 'Типовые разборы собраны на задачах в формате ЕГЭ. ' : ''} Разборы задач банка строятся по условию, ответу и решению из банка. Голос включается в пузыре Звёздочки.</p>
     </>
   )
 }
@@ -105,7 +110,7 @@ function BankBoard({ r }: { r: string }) {
   )
   if (!w) return <section className="card"><p className="muted">Звёздочка готовит разбор. Первый раз это занимает до минуты.</p></section>
   const task = { t: w.title, c: w.q, s: w.steps.map((s) => [s.title, s.lines, s.text] as [string, string[], string]) }
-  return <SolutionBoard n={w.task} proto={w.fig} img={w.img} task={task} label={`Разбор · задание ${w.task} · банк задач`} backLabel="К задачам" doneLabel="Понял, к задачам"
+  return <SolutionBoard n={w.task} proto={w.fig} img={w.img} ctx={w.ctx_img} task={task} label={`Разбор · задание ${w.task} · банк задач`} backLabel="К задачам" doneLabel="Понял, к задачам"
     onBack={() => back()}
     onUnderstood={() => { app.toast('Отлично! Попробуй похожую задачу сам'); back() }}
     onNotUnderstood={(step) => app.go({ v: 'chat', id: `Разбор задачи из банка (задание ${w.task}). Условие: ${w.q} Не понял шаг «${step[0]}»: ${step[1].join('; ')}. Объясни по-другому и начни с вопроса ко мне.` })} />

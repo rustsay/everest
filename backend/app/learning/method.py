@@ -249,3 +249,121 @@ def check_order(stages: list[dict]) -> list[str]:
             if r in pos and pos[r] > i:
                 errs.append(f"«{MODULES[m]['title']}» нельзя ставить раньше «{MODULES[r]['title']}»: по методике сначала {MODULES[r]['title']}")
     return errs
+
+
+# ---------- OGE and EGE base: modules of the draft approved by the project (Nov 2026) ----------
+# weeks / hours of a module, plans by the goal mark; the 2026 marks: OGE «3» 8, «4» 15, «5» 22 (and at least 2 points
+# for geometry in every case), base «3» 7, «4» 12, «5» 17.
+EXAM_MODULES: dict[str, dict[str, dict]] = {
+    "base": {
+        "B1": {"title": "Практические задачи: 1-8", "tasks": list(range(1, 9)), "weeks": 3, "hours": 20},
+        "B2": {"title": "Арифметика и алгебра: 14-18", "tasks": list(range(14, 19)), "weeks": 3, "hours": 20},
+        "B3": {"title": "Геометрия: 9-13", "tasks": list(range(9, 14)), "weeks": 3, "hours": 20},
+        "B4": {"title": "Повышенной трудности: 19-21", "tasks": [19, 20, 21], "weeks": 3, "hours": 20},
+    },
+    "oge": {
+        "O1": {"title": "Практические задачи: 1-5", "tasks": [1, 2, 3, 4, 5], "weeks": 3, "hours": 20},
+        "O2": {"title": "Алгебра: 6-14", "tasks": list(range(6, 15)), "weeks": 4, "hours": 30},
+        "O3": {"title": "Геометрия: 15-19", "tasks": list(range(15, 20)), "weeks": 3, "hours": 25, "must": True},
+        "O4": {"title": "Уравнения и текстовые задачи: 20-21", "tasks": [20, 21], "weeks": 3, "hours": 20},
+        "O5": {"title": "График функции: 22", "tasks": [22], "weeks": 2, "hours": 12},
+        "O6": {"title": "Геометрия, часть 2: 23-24", "tasks": [23, 24], "weeks": 3, "hours": 20},
+        "O7": {"title": "Сложная геометрия: 25", "tasks": [25], "weeks": 2, "hours": 15},
+    },
+}
+EXAM_PLANS: dict[str, dict[int, list[str]]] = {
+    "base": {3: ["B1", "B2"], 4: ["B1", "B2", "B3"], 5: ["B1", "B2", "B3", "B4"]},
+    "oge": {3: ["O1", "O2", "O3"], 4: ["O1", "O2", "O3", "O4"], 5: ["O1", "O2", "O3", "O4", "O5", "O6", "O7"]},
+}
+EXAM_REVIEW = 3
+DEFAULT_GRADE = 4
+
+
+def build_exam(key: str, types: dict[str, float], model: dict, target: dict | None, today: date, end: date, days_week: int,
+               minutes: int, type_names: dict[str, str] | None = None) -> dict:
+    """OGE / base: the plan by the goal mark, modules stretched by the hours a week, the mandatory geometry of OGE is never cut;
+    a module whose tasks are already solved (all types right in the diagnostic) is skipped."""
+    names = type_names or {}
+    mods = EXAM_MODULES[key]
+    grade = int((target or {}).get("grade") or DEFAULT_GRADE)
+    grades = EXAMS[key]["grades"]
+    hours_week = max(0.5, days_week * minutes / 60)
+    total_weeks = max(1, (end - today).days // 7)
+    review = EXAM_REVIEW if total_weeks >= 3 * EXAM_REVIEW else max(1, total_weeks // 5)
+    avail = max(1, total_weeks - review)
+
+    def solved(m: str) -> bool:
+        ts = [v for t, v in types.items() if int(t.split(".")[0]) in mods[m]["tasks"]]
+        return bool(ts) and all(v >= 0.99 for v in ts)
+
+    plan = [m for m in EXAM_PLANS[key][grade] if not solved(m)] or [EXAM_PLANS[key][grade][-1]]
+    skipped = [m for m in EXAM_PLANS[key][grade] if m not in plan]
+
+    def weeks_of(m: str) -> tuple[int, float]:
+        w, h = mods[m]["weeks"], float(mods[m]["hours"])
+        return max(w, math.ceil(h / hours_week)), h
+
+    order = sorted(plan, key=lambda m: (not mods[m].get("must"), plan.index(m)))  # what must stay is placed first
+    keep, used = set(), 0
+    for m in order:
+        w, _ = weeks_of(m)
+        if used + w <= avail or mods[m].get("must") or not keep:
+            keep.add(m)
+            used += w
+    cut = [m for m in plan if m not in keep]
+    if used < avail:  # time left: the next modules of the higher marks
+        for m in EXAM_PLANS[key][5]:
+            w, _ = weeks_of(m)
+            if m not in plan and m not in skipped and used + w <= avail and not solved(m):
+                plan.append(m)
+                keep.add(m)
+                used += w
+    stages, acc = [], today
+    for m in [m for m in plan if m in keep]:
+        w, h = weeks_of(m)
+        b = min(end, acc + timedelta(days=7 * w - 1))
+        ns = mods[m]["tasks"]
+        weak = [t for n in ns for t, v in sorted(_types_of(types, n).items(), key=lambda kv: [int(x) for x in kv[0].split(".")]) if v < 0.99]
+        weak_txt = ", ".join((t + " " + names.get(t, "")).strip() for t in weak[:6])
+        steps = ([f"Сначала нерешённые типы: {weak_txt}" + (f" и ещё {len(weak) - 6}" if len(weak) > 6 else "")] if weak else []) + \
+                ["Каждый тип: разбор на доске, потом задачи из банка", "В конце этапа - задания этапа из варианта"]
+        if mods[m].get("must"):
+            steps.insert(0, "Обязательно: без 2 баллов за геометрию ставится «2» при любой сумме")
+        stages.append({"title": mods[m]["title"], "from": acc.isoformat(), "to": b.isoformat(), "tasks": [f"T{n}" for n in ns][:12],
+                       "module": m, "goal": "Все типы заданий этапа без ошибок", "check": "задания этапа из варианта ФИПИ",
+                       "steps": steps[:10], "hours": round(h), "weeks": w,
+                       "links": [{"label": f"Разборы № {n}", "go": f"video/t{n}"} for n in ns[:12]]})
+        acc = b + timedelta(days=1)
+    if acc <= end:
+        allt = sorted({t for s in stages for t in s["tasks"]}, key=lambda t: int(t[1:]))
+        stages.append({"title": "Повторение и пробники", "from": acc.isoformat(), "to": end.isoformat(), "tasks": allt[:12] or ["T1"],
+                       "module": "REV", "goal": "Пробник раз в неделю, разбор каждой ошибки в тот же день", "check": "пробник раз в неделю",
+                       "steps": ["Пробник в конце недели", "Разбор ошибок пробника", "Повтор типов, где потеряны баллы"], "links": []})
+    # expected result: the mark of the plan, lower if modules are cut (their tasks give no points then)
+    mx = {t["n"]: t["max"] for t in EXAMS[key]["tasks"]}
+    reach = sum(mx[n] for m in keep for n in mods[m]["tasks"]) + sum(mx[n] for m in skipped for n in mods[m]["tasks"])
+    exp_grade = min(grade, max([g for g, p in grades.items() if p <= reach] or [2]))  # never above the goal: points are not certain
+    hours_need = round(sum(mods[m]["hours"] for m in plan) / max(1, min(avail, sum(mods[m]["weeks"] for m in plan))), 1)
+    why = [f"Цель - «{grade}»: от {grades[grade]} баллов" + (", из них не меньше 2 за геометрию" if key == "oge" else "")]
+    if skipped:
+        why.append("Уже решается, отдельным этапом не ставим: " + ", ".join(mods[m]["title"] for m in skipped))
+    if hours_week + 0.05 < hours_need:
+        why.append(f"По плану нужно около {hours_need:g} ч в неделю, сейчас в расписании {hours_week:g} ч: сроки этапов растянуты")
+    if cut:
+        why.append("До экзамена не успеваем: " + ", ".join(mods[m]["title"] for m in cut) + ". Можно добавить часы в расписании")
+    extra = [m for m in plan if m not in EXAM_PLANS[key][grade]]
+    if extra:
+        why.append("Время остаётся, поэтому добавлено: " + ", ".join(mods[m]["title"] for m in extra) + ". Это запас на более высокую отметку")
+    why.append(f"В конце {review} {'неделя' if review == 1 else 'недели' if review < 5 else 'недель'} на повторение и пробники")
+    summary = (f"План на «{grade}»: " + ", ".join(mods[m]["title"] for m in plan if m in keep) + ", потом повторение и пробники. "
+               f"Ожидаемый результат с учётом твоего темпа: «{exp_grade}».")
+    lo = grades.get(exp_grade, 0)
+    hi = min(EXAMS[key]["max"], grades.get(exp_grade + 1, EXAMS[key]["max"] + 1) - 1) if exp_grade < 5 else EXAMS[key]["max"]
+    return {"source": "method", "summary": summary, "why": why[:6], "stages": stages[:8],
+            "method": {"plan": grade, "plan_name": f"на «{grade}»", "grade": grade, "part1_share": 0, "expect_base": [grades[grade], grades[grade]],
+                       "expect": [lo, hi], "expect_grade": exp_grade, "hours_week": round(hours_week, 1), "hours_need": hours_need,
+                       "cut": [mods[m]["title"] for m in cut], "high": False, "review_weeks": review, "exam": key}}
+
+
+def check_order_exam(key: str, stages: list[dict]) -> list[str]:
+    return []  # the draft of OGE / base has no requirements between modules yet

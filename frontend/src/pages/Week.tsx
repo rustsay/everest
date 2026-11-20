@@ -19,7 +19,7 @@ export default function WeekPage() {
           <div><span className="label">Дней с занятиями</span><b className="num">{w.active} из 7</b></div>
           <div><span className="label">Задач решено</span><b className="num">{w.solved}</b><small className="muted">{w.acc != null ? `верно ${w.acc}%` : 'с первой попытки'}</small></div>
           <div><span className="label">Прогноз</span><b className="num">{w.forecast}{unit}</b>{w.delta != null && <small className={w.delta >= 0 ? 'up' : 'down'}>{w.delta > 0 ? '+' : ''}{w.delta} за неделю</small>}</div>
-          {w.gap != null && <div><span className="label">До цели {w.target?.test}</span><b className="num">{w.gap ? `${w.gap} перв.` : 'достигнута'}</b></div>}
+          {w.gap != null && <div><span className="label">До цели {w.target?.test ?? (w.target?.grade ? `«${w.target.grade}»` : '')}</span><b className="num">{w.gap ? `${w.gap} перв.` : 'достигнута'}</b></div>}
           {(w.checks + w.checks1) > 0 && <div><span className="label">Проверок по фото</span><b className="num">{w.checks + w.checks1}</b></div>}
           {w.fixed > 0 && <div><span className="label">Исправлено ошибок</span><b className="num">{w.fixed}</b></div>}
         </div>

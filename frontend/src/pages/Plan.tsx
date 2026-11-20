@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useState } from 'react'
-import { getPlan, putEvents, putSettings, setTarget, togglePlanBlock } from '../api/client'
+import { getPlan, putEvents, putSettings, setGradeTarget, setTarget, togglePlanBlock } from '../api/client'
 import { useApp } from '../app/store'
 import type { ExamInfo, Part2Info, PathStageInfo, PlanBlock, MyEvent, PlanData, RouteBasis, Target } from '../types'
 import { Icon, dkey, fmtD, plural, taskLabel } from '../design/ui'
@@ -61,6 +61,23 @@ export function TargetPick({ value, onSaved, compact }: { value?: Target | null;
       </div>
       {value && <p className="muted tgt-note">{value.test} тестовых = {value.primary} первичных из 32 по шкале 2026 года (шкалу 2027 года утвердят позже).</p>}
       {err && <p className="auth-msg">{err}</p>}
+    </div>
+  )
+}
+
+/** OGE and base: the goal is a mark; the plan of the trajectory follows it. */
+export function GradePick({ value, exam, onSaved }: { value?: Target | null; exam: string; onSaved: (t: Target) => void }) {
+  const [busy, setBusy] = useState(false)
+  const pts: Record<number, string> = exam === 'oge' ? { 3: 'от 8 баллов', 4: 'от 15', 5: 'от 22' } : { 3: 'от 7 баллов', 4: 'от 12', 5: 'от 17' }
+  const save = async (g: number) => {
+    setBusy(true)
+    try { onSaved((await setGradeTarget(g)).target) } catch { /* the button stays as it was */ }
+    setBusy(false)
+  }
+  return (
+    <div className="tgt">
+      <div className="tgt-row">{[3, 4, 5].map((g) => <button key={g} className={`chip ${value?.grade === g ? 'on' : ''}`} aria-pressed={value?.grade === g} disabled={busy} onClick={() => save(g)}>«{g}» <small className="muted">{pts[g]}</small></button>)}</div>
+      <p className="muted tgt-note">По шкале 2026 года{exam === 'oge' ? ', и в любом случае нужно не меньше 2 баллов за геометрию' : ''}. Шкалу 2027 года утвердят позже. Траектория пересоберётся под цель.</p>
     </div>
   )
 }
@@ -210,6 +227,8 @@ export default function Plan() {
         </div>
         {ex.key === 'prof' && <div className="field" style={{ marginTop: 12 }}><span className="label">Цель: на сколько баллов хочу сдать</span>
           <TargetPick value={p.target} onSaved={() => { load(); app.reload() }} /></div>}
+        {(ex.key === 'oge' || ex.key === 'base') && <div className="field" style={{ marginTop: 12 }}><span className="label">Цель: на какую отметку хочу сдать</span>
+          <GradePick value={p.target} exam={ex.key} onSaved={() => { load(); app.reload(); app.toast('Цель сохранена: траектория пересобирается') }} /></div>}
         <Part2Note p2={p.part2} target={p.target} />
         <RouteNote basis={p.route_basis} exam={ex} stage={p.path_stage} />
         <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>{ex.date_note}. Хотя бы один день в неделю лучше оставить для отдыха. Занятия лучше заканчивать до 21:30, чтобы не сбивать сон.</p>

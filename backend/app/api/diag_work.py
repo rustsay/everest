@@ -58,14 +58,36 @@ def _set_work(d: Diagnostic, item_id: str, work: dict | None, answer: str | None
     flag_modified(d, "answers")
 
 
+def _pic(url: str):
+    """Path of a bank picture by its URL: /api/fipi/img/N.png or /api/bank/<key>/img/<name>."""
+    if url.startswith("/api/fipi/img/"):
+        from app.learning import fipi
+        return fipi.image_path(url.rsplit("/", 1)[-1])
+    m = url.split("/")
+    if len(m) == 6 and m[1] == "api" and m[2] == "bank" and m[4] == "img":
+        from app.learning import exambank
+        return exambank.image_path(m[3], m[5])
+    return None
+
+
 def _problem_image(item: dict | None) -> bytes | None:
-    """The picture of an open-bank problem (f{N}) to show the model the exact condition."""
-    img = (item or {}).get("img") or ""
-    if not img.startswith("/api/fipi/img/"):
+    """The picture of an open-bank problem to show the model the exact condition (OGE 1-5: with the shared text above)."""
+    paths = [p for p in (_pic((item or {}).get("ctx_img") or ""), _pic((item or {}).get("img") or "")) if p]
+    if not paths:
         return None
-    from app.learning import fipi
-    path = fipi.image_path(img.rsplit("/", 1)[-1])
-    return path.read_bytes() if path else None
+    if len(paths) == 1:
+        return paths[0].read_bytes()
+    import io
+    from PIL import Image
+    ims = [Image.open(p).convert("L") for p in paths]
+    out = Image.new("L", (max(i.width for i in ims), sum(i.height for i in ims) + 10), 255)
+    y = 0
+    for i in ims:
+        out.paste(i, (0, y))
+        y += i.height + 10
+    buf = io.BytesIO()
+    out.save(buf, "PNG")
+    return buf.getvalue()
 
 
 def public_work(answers: dict) -> dict:
@@ -101,7 +123,8 @@ async def _analyze(diag_id: int, item_id: str, item: dict, pages: list[tuple[byt
         else:
             from app.ocr.pipeline import get_scan_jpegs
             imgs = await asyncio.get_event_loop().run_in_executor(None, get_scan_jpegs, pages)
-            result = await llm.grade_long((picked or {}).get("q") or item["q"], int(item.get("max") or 2), imgs)
+            result = await llm.grade_long((picked or {}).get("q") or item["q"], int(item.get("max") or 2), imgs,
+                                          _problem_image(picked or item))
     except Exception as exc:  # noqa: BLE001 - a failed check must not block the diagnostic
         log.exception("diag %s item %s: check failed", diag_id, item_id)
         status, error = "error", f"Не удалось проверить фото: засчитан только ответ ({type(exc).__name__})"
@@ -206,7 +229,7 @@ def missing(d: Diagnostic, user: User) -> tuple[list[int], int]:
         has_answer = it["t"] != "num" or bool(ans.get(it["id"]) and ans.get(it["id"]) != "?")
         if it.get("choices") and not (ans.get("_choice") or {}).get(it["id"]):
             has_answer = False
-        if not has_answer or mode not in ("photo", "oral"):
+        if not has_answer or (mode not in ("photo", "oral") and it.get("photo") != "optional"):
             gaps.append(i)
     return gaps, pending
 

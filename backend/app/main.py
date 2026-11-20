@@ -21,6 +21,7 @@ from app.api.report import router as report_router, weekly_loop
 from app.api.teacher import router as teacher_router
 from app.api.push import router as push_router, remind_loop
 from app.api.admin import router as admin_router
+from app.api.exambanks import router as exambanks_router
 from app import activity
 from app.auth.router import router as auth_router
 from app.config import settings
@@ -101,3 +102,4 @@ app.include_router(check1_router, prefix="/api")
 app.include_router(report_router, prefix="/api")
 app.include_router(push_router, prefix="/api")
 app.include_router(admin_router, prefix="/api")
+app.include_router(exambanks_router, prefix="/api")

@@ -159,6 +159,8 @@ export const getDashboard = (): Promise<Dashboard> => apiFetch('/dashboard')
 export const getPlan = (week = 0): Promise<PlanData> => apiFetch(`/plan?week=${week}`)
 export const putEvents = (events: MyEvent[]): Promise<{ events: MyEvent[] }> => apiFetch('/me/events', { method: 'PUT', body: JSON.stringify({ events }) })
 export const setTarget = (test: number): Promise<{ target: Target }> => apiFetch('/me/target', { method: 'PUT', body: JSON.stringify({ test }) })
+/** OGE and base: the goal is the mark. */
+export const setGradeTarget = (grade: number): Promise<{ target: Target }> => apiFetch('/me/target', { method: 'PUT', body: JSON.stringify({ grade }) })
 
 // Educational trajectory
 const post = (body?: unknown): RequestInit => ({ method: 'POST', body: JSON.stringify(body ?? {}) })

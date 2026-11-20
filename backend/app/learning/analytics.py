@@ -89,7 +89,7 @@ def build(items: list[dict], answers: dict, model: dict, key: str, target: dict 
         counts[r["kind"]] = counts.get(r["kind"], 0) + 1
     blocks: dict[str, dict] = {}
     for r in rows:
-        if key != "prof" and key != "oge":
+        if key not in ("prof", "oge", "base"):
             b = blocks.setdefault(r["name"] or "Темы", {"pts": 0.0, "max": 0.0, "count": 0})
         else:
             b = blocks.setdefault(engine.BLOCK_NAMES[r["block"]], {"pts": 0.0, "max": 0.0, "count": 0})
