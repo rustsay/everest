@@ -426,6 +426,16 @@ def part2_open(state: dict, tasks: list[dict], sim: dict[str, float]) -> bool:
     return bool(p1) and sum(p1) / len(p1) >= 0.7
 
 
+def _protos_by_types(t: dict, types: dict[str, float]) -> list[dict]:
+    """Prototypes of a task, the weakest type first (diagnostic by types: unsolved, then the ones not chosen in part 2).
+    Without data by types the order of the task map stays."""
+    ps = _protos(t)
+    if not types or not ps:
+        return ps
+    score = {p["id"]: types.get(f"{t['n']}.{k}", 0.5) for k, p in enumerate(ps, 1)}
+    return sorted(ps, key=lambda p: score[p["id"]] >= 0.99)  # solved types go to the end, the rest keep the map order
+
+
 def _protos(t: dict) -> list[dict]:
     if not isinstance(t.get("n"), int):
         return []
@@ -512,8 +522,8 @@ def build_plan(state: dict, key: str, today: date, stages: list[dict] | None = N
         studied += 1
         avail = [t for t in need if t["part"] == 1 or open2]
         si = path_stage(stages, d)
-        if si is not None:  # the trajectory stage narrows the choice
-            focus = [t for t in avail if t["id"] in set(stages[si]["tasks"])]
+        if si is not None:  # the trajectory stage narrows the choice; its tasks are studied even if the second part is not open yet
+            focus = [t for t in all_tasks if t["id"] in set(stages[si]["tasks"])]
             avail = focus or avail
         pending = [t for t in avail if sim[t["id"]] < GOAL] or sorted(avail, key=lambda t: sim[t["id"]])[:4]
         blocks_today = [b for b in block_order if any(task_block(t) == b for t in pending)]
@@ -529,7 +539,7 @@ def build_plan(state: dict, key: str, today: date, stages: list[dict] | None = N
         in_blk = [t for t in avail if task_block(t) == blk]
         cur = next(t for t in pending if task_block(t) == blk)
         k = sessions.get(cur["id"], 0)
-        protos = _protos(cur)
+        protos = _protos_by_types(cur, state.get("types") or {})
         pr = protos[min(k, len(protos) - 1)] if protos else None
         weak_node = base_topic(min(cur["need"], key=lambda n: E[n]), E, set(model["unknown"]) if model["basics"] else None)
         main_sub = (f"прототип «{pr['name']}»: разбор и 6-8 задач" if pr else "разбор и 6-8 задач, от простых к сложным")

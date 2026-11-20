@@ -956,3 +956,8 @@ small.up{color:var(--em-ink);font-weight:700}small.down{color:var(--bad);font-we
 .dch-opt b{min-width:34px;color:var(--em-ink)}
 .dch-opt.on{border-color:var(--em-3);background:var(--em-soft)}
 .dch-prob{padding:12px;border-radius:14px;background:var(--surface-2)}
+
+/* profile trajectory by the methodology */
+.path-method{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
+.path-method>div{background:var(--surface-2);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.path-method b{font-size:20px}

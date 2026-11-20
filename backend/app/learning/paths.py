@@ -162,13 +162,22 @@ def validate(raw: dict, allowed: dict[str, str], today: date, end: date) -> dict
             b = min(end, date.fromisoformat(str(s.get("to"))[:10]))
         except ValueError:
             continue
-        tasks = list(dict.fromkeys(t for t in (_task_id(x, allowed) for x in (s.get("tasks") or [])) if t))[:8]
+        tasks = list(dict.fromkeys(t for t in (_task_id(x, allowed) for x in (s.get("tasks") or [])) if t))[:12]
         title = str(s.get("title") or "").strip()[:80]
         if not tasks or not title or a > b:
             continue
         steps = [str(x).strip()[:160] for x in (s.get("steps") or []) if str(x).strip()][:10]
-        stages.append({"title": title, "from": a.isoformat(), "to": b.isoformat(), "tasks": tasks, "steps": steps,
-                       "goal": str(s.get("goal") or "").strip()[:300], "check": str(s.get("check") or "").strip()[:200]})
+        st = {"title": title, "from": a.isoformat(), "to": b.isoformat(), "tasks": tasks, "steps": steps,
+              "goal": str(s.get("goal") or "").strip()[:300], "check": str(s.get("check") or "").strip()[:200]}
+        if isinstance(s.get("module"), str) and len(s["module"]) <= 8:  # a module of the methodology (learning/method.py)
+            st["module"] = s["module"]
+        for k in ("hours", "weeks"):
+            if isinstance(s.get(k), (int, float)) and 0 <= s[k] <= 500:
+                st[k] = round(s[k])
+        links = [x for x in (s.get("links") or []) if isinstance(x, dict) and str(x.get("go", "")).startswith("video/")][:12]
+        if links:
+            st["links"] = [{"label": str(x.get("label", ""))[:40], "go": str(x["go"])[:30]} for x in links]
+        stages.append(st)
     stages.sort(key=lambda s: s["from"])
     for prev, cur in zip(stages, stages[1:]):  # no overlaps: a stage starts after the previous one
         if cur["from"] <= prev["to"]:

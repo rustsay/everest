@@ -325,9 +325,18 @@ export interface VariantFull {
 
 // ---------- educational trajectory ----------
 export interface PathStageInfo { title: string | null; goal: string | null; index: number | null; count: number; approved: boolean }
-export interface PathStage { title: string; from: string; to: string; goal: string; check: string; tasks: string[]; problems?: string[]; steps?: string[] }
+export interface PathStage {
+  title: string; from: string; to: string; goal: string; check: string; tasks: string[]; problems?: string[]; steps?: string[]
+  /** a module of the methodology (profile): id, hours of study, weeks, links to the walkthroughs */
+  module?: string; hours?: number; weeks?: number; links?: { label: string; go: string }[]
+}
+export interface PathMethod {
+  plan: number; plan_name: string; part1_share: number; expect_base: number[]; expect: number[]
+  hours_week: number; hours_need: number; cut: string[]; high: boolean; review_weeks: number
+}
 export interface PathData {
-  source: 'ai' | 'rules'; fallback?: string; edited?: boolean; summary: string; why: string[]; stages: PathStage[]
+  source: 'ai' | 'rules' | 'method'; fallback?: string; edited?: boolean; summary: string; why: string[]; stages: PathStage[]
+  method?: PathMethod
   student_edit?: { comment: string; at: string }
   exam: string; end: string; built: string; labels: Record<string, string>; nums: Record<string, number | string | null>
 }

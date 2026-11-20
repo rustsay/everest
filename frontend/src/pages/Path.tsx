@@ -3,7 +3,7 @@ import {
   followPath, generateMyPath, getMyPath, editMyPath, pathAdvice, teacherApprovePath, teacherEditPath, teacherGenPath, teacherPath, teacherPaths, teacherRejectPath,
 } from '../api/client'
 import { useApp } from '../app/store'
-import type { MyPath, PathData, PathOut, PathStage, TeacherPaths as TP } from '../types'
+import type { MyPath, PathData, PathOut, PathStage, TeacherPaths as TP, PathMethod } from '../types'
 import { Icon, fmtD, plural } from '../design/ui'
 
 const short = (d: PathData, id: string) => (d.nums?.[id] != null ? `№ ${d.nums[id]}` : (d.labels?.[id] ?? id))
@@ -14,7 +14,7 @@ function Source({ p }: { p: PathOut }) {
   const d = p.data
   return (
     <span style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-      <span className={`pill ${d.source === 'ai' ? 'p-em' : 'p-gold'}`}>{d.source === 'ai' ? 'Составил ИИ, проверено сервером' : 'Собрано по правилам'}</span>
+      <span className={`pill ${d.source === 'ai' ? 'p-em' : 'p-gold'}`}>{d.source === 'ai' ? 'Составил ИИ, проверено сервером' : d.source === 'method' ? 'По методике проекта' : 'Собрано по правилам'}</span>
       {d.student_edit && <span className="pill p-gold">изменено учеником</span>}
       {d.edited && <span className="pill p-em">поправлено учителем</span>}
       {p.kind === 'class' && <span className="pill p-gold">траектория класса {p.class_name}</span>}
@@ -33,6 +33,7 @@ export function PathTimeline({ p }: { p: PathOut }) {
       <div style={{ display: 'grid', gap: 8 }}>
         <Source p={p} />
         {d.fallback && <p className="muted" style={{ fontSize: 13 }}>{d.fallback}.</p>}
+        {d.method && <MethodBox m={d.method} />}
         {d.summary && <p>{d.summary}</p>}
         {d.why?.length > 0 && <ul className="path-why">{d.why.map((w, i) => <li key={i}>{w}</li>)}</ul>}
       </div>
@@ -48,6 +49,7 @@ export function PathTimeline({ p }: { p: PathOut }) {
                   <b className="path-title">{s.title}</b>
                   <span className="muted num" style={{ fontSize: 13 }}>{span(s)}</span>
                   {cur && <span className="pill p-em">сейчас</span>}
+                  {s.hours ? <span className="pill p-gold num">{s.hours} ч</span> : null}
                 </div>
                 {s.goal && <p style={{ marginTop: 4 }}><span className="muted">Цель: </span>{s.goal}</p>}
                 <div className="path-tasks">
@@ -57,6 +59,12 @@ export function PathTimeline({ p }: { p: PathOut }) {
                 </div>
                 {(s.steps?.length ?? 0) > 0 && <ol className="path-steps">{s.steps!.map((x, k) => <li key={k}>{x}</li>)}</ol>}
                 {s.check && <p className="muted" style={{ fontSize: 13, marginTop: 6 }}><Icon n="flag" s={14} /> Конец этапа: {s.check}</p>}
+                {(s.links?.length ?? 0) > 0 && (
+                  <div className="path-tasks" style={{ marginTop: 6 }}>
+                    {s.links!.slice(0, 4).map((l) => <button key={l.go} className="btn btn-sm btn-ghost" onClick={() => { const [v, id] = l.go.split('/'); app.go({ v: v as 'video', id }) }}><Icon n="play" s={14} />{l.label}</button>)}
+                    {s.links!.length > 4 && <button className="btn btn-sm btn-ghost" onClick={() => app.go('video')}><Icon n="play" s={14} />Все разборы</button>}
+                  </div>
+                )}
                 {prof && (s.problems?.length ?? 0) > 0 && (
                   <button className="btn btn-sm btn-line" style={{ marginTop: 8 }} onClick={() => app.go({ v: 'practice', id: String(d.nums[s.tasks[0]] ?? 1) })}>
                     <Icon n="book" s={16} />Задачи этапа в банке ({s.problems!.length})
@@ -68,6 +76,21 @@ export function PathTimeline({ p }: { p: PathOut }) {
         })}
       </ol>
     </>
+  )
+}
+
+/** The methodology block of a profile trajectory: the plan, the expected result with the student's pace, hours a week. */
+function MethodBox({ m }: { m: PathMethod }) {
+  const exp = (a: number[]) => (a[0] === a[1] ? `${a[0]}` : `${a[0]}-${a[1]}`)
+  const lower = m.expect[0] < m.expect_base[0]
+  return (
+    <div className="path-method">
+      <div><span className="label">План по методике</span><b>№ {m.plan}</b><small className="muted">{m.plan_name}</small></div>
+      <div><span className="label">Ожидаемый результат</span><b className="num">{exp(m.expect)}</b>
+        <small className="muted">{lower ? `по методике ${exp(m.expect_base)}, с твоим темпом ниже` : 'по методике, с учётом твоего темпа'}</small></div>
+      <div><span className="label">Часов в неделю</span><b className="num">{m.hours_week}</b>
+        <small className={m.hours_week + 0.05 < m.hours_need ? 'down' : 'muted'}>по методике нужно около {m.hours_need}</small></div>
+    </div>
   )
 }
 

@@ -62,7 +62,16 @@ async def _build(db: AsyncSession, kind: str, key: str, who: str, model: dict, f
         extra.append("Вторая часть: " + ("ученик уже решает часть заданий второй части." if p2_open else
                                           "по диагностике пока не решается - сначала первая часть."))
     data = None
-    if settings.llm_ready:
+    if key == "prof":  # the profile exam: the project's methodology decides the modules (learning/method.py)
+        from app.learning import method
+        from app.learning.diag_types import prof_items
+        names = {it["type"]: it["type_name"] for it in prof_items() if it.get("type")}
+        names.update({c["type"]: c["name"] for it in prof_items() for c in it.get("choices") or []})
+        data = method.build(state.get("types") or {} if kind == "student" else {}, model, target, today, end, dw, mins, names)
+        if kind == "class":
+            data["why"] = [w.replace("твоего", "класса") for w in data["why"]]
+            data["summary"] = data["summary"].replace("твоего темпа", "темпа класса")
+    elif settings.llm_ready:
         try:
             raw = await llm.build_path(paths.prompt_facts(kind, who, key, today, end, facts, basis, extra, dw, mins), kind)
             data = paths.validate(raw, allowed, today, end)
@@ -78,7 +87,7 @@ async def _build(db: AsyncSession, kind: str, key: str, who: str, model: dict, f
         if data is None:
             data = paths.rules_path(model, key, today, end, basis, target, p2_open)
             data["fallback"] = "ИИ не дал подходящего ответа, траектория собрана по правилам"
-    else:
+    if data is None:
         data = paths.rules_path(model, key, today, end, basis, target, p2_open)
     data["exam"], data["end"], data["built"] = key, end.isoformat(), today.isoformat()
     data["labels"] = {t["id"]: paths.label(t) for t in model["tasks"]}
@@ -327,8 +336,12 @@ class StageIn(BaseModel):
     check: str = Field("", max_length=200)
     from_: str = Field(..., alias="from")
     to: str
-    tasks: list[str] = Field(default_factory=list, max_length=8)
+    tasks: list[str] = Field(default_factory=list, max_length=12)
     steps: list[str] = Field(default_factory=list, max_length=10)
+    module: str | None = Field(None, max_length=8)   # a module of the methodology, kept through edits
+    hours: int | None = Field(None, ge=0, le=500)
+    weeks: int | None = Field(None, ge=0, le=60)
+    links: list[dict] = Field(default_factory=list, max_length=12)
 
 
 class EditIn(BaseModel):
@@ -343,7 +356,8 @@ def _edited(data: dict, stages: list[StageIn]) -> dict:
     allowed = {k: v for k, v in (data.get("labels") or {}).items()}
     end = date.fromisoformat(data.get("end") or EXAMS[data.get("exam", "prof")]["date"])
     raw = {"summary": data.get("summary", ""), "why": data.get("why", []),
-           "stages": [{"title": s.title, "goal": s.goal, "check": s.check, "from": s.from_, "to": s.to, "tasks": s.tasks, "steps": s.steps}
+           "stages": [{"title": s.title, "goal": s.goal, "check": s.check, "from": s.from_, "to": s.to, "tasks": s.tasks, "steps": s.steps,
+                       "module": s.module, "hours": s.hours, "weeks": s.weeks, "links": s.links}
                       for s in stages]}
     checked = paths.validate(raw, allowed, min(today, date.fromisoformat(data.get("built") or today.isoformat())), end)
     if not checked:
@@ -423,7 +437,7 @@ async def path_advice(body: AdviceIn, user: User = Depends(get_current_user), db
     target = row.data.get("target")
     draft = "\n".join(f"{i + 1}. {s.title} ({s.from_} - {s.to}): задания {', '.join(s.tasks)}; цель: {s.goal}" for i, s in enumerate(body.stages or []))
     try:
-        text = await llm.path_advice(facts, draft, body.question.strip(), target, EXAMS[key]["date"])
+        text = await llm.path_advice(facts, draft, body.question.strip(), target, EXAMS[key]["date"], key)
     except Exception as exc:  # noqa: BLE001
         log.exception("path advice failed: %s", exc)
         raise HTTPException(502, "Помощник сейчас недоступен. Попробуй через минуту.")
