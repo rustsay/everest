@@ -205,7 +205,8 @@ async def answer(n: int, body: AnswerIn, user: User = Depends(get_current_user),
     from app.learning import exambank
     if exambank.is_ref(pid):
         ep = exambank.find(pid)
-        if ep is None or ep["task"] != n or ep["exam"] != service.key_for(user):
+        # a teacher may try problems of any exam; a student only of his own
+        if ep is None or ep["task"] != n or (user.role == "student" and ep["exam"] != service.key_for(user)):
             raise HTTPException(404, "Нет такой задачи")
         right, sol = ep["a"], ""
     elif pid.startswith("f") and pid[1:].isdigit():

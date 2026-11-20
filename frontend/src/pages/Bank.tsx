@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react'
-import { bankTasks, deleteBank, downloadBankTemplate, editBank, importBank, listBank } from '../api/client'
+import { bankTasks, deleteBank, downloadBankTemplate, editBank, getPractice, importBank, listBank } from '../api/client'
 import { useApp } from '../app/store'
 import type { BankItem, BankTask } from '../types'
 import { Icon } from '../design/ui'
 import NoLlm from '../components/NoLlm'
+import ExamSwitch from '../components/ExamSwitch'
+import { EXAM_NAMES } from '../app/store'
 
 /** Teacher / methodist: import problems from files, check them and publish them into the task maps. */
 export default function Bank() {
@@ -31,9 +33,10 @@ export default function Bank() {
     } catch (e) { app.toast(String(e).replace('Error: ', '')) } finally { setBusy(false) }
   }
 
+  if (app.exam !== 'prof') return <ExamBank />
   return (
     <>
-      <div><p className="muted">Кабинет учителя</p><h1>Банк задач</h1></div>
+      <div className="card-h" style={{ margin: 0 }}><div><p className="muted">Кабинет учителя</p><h1>Банк задач</h1></div><ExamSwitch /></div>
       <NoLlm what="Разбор PDF и текстовых файлов" />
       {fipi && (
         <section className="card" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -117,5 +120,40 @@ function BankRow({ it, task, onChanged }: { it: BankItem; task?: BankTask; onCha
         {!ro && <button className="iconbtn" aria-label="Удалить задачу" disabled={busy} onClick={async () => { await deleteBank(it.id).catch(() => null); onChanged() }}><Icon n="trash" s={18} /></button>}
       </div>
     </div>
+  )
+}
+
+/** OGE and EGE base: the open FIPI bank of the exam with every problem and answer. Own imports are for the profile exam so far. */
+function ExamBank() {
+  const app = useApp()
+  const [d, setD] = useState<{ counts: Record<string, number>; tasks: BankTask[]; total?: number } | null>(null)
+  useEffect(() => { setD(null); getPractice(undefined, undefined, app.exam).then(setD).catch(() => setD({ counts: {}, tasks: [] })) }, [app.exam])
+  const name = EXAM_NAMES[app.exam]
+  return (
+    <>
+      <div className="card-h" style={{ margin: 0 }}><div><p className="muted">Кабинет учителя</p><h1>Банк задач</h1></div><ExamSwitch /></div>
+      <section className="card" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <Icon n="book" s={24} />
+        <div style={{ flex: '1 1 260px' }}>
+          <b>Открытый банк ФИПИ, {name}: {d ? `${d.total ?? Object.values(d.counts).reduce((a, b) => a + b, 0)} задач с ответами` : 'загружаю…'}</b>
+          <p className="muted" style={{ fontSize: 13 }}>Все задачи сборника с ответами, по типам каждого задания. Ученики {app.exam === 'oge' ? '9 класса' : 'базы'} видят их в «Банке задач», на картах заданий, в разборах и в работе над ошибками.</p>
+        </div>
+      </section>
+      {d && <section className="card">
+        <div className="card-h"><h2>По заданиям</h2><span className="muted" style={{ fontSize: 13 }}>нажмите номер, чтобы открыть задачи</span></div>
+        <div className="mats">
+          {d.tasks.map((t) => (
+            <div key={t.n} className="mat-row">
+              <button className="bk-main" onClick={() => app.go({ v: 'practice', id: String(t.n) })}>
+                <span className="mat-ic"><b>{t.n}</b></span>
+                <span><b>{t.name}</b><small>{d.counts[String(t.n)] ?? 0} задач · {t.protos.length} типов</small></span>
+              </button>
+              <button className="btn btn-sm btn-line" onClick={() => app.go({ v: 'task', id: String(t.n) })}><Icon n="map" s={16} />Карта</button>
+            </div>
+          ))}
+        </div>
+      </section>}
+      <section className="card"><p className="muted" style={{ fontSize: 13.5 }}>Загрузка своих задач из файлов и варианты для класса пока сделаны только для профильного ЕГЭ. Для {name} сейчас работает открытый банк ФИПИ.</p></section>
+    </>
   )
 }

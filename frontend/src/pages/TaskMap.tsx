@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom'
 import { answerTaskMap, deleteTaskFile, downloadTaskFile, explainSkill, getTaskMap, listTaskMaps, uploadTaskFile } from '../api/client'
 import { useApp } from '../app/store'
 import { examRange } from '../types'
+import ExamSwitch from '../components/ExamSwitch'
 import type { SkillExplain, TaskMapData, TmAnswer, TmProblem, TmProto, TmSkill, TmStat } from '../types'
 import { Icon, Md } from '../design/ui'
 import GeoFig from '../components/GeoFig'
@@ -29,11 +30,12 @@ export default function TaskMap({ n }: { n: number }) {
   const [err, setErr] = useState('')
   const [sel, setSel] = useState<Sel>(null)
   const [hover, setHover] = useState<string | null>(null)
-  const load = useCallback(() => getTaskMap(n).then((m) => { setD(m); setErr('') }).catch((e) => setErr(String(e).replace('Error: ', ''))), [n])
+  const exam = app.me.role === 'student' ? undefined : app.exam
+  const load = useCallback(() => getTaskMap(n, exam).then((m) => { setD(m); setErr('') }).catch((e) => setErr(String(e).replace('Error: ', ''))), [n, exam])
   useEffect(() => { load() }, [load])
-  useEffect(() => { listTaskMaps().then((r) => setMaps(r.maps)).catch(() => null) }, [])
+  useEffect(() => { listTaskMaps(exam).then((r) => setMaps(r.maps)).catch(() => null) }, [exam])
 
-  if (err) return <p className="muted">{err}</p>
+  if (err) return <><ExamSwitch onChange={() => app.go({ v: 'task', id: '1' })} /><p className="muted" style={{ marginTop: 10 }}>{err}</p></>
   if (!d) return <p className="muted">Загружаю карту задания…</p>
   const start = [...d.protos].filter((p) => p.count).sort((a, b) => (a.pct ?? 0) - (b.pct ?? 0))[0] ?? d.protos.find((p) => !p.count)
 
@@ -43,6 +45,7 @@ export default function TaskMap({ n }: { n: number }) {
         <div>
           <p className="muted">Карта задания{d.exam && d.exam !== 'prof' ? ` · ${d.exam === 'oge' ? 'ОГЭ' : 'ЕГЭ база'}` : ''} · {d.part === 2 ? 'вторая часть' : 'первая часть'} · {d.protos.length} {d.exam && d.exam !== 'prof' ? 'типов' : 'прототипов'}</p>
           <h1>Задание № {d.n} · {d.name}</h1>
+          <div style={{ marginTop: 8 }}><ExamSwitch onChange={() => app.go({ v: 'task', id: '1' })} /></div>
         </div>
         <div className="tm-tabs" role="tablist" aria-label="Задания">
           {Array.from({ length: examRange(d.exam).n }, (_, i) => i + 1).map((k) => {

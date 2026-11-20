@@ -246,8 +246,9 @@ export const editMaterial = (id: number, body: { topic?: string; theme?: string;
 export const deleteMaterial = (id: number) => apiFetch(`/materials/${id}`, { method: 'DELETE' })
 
 // ---------- task maps ----------
-export const listTaskMaps = (): Promise<{ maps: { n: number; name: string }[] }> => apiFetch('/taskmaps')
-export const getTaskMap = (n: number): Promise<TaskMapData> => apiFetch(`/taskmaps/${n}`)
+const ex = (exam?: string, first = '?') => (exam ? `${first}exam=${exam}` : '')
+export const listTaskMaps = (exam?: string): Promise<{ maps: { n: number; name: string }[] }> => apiFetch(`/taskmaps${ex(exam)}`)
+export const getTaskMap = (n: number, exam?: string): Promise<TaskMapData> => apiFetch(`/taskmaps/${n}${ex(exam)}`)
 export const answerTaskMap = (n: number, problem_id: string, answer: string): Promise<TmAnswer> =>
   apiFetch(`/taskmaps/${n}/answer`, { method: 'POST', body: JSON.stringify({ problem_id, answer }) })
 export async function uploadTaskFile(n: number, proto: string, file: File): Promise<TmFile> {
@@ -326,8 +327,8 @@ export const setParentEmail = (email: string | null): Promise<{ parent_email: st
   apiFetch('/me/parent', { method: 'PUT', body: JSON.stringify({ email }) })
 export const getWalkthrough = (ref: string): Promise<Walkthrough> =>
   apiFetch('/walkthrough', { method: 'POST', body: JSON.stringify({ ref }) })
-export const getPractice = (task?: number, proto?: string): Promise<{ items: PracticeItem[]; counts: Record<string, number>; tasks: BankTask[] }> =>
-  apiFetch(`/practice?${task ? `task=${task}` : ''}${proto ? `&proto=${proto}` : ''}`)
+export const getPractice = (task?: number, proto?: string, exam?: string): Promise<{ items: PracticeItem[]; counts: Record<string, number>; tasks: BankTask[]; total?: number; exam?: string }> =>
+  apiFetch(`/practice?${task ? `task=${task}` : ''}${proto ? `&proto=${proto}` : ''}${ex(exam, '&')}`)
 export const variantCandidates = (task: number): Promise<{ items: PracticeItem[] }> => apiFetch(`/variants/candidates?task=${task}`)
 export const listVariants = (): Promise<{ variants: VariantSummary[] }> => apiFetch('/variants')
 export const getVariant = (id: number): Promise<VariantFull> => apiFetch(`/variants/${id}`)

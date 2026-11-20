@@ -6,6 +6,7 @@ import type { BankTask, PracticeItem, VariantSummary } from '../types'
 import { Icon, fmtD } from '../design/ui'
 import { Problem } from './TaskMap'
 import Redo from '../components/Redo'
+import ExamSwitch from '../components/ExamSwitch'
 
 /** The task bank for students: published problems by task and prototype, plus variants from the teacher. */
 export default function Practice() {
@@ -14,7 +15,8 @@ export default function Practice() {
   const [proto, setProto] = useState('')
   const [data, setData] = useState<{ items: PracticeItem[]; counts: Record<string, number>; tasks: BankTask[] } | null>(null)
   const [vars, setVars] = useState<VariantSummary[]>([])
-  const load = useCallback(() => getPractice(task, proto || undefined).then(setData).catch(() => null), [task, proto])
+  const exam = app.exam
+  const load = useCallback(() => getPractice(task, proto || undefined, app.me.role === 'student' ? undefined : exam).then(setData).catch(() => null), [task, proto, exam]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { load() }, [load])
   useEffect(() => { listVariants().then((r) => setVars(r.variants)).catch(() => null) }, [])
 
@@ -24,7 +26,10 @@ export default function Practice() {
     <>
       <div className="card-h" style={{ margin: 0 }}>
         <div><p className="muted">Задачи открытого банка и подборки учителей</p><h1>Банк задач</h1></div>
-        <button className="btn btn-line" onClick={() => app.go({ v: 'task', id: String(task) })}><Icon n="map" s={18} />Карта задания № {task}</button>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <ExamSwitch onChange={() => { setTask(1); setProto('') }} />
+          <button className="btn btn-line" onClick={() => app.go({ v: 'task', id: String(task) })}><Icon n="map" s={18} />Карта задания № {task}</button>
+        </div>
       </div>
 
       {app.me.role === 'student' && <Redo />}
@@ -46,8 +51,8 @@ export default function Practice() {
 
       <section className="card">
         <div className="tm-tabs" aria-label="Задания">
-          {Array.from({ length: examRange(app.me.exam_info.key).n }, (_, i) => i + 1).map((k) => (
-            <button key={k} className={`${k === task ? 'on' : ''} ${k >= examRange(app.me.exam_info.key).p2 ? 'p2' : ''}`} onClick={() => { setTask(k); setProto('') }}
+          {Array.from({ length: examRange(exam).n }, (_, i) => i + 1).map((k) => (
+            <button key={k} className={`${k === task ? 'on' : ''} ${k >= examRange(exam).p2 ? 'p2' : ''}`} onClick={() => { setTask(k); setProto('') }}
               title={data?.tasks.find((x) => x.n === k)?.name}>{k}<sup className="tm-cnt">{data?.counts[String(k)] ?? 0}</sup></button>
           ))}
         </div>

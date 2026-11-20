@@ -8,6 +8,7 @@ import { VTASK } from './videoData'
 import GeneratedVideos from '../components/GeneratedVideos'
 import ProblemText from '../components/ProblemText'
 import { examRange } from '../types'
+import ExamSwitch from '../components/ExamSwitch'
 import type { PracticeItem, Walkthrough } from '../types'
 
 /** «Разборы»: tabs 1-19. In each: the typical walkthrough of the task and walkthroughs of the bank problems.
@@ -17,7 +18,7 @@ export default function Videos() {
   const id = app.view.id ?? ''
   if (id.startsWith('custom-')) return <GeneratedVideos detailId={id.slice(7)} />
   if (id.startsWith('p-')) return <BankBoard key={id} r={id.slice(2)} />
-  const ex = app.me.exam_info.key
+  const ex = app.exam
   if (ex === 'prof' && /^\d+$/.test(id) && +id >= 1 && +id <= 19) return <Board key={id} n={+id} />
   const tab = /^t\d+$/.test(id) ? Math.min(examRange(ex).n, Math.max(1, +id.slice(1))) : 1
   return <List tab={tab} />
@@ -30,9 +31,9 @@ function List({ tab }: { tab: number }) {
   const [items, setItems] = useState<PracticeItem[] | null>(null)
   useEffect(() => {
     setItems(null)
-    getPractice(tab).then((r) => setItems(r.items.filter((x) => !x.analog))).catch(() => setItems([]))  // the board: prototypes only
-  }, [tab])
-  const ex = app.me.exam_info.key
+    getPractice(tab, undefined, app.me.role === 'student' ? undefined : app.exam).then((r) => setItems(r.items.filter((x) => !x.analog))).catch(() => setItems([]))  // the board: prototypes only
+  }, [tab, app.exam]) // eslint-disable-line react-hooks/exhaustive-deps
+  const ex = app.exam
   const prof = ex === 'prof'  // typical walkthroughs are written for the profile exam; OGE and base have the bank problems on the board
   const range = examRange(ex)
   const v = VTASK[tab]
@@ -51,7 +52,7 @@ function List({ tab }: { tab: number }) {
   }
   return (
     <>
-      <div className="card-h" style={{ margin: 0 }}><div><p className="muted">Видеоразборы</p><h1>Разборы заданий</h1></div>{prof && <span className="pill p-em num">типовых понято {cnt} из 19</span>}</div>
+      <div className="card-h" style={{ margin: 0 }}><div><p className="muted">Видеоразборы</p><h1>Разборы заданий</h1></div>{prof && app.me.role === 'student' && <span className="pill p-em num">типовых понято {cnt} из 19</span>}<ExamSwitch onChange={() => app.go({ v: 'video', id: 't1' })} /></div>
       <GeneratedVideos />
       <section className="card">
         <div className="tm-tabs" aria-label="Задания">

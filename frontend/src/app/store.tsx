@@ -36,7 +36,12 @@ interface Ctx {
   logout: () => void
   voice: boolean
   setVoice: (v: boolean) => void
+  /** whose tasks are shown: a student - his exam; a teacher or tutor chooses (profile, base, OGE) */
+  exam: ExamKey
+  setExam: (k: ExamKey) => void
 }
+export type ExamKey = 'prof' | 'base' | 'oge'
+export const EXAM_NAMES: Record<ExamKey, string> = { prof: 'ЕГЭ профиль', base: 'ЕГЭ база', oge: 'ОГЭ' }
 
 const C = createContext<Ctx | null>(null)
 export const useApp = () => {
@@ -126,12 +131,20 @@ export function AppProvider({ me: initialMe, onLogout, children }: { me: Me; onL
     if (voice) speak(text)
   }, [voice])
 
+  const teacher = me.role !== 'student'
+  const [tExam, setTExam] = useState<ExamKey>(() => {
+    const v = (() => { try { return localStorage.getItem('teacher-exam') } catch { return null } })()
+    return v === 'base' || v === 'oge' ? v : 'prof'
+  })
+  const exam: ExamKey = teacher ? tExam : ((['prof', 'base', 'oge'].includes(me.exam_info.key) ? me.exam_info.key : 'prof') as ExamKey)
+  const setExam = useCallback((k: ExamKey) => { setTExam(k); try { localStorage.setItem('teacher-exam', k) } catch { /* ignore */ } }, [])
+
   const value: Ctx = {
     me, setMe, dash, reload, view, go, toast,
     openModal: (title, body, wide) => setModal({ title, body, wide }),
     closeModal: () => setModal(null),
     say, speech, hideSpeech: () => { setSpeech(null); hush() }, talking, setTalking,
-    confetti: conf.fire, logout: onLogout, voice, setVoice: setVoiceState,
+    confetti: conf.fire, logout: onLogout, voice, setVoice: setVoiceState, exam, setExam,
   }
 
   useEffect(() => {
