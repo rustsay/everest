@@ -172,6 +172,7 @@ def _diag_view(d: Diagnostic, items: list[dict]) -> dict:
     ans = dict(d.answers or {})
     left = exam_left(d)
     return {"id": d.id, "mode": d.mode, "variant": d.variant, "position": d.position, "work": public_work(ans),
+            "choice": dict(ans.get("_choice") or {}), "typed": ans.get("_fmt") == "types",
             "answers": {k: v for k, v in ans.items() if not k.startswith("_")}, "llm_ready": settings.llm_ready,
             "items": [engine.public_item(i) for i in items], "exam": exam_info(d.exam_key),
             "exam_mode": {"limit": ans["_exam"]["limit"], "left": left} if left is not None else None}
@@ -188,7 +189,7 @@ async def open_diag(mode: str, user: User = Depends(get_current_user), db: Async
     d = await crud.open_diagnostic(db, user.id, mode)
     if d is None:
         return {"open": False}
-    return {"open": True, **_diag_view(d, engine.diag_items(d.exam_key, user.grade, d.variant, date.today()))}
+    return {"open": True, **_diag_view(d, engine.items_of(d.exam_key, user.grade, d.variant, date.today(), d.answers))}
 
 
 @router.post("/diagnostics")
@@ -203,6 +204,8 @@ async def start_diagnostic(body: DiagStart, user: User = Depends(get_current_use
         variant = int(row.data.get("mocks", 0)) + 1 if body.mode == "mock" else 0
         key = service.key_for(user)
         answers: dict = {}
+        if body.mode == "first" and key in engine.TYPED_KEYS:
+            answers["_fmt"] = "types"  # every type of every task (diag_types.py); mocks stay one problem per task
         if body.mode == "mock" and body.exam:
             if key not in EXAM_MINUTES:
                 raise HTTPException(400, "Пробник в условиях экзамена есть для ЕГЭ и ОГЭ")
@@ -211,7 +214,7 @@ async def start_diagnostic(body: DiagStart, user: User = Depends(get_current_use
         db.add(d)
         await db.commit()
         await db.refresh(d)
-    items = engine.diag_items(d.exam_key, user.grade, d.variant, date.today())
+    items = engine.items_of(d.exam_key, user.grade, d.variant, date.today(), d.answers)
     return _diag_view(d, items)
 
 
@@ -257,7 +260,7 @@ async def finish_diagnostic(diag_id: int, user: User = Depends(get_current_user)
     if gaps:
         raise HTTPException(400, "Нет решения или «Не знаю» в заданиях: " + ", ".join(map(str, gaps[:10])))
     key = d.exam_key
-    items = engine.diag_items(key, user.grade, d.variant, date.today())
+    items = engine.items_of(key, user.grade, d.variant, date.today(), d.answers)
     row = await service.get_state(db, user.id)
     blend = d.mode == "mock"
     prev = await service.history(db, user.id, 1)
@@ -311,7 +314,7 @@ async def diag_analytics(diag_id: int, user: User = Depends(get_current_user), d
     res = dict(d.result or {})
     if "analytics" not in res:
         row = await service.get_state(db, user.id)
-        items = engine.diag_items(d.exam_key, user.grade, d.variant, (d.created_at or datetime.now()).date())
+        items = engine.items_of(d.exam_key, user.grade, d.variant, (d.created_at or datetime.now()).date(), d.answers)
         from app.learning import analytics
         res["analytics"] = {**analytics.build(items, d.answers or {}, engine.build_model(row.data, d.exam_key), d.exam_key,
                                               row.data.get("target")), "summary": None}

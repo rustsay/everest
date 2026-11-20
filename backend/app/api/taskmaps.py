@@ -44,6 +44,16 @@ async def _diag_entries(db: AsyncSession, user: User, n: int) -> list[tuple[str,
                                                     Diagnostic.exam_key == "prof"))
     out = []
     for d in res.scalars():
+        if (d.answers or {}).get("_fmt") == "types":  # the diagnostic by types: every prototype of the task was asked
+            from app.learning.diag_types import prof_items
+            for it in prof_items():
+                if it.get("n") == n and it.get("type"):
+                    ans = (d.answers or {}).get(it["id"])
+                    if ans and ans != "?":
+                        out.append((it["proto"], 1 if engine.same_ans(ans, it["a"]) else 0))
+                    elif ans == "?":
+                        out.append((it["proto"], 0))
+            continue
         vi = d.variant % len(PROF_P1[n])
         proto = tm["diag"].get(vi)
         if proto is None:

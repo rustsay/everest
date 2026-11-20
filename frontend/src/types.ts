@@ -222,15 +222,24 @@ export interface Target { test: number; primary: number }
 /** Is the second part in the schedule, and from which day (it waits until the first part is mastered). */
 export interface Part2Info { needed: boolean; open_from: string | null }
 
+export interface DiagChoice { type: string; proto: string; name: string; q: string; img?: string | null; src: string }
 export interface DiagItem {
   id: string; t: 'num' | 'self' | 'work'; task: string; n: number | null; q: string; nodes: string[]; src?: string; fig?: string; max?: number
   /** task 8 of the profile exam: may be solved orally, without a photo */
   oral?: boolean
+  /** the diagnostic by types: the type of a first-part item ("1.3"), its name and how many types the task has */
+  type?: string; type_name?: string; of_types?: number
+  /** a problem of the open FIPI bank: its picture */
+  img?: string | null
+  /** part 2 of the diagnostic by types: the student chooses one type */
+  choices?: DiagChoice[]
 }
 export interface DiagWork { mode: 'photo' | 'dont_know' | 'oral' | null; status: 'pending' | 'done' | 'skipped' | 'error' | null; files: number; comment: string }
 export interface DiagRun {
   id: number; mode: 'first' | 'mock'; variant: number; position: number; answers: Record<string, string>; items: DiagItem[]; exam: ExamInfo
   work: Record<string, DiagWork>; llm_ready: boolean
+  /** the diagnostic by types: part-2 item id -> chosen type */
+  choice?: Record<string, string>; typed?: boolean
   /** a mock in exam conditions: minutes in all and seconds left */
   exam_mode?: { limit: number; left: number } | null
 }
@@ -243,6 +252,8 @@ export interface DiagResult {
 export interface DiagRow {
   id: string; n: number | null; task: string; name: string; part: number; block: string; kind: string; label: string; note: string
   errors: string[]; pts: number; max: number; answer: string | null; right: string | null; photo: boolean; topics: string[]
+  /** the diagnostic by types: "1.3" */
+  type?: string | null
 }
 export interface DiagAnalytics {
   rows: DiagRow[]; counts: Record<string, number>; blocks: { name: string; pts: number; max: number; pct: number }[]

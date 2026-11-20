@@ -69,8 +69,15 @@ def build(items: list[dict], answers: dict, model: dict, key: str, target: dict 
         t = tasks.get(it["task"]) or {}
         w = (answers.get("_work") or {}).get(it["id"]) or {}
         errors = [str(e) for e in ((w.get("result") or {}).get("errors") or [])][:4]
+        if it.get("choices"):  # part 2 of the diagnostic by types: the chosen type
+            from app.learning.diag_types import chosen
+            ch = chosen(it, answers)
+            if ch:
+                note = (f"тип {ch['type']} «{ch['name']}». " + note).strip()
+        share = 1 / it["of_types"] if it.get("of_types") else 1.0  # a type of a first-part task is a share of its point
         rows.append({
-            "id": it["id"], "n": it.get("n"), "task": it["task"], "name": t.get("name") or it.get("src", ""),
+            "id": it["id"], "n": it.get("n"), "task": it["task"], "name": it.get("type_name") or t.get("name") or it.get("src", ""),
+            "type": it.get("type"), "share": share,
             "part": t.get("part", 1), "block": engine.task_block(t) if t.get("need") else "alg",
             "kind": kind, "label": KIND[kind], "note": note[:300], "errors": errors, "pts": pts, "max": mx,
             "answer": None if it["t"] != "num" or answers.get(it["id"]) in (None, "?") else str(answers.get(it["id"])),
@@ -91,11 +98,14 @@ def build(items: list[dict], answers: dict, model: dict, key: str, target: dict 
         b["count"] += 1
     p1 = [r for r in rows if r["part"] == 1]
     p2 = [r for r in rows if r["part"] == 2]
+    p1pts = lambda rs: sum(r["pts"] * r["share"] for r in rs)  # noqa: E731 - by types: the share of solved types per task
+    p1max = lambda rs: sum(r["max"] * r["share"] for r in rs)  # noqa: E731
     out = {
         "rows": rows, "counts": counts,
         "blocks": [{"name": k, "pts": round(v["pts"], 1), "max": round(v["max"], 1), "pct": round(100 * v["pts"] / v["max"]) if v["max"] else 0}
                    for k, v in sorted(blocks.items(), key=lambda kv: kv[1]["pts"] / (kv[1]["max"] or 1))],
-        "part1": {"pts": sum(r["pts"] for r in p1), "max": sum(r["max"] for r in p1)},
+        "part1": {"pts": round(p1pts(p1), 1), "max": round(p1max(p1), 1)},
+        "typed": any(r["type"] for r in rows),
         "part2": {"pts": sum(r["pts"] for r in p2), "max": sum(r["max"] for r in p2)} if p2 else None,
         "gains": gains(rows, target, key),
         "advice": [{"kind": k, "text": ADVICE[k], "tasks": [_lbl(r) for r in rows if r["kind"] == k]} for k in ADVICE if counts.get(k)],
@@ -105,6 +115,8 @@ def build(items: list[dict], answers: dict, model: dict, key: str, target: dict 
 
 
 def _lbl(r: dict) -> str:
+    if r.get("type"):
+        return f"{r['type']} {r['name']}"
     return f"№ {r['n']}" if r.get("n") else r["name"]
 
 
@@ -119,19 +131,22 @@ def gains(rows: list[dict], target: dict | None, key: str) -> list[dict]:
     for r in sorted(rows, key=lambda r: (order.get(r["kind"], 9), r["part"], r["n"] or 0)):
         if r["kind"] in ("ok", "full") or r["kind"] not in order:
             continue
-        add = r["max"] - r["pts"]
+        add = (r["max"] - r["pts"]) * r.get("share", 1.0)
         if r["kind"] == "ok_doubt":
             add = 0.0
         out.append({"task": _lbl(r), "name": r["name"], "why": why[r["kind"]], "pts": round(add, 1), "kind": r["kind"], "part": r["part"]})
     if target and key == "prof" and target.get("primary", 0) <= 12:
         out = [g for g in out if g["part"] == 1]  # the goal is reachable with the first part alone
-    return out[:6]
+    return out[:8 if any(r.get("type") for r in rows) else 6]
 
 
 def facts(a: dict, model: dict, key: str, target: dict | None) -> list[str]:
     """Plain facts for the screen and for the model's conclusion (it may use only these)."""
     c = a["counts"]
-    f = [f"Первая часть: {a['part1']['pts']:g} из {a['part1']['max']:g}."]
+    f = [f"Первая часть: {a['part1']['pts']:g} из {a['part1']['max']:g}" + (" (доля решённых типов по каждому заданию)." if a.get("typed") else ".")]
+    if a.get("typed"):
+        p1 = [r for r in a["rows"] if r["part"] == 1]
+        f.append(f"Решено типов первой части: {sum(1 for r in p1 if r['kind'] in ('ok', 'ok_doubt'))} из {len(p1)}.")
     if a["part2"]:
         f.append(f"Вторая часть: {a['part2']['pts']:g} из {a['part2']['max']:g} первичных баллов.")
     kinds = [(c.get("slip", 0), "с ошибкой в счёте при верном способе"), (c.get("method", 0), "с неверным способом"),

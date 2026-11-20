@@ -87,7 +87,7 @@ export function DiagAnalyticsView({ r, a }: { r: DiagResult & { date?: string | 
           <h2>Быстрее всего прибавят баллы</h2>
           <ol className="da-gains">{a.gains.map((g) => (
             <li key={g.task}><b>{g.task}</b> <span className="muted">{g.name}</span> - {g.why}{g.pts > 0 ? <span className="pill p-em num">+{g.pts}</span> : null}
-              {/^№ \d+$/.test(g.task) && <button className="btn btn-sm btn-ghost" onClick={() => app.go({ v: 'task', id: g.task.slice(2) })}>Карта задания</button>}</li>
+              {/^(№ \d+|\d+\.\d+ .*)$/.test(g.task) && <button className="btn btn-sm btn-ghost" onClick={() => app.go({ v: 'task', id: g.task.startsWith('№') ? g.task.slice(2) : g.task.split('.')[0] })}>Карта задания</button>}</li>
           ))}</ol>
         </section>
       )}
@@ -98,7 +98,7 @@ export function DiagAnalyticsView({ r, a }: { r: DiagResult & { date?: string | 
         {rows.length === 0 && <p className="muted">Ошибок нет.</p>}
         <div className="da-rows">{rows.map((x) => (
           <div key={x.id} className={`da-row ${TONE[x.kind]}`}>
-            <span className="da-n">{x.n ? `№ ${x.n}` : '•'}</span>
+            <span className="da-n">{x.type ? x.type : x.n ? `№ ${x.n}` : '•'}</span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="da-t"><b>{x.name}</b><span className={`pill ${TONE[x.kind] === 'ok' ? 'p-em' : TONE[x.kind] === 'mid' ? 'p-gold' : 'p-bad'}`}>{x.label}{x.part === 2 ? ` · ${x.pts} из ${x.max}` : ''}</span></div>
               {x.answer != null && x.right != null && TONE[x.kind] !== 'ok' && <p className="da-ans">Твой ответ: <b>{x.answer}</b> · верный: <b>{x.right}</b></p>}

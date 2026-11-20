@@ -82,9 +82,27 @@ def diag_items(key: str, grade: str | None, variant: int, today: date) -> list[d
     return out
 
 
+TYPED_KEYS = {"prof"}  # exams whose entrance diagnostic goes by task types (learning/diag_types.py)
+
+
+def items_of(key: str, grade: str | None, variant: int, today: date, answers: dict | None = None) -> list[dict]:
+    """Items of a stored diagnostic: by task types if it was started so (answers["_fmt"] == "types"), else the
+    usual one item per task (mocks and diagnostics started before Nov 2026)."""
+    if (answers or {}).get("_fmt") == "types" and key == "prof":
+        from app.learning.diag_types import prof_items
+        return [dict(it) for it in prof_items()]
+    return diag_items(key, grade, variant, today)
+
+
+_HIDDEN = {"a", "own", "ans_img", "ref"}
+
+
 def public_item(it: dict) -> dict:
-    """Item as the client sees it: no answer key."""
-    return {k: v for k, v in it.items() if k not in {"a", "own"}}
+    """Item as the client sees it: no answer key (also inside the part-2 choices)."""
+    out = {k: v for k, v in it.items() if k not in _HIDDEN}
+    if it.get("choices"):
+        out["choices"] = [{k: v for k, v in c.items() if k not in _HIDDEN} for c in it["choices"]]
+    return out
 
 
 def norm_ans(v: str | None) -> str:
@@ -141,15 +159,24 @@ def eval_item(it: dict, answers: dict) -> dict | None:
 
 
 def apply_diag(state: dict, items: list[dict], answers: dict, blend: bool) -> dict:
-    """Update mastery / unknown / obs in `state` from one finished diagnostic or mock."""
+    """Update mastery / unknown / obs in `state` from one finished diagnostic or mock.
+    A diagnostic by types: a first-part task gives the share of its solved types (its points are the mean),
+    and every type gets its own score in state["types"] for the trajectory."""
     ev: dict[str, list[tuple[float, float]]] = {}
     obs: dict[str, list[float]] = {}
     pts = 0.0
+    typed = any(it.get("type") or it.get("choices") for it in items)
+    task_pts: dict[str, list[float]] = {}
+    evals: dict[str, dict | None] = {}
     for it in items:
         e = eval_item(it, answers)
+        evals[it["id"]] = e
         if e is None:
             continue
-        pts += e["pts"]
+        if typed:
+            task_pts.setdefault(it["task"], []).append(e["pts"])
+        else:
+            pts += e["pts"]
         if e["k"] is not None:
             for nd in it["nodes"]:
                 ev.setdefault(nd, []).append((e["k"], 1.0 if it["t"] == "num" else 0.7))
@@ -181,9 +208,13 @@ def apply_diag(state: dict, items: list[dict], answers: dict, blend: bool) -> di
         o = sum(arr) / len(arr)
         so[t] = (so[t] + o) / 2 if blend and t in so else o
 
+    if typed:
+        pts = sum(sum(v) / len(v) for v in task_pts.values())
+        from app.learning.diag_types import type_scores
+        state["types"] = type_scores(items, answers, evals)
     nums = [i for i in items if i["t"] == "num"]
     right = sum(1 for i in nums if same_ans(answers.get(i["id"]), i["a"]))
-    return {"pts": round(pts, 1), "right": right, "of": len(nums)}
+    return {"pts": round(pts, 1), "right": right, "of": len(nums), "typed": typed}
 
 
 def observe_task(state: dict, task_id: str, fraction: float) -> None:

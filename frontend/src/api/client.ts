@@ -147,6 +147,12 @@ export async function uploadDiagWork(id: number, item: string, files: File[]): P
 export const setDiagMode = (id: number, item: string, mode: 'dont_know' | 'oral' | 'clear'): Promise<{ work: Record<string, DiagWork> }> =>
   apiFetch(`/diagnostics/${id}/items/${encodeURIComponent(item)}/mode`, { method: 'PUT', body: JSON.stringify({ mode }) })
 export const getDiagWork = (id: number): Promise<{ work: Record<string, DiagWork> }> => apiFetch(`/diagnostics/${id}/work`)
+/** Part 2 of the diagnostic by types: which type the student solves. */
+export const setDiagChoice = (id: number, item: string, type: string): Promise<{ work: Record<string, DiagWork>; choice: Record<string, string> }> =>
+  apiFetch(`/diagnostics/${id}/items/${item}/choice`, { method: 'PUT', body: JSON.stringify({ type }) })
+/** «Не знаю» twice in a row: the rest of the types of task n become «не знаю». */
+export const skipDiagTask = (id: number, n: number): Promise<{ work: Record<string, DiagWork> }> =>
+  apiFetch(`/diagnostics/${id}/tasks/${n}/skip`, { method: 'POST' })
 export const skipDiagnostic = () => apiFetch('/diagnostics/skip', { method: 'POST' })
 
 export const getDashboard = (): Promise<Dashboard> => apiFetch('/dashboard')

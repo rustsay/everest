@@ -948,3 +948,11 @@ small.up{color:var(--em-ink);font-weight:700}small.down{color:var(--bad);font-we
 .more-item{display:flex;align-items:center;gap:10px;min-height:52px;padding:10px 12px;border-radius:14px;border:1px solid var(--line);background:var(--surface);font-weight:700;font-size:14px;text-align:left;cursor:pointer;color:var(--ink)}
 .more-item:hover{border-color:var(--em-3)}
 .more-item.on{border-color:var(--em-3);background:var(--em-soft);color:var(--em-ink)}
+
+/* diagnostic by types: choosing a type in part 2 */
+.dch{display:flex;flex-direction:column;gap:10px}
+.dch-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:6px}
+.dch-opt{display:flex;gap:8px;align-items:flex-start;text-align:left;padding:9px 11px;border-radius:12px;border:1.5px solid var(--line);background:var(--surface);color:var(--ink);font:inherit;font-size:13.5px;cursor:pointer}
+.dch-opt b{min-width:34px;color:var(--em-ink)}
+.dch-opt.on{border-color:var(--em-3);background:var(--em-soft)}
+.dch-prob{padding:12px;border-radius:14px;background:var(--surface-2)}

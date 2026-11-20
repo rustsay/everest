@@ -1,6 +1,7 @@
 import { ReactNode, useEffect, useRef, useState } from 'react'
-import { finishDiagnostic, getDiagWork, openDiagnostic, saveAnswer, setDiagMode, skipDiagnostic, startDiagnostic, uploadDiagWork } from '../api/client'
-import type { DiagItem, DiagResult, DiagRun, DiagWork, ExamInfo } from '../types'
+import { finishDiagnostic, getDiagWork, openDiagnostic, saveAnswer, setDiagChoice, setDiagMode, skipDiagTask, skipDiagnostic, startDiagnostic, uploadDiagWork } from '../api/client'
+import ProblemText from '../components/ProblemText'
+import type { DiagChoice, DiagItem, DiagResult, DiagRun, DiagWork, ExamInfo } from '../types'
 import { Icon, plural } from '../design/ui'
 
 interface Props {
@@ -81,6 +82,24 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
   }
   const setWork = (work: Record<string, DiagWork>) => setRun((r) => (r ? { ...r, work } : r))
 
+  /** The diagnostic by types: «не знаю» twice in a row inside one task - offer to skip the rest of its types. */
+  const afterDontKnow = async (r: DiagRun) => {
+    const it = r.items[i], prev = r.items[i - 1]
+    const rest = r.items.slice(i + 1).filter((x) => x.type && x.n === it.n)
+    const prevDk = prev && prev.type && prev.n === it.n && (r.work[prev.id]?.mode === 'dont_know' || r.answers[prev.id] === '?')
+    if (r.typed && it.type && prevDk && rest.length && window.confirm(`Два раза подряд «Не знаю» в задании № ${it.n}. Пропустить остальные типы этого задания (${rest.length})?`)) {
+      try {
+        const w = (await skipDiagTask(r.id, it.n!)).work
+        const nr = { ...r, work: w, answers: { ...r.answers, ...Object.fromEntries(rest.map((x) => [x.id, r.answers[x.id] || '?'])) } }
+        setRun(nr)
+        const k = nr.items.findIndex((x, idx) => idx > i && x.n !== it.n)
+        if (k >= 0) { setI(k); setErr('') } else finish(nr)
+        return
+      } catch { /* fall through: go on type by type */ }
+    }
+    next(r)
+  }
+
   if (phase === 'mockintro') {
     const mins = exam.key === 'base' ? 180 : 235
     return (
@@ -111,15 +130,24 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
         <div className="ob-intro">
           <span className="ob-badge"><Icon n="flag" s={18} />{required ? 'Обязательный шаг' : 'По желанию'}</span>
           <h1 className="ob-h">Диагностика</h1>
-          <p className="ob-sub">
-            {exam.key === 'prof' ? 'Задания из демоверсии ЕГЭ 2027 года (ФИПИ): ' : exam.key === 'oge' ? 'Задания в формате ОГЭ: ' : exam.key === 'g10' ? 'Только темы, которые прошли с 1 сентября: ' : ''}
-            {nNum} {plural(nNum, 'задание', 'задания', 'заданий')} с ответом{nSelf ? ` и ${nSelf} ${plural(nSelf, 'задание', 'задания', 'заданий')} второй части` : ''}.
-          </p>
+          {run.typed ? (
+            <p className="ob-sub">
+              Проверяем каждый тип каждого задания: в первой части {nNum} {plural(nNum, 'задача', 'задачи', 'задач')} (типы 1.1, 1.2 и дальше по порядку),
+              во второй части {nSelf} {plural(nSelf, 'задание', 'задания', 'заданий')}: в каждом выбираешь, какой тип решать. Задачи из демоверсии ЕГЭ 2027 и открытого банка ФИПИ.
+            </p>
+          ) : (
+            <p className="ob-sub">
+              {exam.key === 'prof' ? 'Задания из демоверсии ЕГЭ 2027 года (ФИПИ): ' : exam.key === 'oge' ? 'Задания в формате ОГЭ: ' : exam.key === 'g10' ? 'Только темы, которые прошли с 1 сентября: ' : ''}
+              {nNum} {plural(nNum, 'задание', 'задания', 'заданий')} с ответом{nSelf ? ` и ${nSelf} ${plural(nSelf, 'задание', 'задания', 'заданий')} второй части` : ''}.
+            </p>
+          )}
           <ul className="ob-rules">
             <li>К каждому заданию прикрепи фото решения или нажми «Не знаю». {exam.key === 'prof' ? 'Только задание 8 можно отметить «Решил устно». ' : ''}По фото видно, где просто ошибка в счёте, а где непонятен способ.</li>
             <li>Во второй части решение проверяется по критериям ФИПИ, как на экзамене.</li>
             <li>Правильные ответы не показываю до конца: это проверка, а не урок.</li>
-            <li>Можно сделать паузу, прогресс сохранится.</li>
+            {run.typed && <li>Если два раза подряд нажмёшь «Не знаю» в одном задании, предложу пропустить остальные его типы.</li>}
+            {run.typed && <li>Во второй части решай тот тип, который знаешь лучше. Остальные типы траектория проверит позже.</li>}
+            <li>Можно сделать паузу, прогресс сохранится. Задач много: диагностику можно проходить в несколько заходов.</li>
             <li>По ответам посчитаю прогноз, найду первопричину ошибок и соберу расписание.</li>
           </ul>
           <button className="btn btn-em ob-go" onClick={() => setPhase('q')}>{resume ? `Продолжить с задания ${i + 1}` : 'Начать диагностику'}</button>
@@ -144,13 +172,19 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
       {ex && <div className="q-grid" aria-label="Задания">{run.items.map((x, k) => (
         <button key={x.id} className={`${k === i ? 'on' : ''} ${filled(x) ? 'done' : ''}`} onClick={() => { setI(k); setErr('') }} aria-label={`Задание ${x.n ?? k + 1}${filled(x) ? ', есть ответ' : ''}`}>{x.n ?? k + 1}</button>
       ))}</div>}
-      <p className="q-meta">{mode === 'mock' ? 'Пробник' : 'Диагностика'} · {i + 1} из {n}{it.n ? ` · ${it.t === 'self' ? 'часть 2' : 'часть 1'}, задание № ${it.n}` : ''}</p>
-      <div className="q-text">{it.q.split('\n').map((l, k) => <span key={k}>{l}<br /></span>)}</div>
-      {it.fig && <Figure k={it.fig} />}
-      <p className="q-src">{it.src}</p>
+      <p className="q-meta">{mode === 'mock' ? 'Пробник' : 'Диагностика'} · {i + 1} из {n}
+        {it.type ? ` · задание № ${it.n}, тип ${it.type} из ${it.of_types}: ${it.type_name}` : it.choices ? ` · часть 2, задание № ${it.n}` : it.n ? ` · ${it.t === 'self' ? 'часть 2' : 'часть 1'}, задание № ${it.n}` : ''}</p>
+      {it.choices
+        ? <ChoiceBox key={it.id} run={run} item={it} onChoice={(c, w) => setRun((r) => (r ? { ...r, choice: c, work: w } : r))} />
+        : <>
+          <div className="q-text">{it.img ? <ProblemText q={it.q} img={it.img} /> : it.q.split('\n').map((l, k) => <span key={k}>{l}<br /></span>)}</div>
+          {it.fig && <Figure k={it.fig} />}
+          <p className="q-src">{it.src}</p>
+        </>}
       {it.t === 'self'
         ? <SelfAssess item={it} value={run.answers[it.id]} onPick={(v) => { const r = setAnswer(v); if (r) next(r) }} />
-        : <ItemWork key={it.id} run={run} item={it} llm={run.llm_ready} exam={ex} onAnswer={setAnswer} onWork={setWork} onNext={() => next(run)} />}
+        : <ItemWork key={it.id} run={run} item={it} llm={run.llm_ready} exam={ex} onAnswer={setAnswer} onWork={setWork} onNext={() => next(run)}
+            onDontKnow={(r) => afterDontKnow(r)} locked={it.choices && !run.choice?.[it.id] ? 'Сначала выбери тип задания выше' : ''} />}
       {i > 0 && <button className="ob-link" onClick={() => { setI(i - 1); setErr('') }}>Назад</button>}
       {err && <p className="auth-msg">{err}</p>}
     </Frame>
@@ -179,9 +213,13 @@ const STATUS: Record<string, string> = {
 }
 
 /** Answer (first part) + the photo of the solution, «решил устно» (task 8) or «не знаю». */
-function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext }: {
+function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext, onDontKnow, locked }: {
   run: DiagRun; item: DiagItem; llm: boolean; exam?: boolean
   onAnswer: (v: string) => DiagRun | undefined; onWork: (w: Record<string, DiagWork>) => void; onNext: () => void
+  /** after «не знаю»: the parent decides where to go (the diagnostic by types may offer to skip the task) */
+  onDontKnow?: (r: DiagRun) => void
+  /** a reason why the photo cannot be attached yet (part 2 by types: no type chosen) */
+  locked?: string
 }) {
   const num = item.t === 'num'
   const init = run.answers[item.id]
@@ -206,7 +244,10 @@ function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext }: {
     try {
       const r = await setDiagMode(run.id, item.id, m)
       onWork(r.work)
-      if (m === 'dont_know') { onAnswer('?'); onNext() }
+      if (m === 'dont_know') {
+        const nr = onAnswer('?')
+        if (onDontKnow && nr) onDontKnow({ ...nr, work: r.work }); else onNext()
+      }
     } catch (e) { setMsg(String(e).replace('Error: ', '')) }
     setBusy(false)
   }
@@ -224,7 +265,7 @@ function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext }: {
         <p className="dw-h">{num ? (exam ? 'Решение (по желанию: по фото найдём, где ошибка)' : 'Решение') : `Решение (максимум ${item.max} б.)`}</p>
         <input ref={fileRef} type="file" accept="image/*,.pdf,.heic,.heif" multiple hidden onChange={(e) => upload(e.target.files)} />
         <div className="dw-btns">
-          <button className={`btn ${mode === 'photo' ? 'btn-line' : 'btn-em'}`} disabled={busy} onClick={() => fileRef.current?.click()}>
+          <button className={`btn ${mode === 'photo' ? 'btn-line' : 'btn-em'}`} disabled={busy || !!locked} onClick={() => fileRef.current?.click()}>
             <Icon n="check" s={18} />{mode === 'photo' ? 'Заменить фото' : 'Прикрепить фото решения'}</button>
           {item.oral && <button className={`btn ${mode === 'oral' ? 'btn-em' : 'btn-line'}`} disabled={busy} onClick={() => pick(mode === 'oral' ? 'clear' : 'oral')}>
             {mode === 'oral' ? <Icon n="ok" s={18} /> : null}Решил устно</button>}
@@ -232,6 +273,7 @@ function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext }: {
         {mode === 'photo' && w && <p className={`dw-st ${w.status === 'pending' ? 'pend' : ''}`}>{w.files} {plural(w.files, 'страница', 'страницы', 'страниц')} · {STATUS[w.status ?? 'pending']}{w.comment && w.status !== 'pending' ? `: ${w.comment}` : ''}</p>}
         {mode === 'photo' && !llm && <p className="dw-st">ИИ не подключён: решение сохранено, засчитается ответ.</p>}
         {mode === 'oral' && <p className="dw-st">Отмечено: решено устно, засчитается ответ.</p>}
+        {locked && <p className="dw-st">{locked}</p>}
         {msg && <p className="auth-msg">{msg}</p>}
       </div>
       <div className="dw-go">
@@ -240,6 +282,40 @@ function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext }: {
       </div>
       {exam && <p className="dw-hint">Можно пропустить и вернуться: номера заданий сверху.</p>}
       {!ready && <p className="dw-hint">{(num && !ans.trim() ? 'Впиши ответ и п' : 'П') + (item.oral ? 'рикрепи решение или отметь «Решил устно».' : 'рикрепи фото решения.')} Или нажми «Не знаю».</p>}
+    </div>
+  )
+}
+
+/** Part 2 of the diagnostic by types: the student picks one type of the task and solves its problem. */
+function ChoiceBox({ run, item, onChoice }: { run: DiagRun; item: DiagItem; onChoice: (c: Record<string, string>, w: Record<string, DiagWork>) => void }) {
+  const cur = run.choice?.[item.id]
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const pick = async (c: DiagChoice) => {
+    if (c.type === cur) return
+    if (run.work[item.id]?.mode === 'photo' && !window.confirm('Фото решения прикреплено к другому типу. Выбрать этот тип? Фото придётся прикрепить заново.')) return
+    setBusy(true); setMsg('')
+    try { const r = await setDiagChoice(run.id, item.id, c.type); onChoice(r.choice, r.work) } catch (e) { setMsg(String(e).replace('Error: ', '')) }
+    setBusy(false)
+  }
+  const sel = item.choices!.find((c) => c.type === cur)
+  return (
+    <div className="dch">
+      <p className="q-ask">Выбери тип задания № {item.n}, который будешь решать (максимум {item.max} б.). Остальные типы траектория проверит позже.</p>
+      <div className="dch-list" role="radiogroup" aria-label={`Типы задания ${item.n}`}>
+        {item.choices!.map((c) => (
+          <button key={c.type} role="radio" aria-checked={c.type === cur} className={`dch-opt ${c.type === cur ? 'on' : ''}`} disabled={busy} onClick={() => pick(c)}>
+            <b className="num">{c.type}</b><span>{c.name}</span>
+          </button>
+        ))}
+      </div>
+      {msg && <p className="auth-msg">{msg}</p>}
+      {sel && (
+        <div className="dch-prob">
+          <div className="q-text">{sel.img ? <ProblemText q={sel.q} img={sel.img} /> : sel.q.split('\n').map((l, k) => <span key={k}>{l}<br /></span>)}</div>
+          <p className="q-src">{sel.src}</p>
+        </div>
+      )}
     </div>
   )
 }
@@ -300,6 +376,20 @@ function Figure({ k }: { k: string }) {
         <text x={(1 - x0) * s - 6} y={y1 * s + 16} fontSize={13} fontStyle="italic">x₀</text>
         <text x={(4 - x0) * s - 4} y={y1 * s + 16} fontSize={12}>4</text>
         <text x={(-1 - x0) * s - 8} y={y1 * s + 16} fontSize={12}>−1</text>
+      </svg>
+    )
+  }
+  if (k === 'trig') {
+    // f(x) = 2cos x + 1; one cell along x is π/2
+    const [x0, x1, y0, y1, s] = [-1, 5, -2, 4, 30]
+    const lbl = ['', 'π/2', 'π', '3π/2', '2π']
+    return (
+      <svg viewBox={`-6 -6 ${(x1 - x0) * s + 12} ${(y1 - y0) * s + 12}`} className="qfig" role="img" aria-label="График функции a·cos x + b">
+        {grid(x0, x1, y0, y1, s)}{axes(x0, x1, y0, y1, s)}{curve((X) => 2 * Math.cos((X * Math.PI) / 2) + 1, x0, y0, y1, s, -1, 5)}
+        {dot(0, 3, x0, y1, s)}{dot(2, -1, x0, y1, s)}
+        {[1, 2, 3, 4].map((X) => <text key={X} x={(X - x0) * s - 10} y={y1 * s + 16} fontSize={11}>{lbl[X]}</text>)}
+        <text x={-x0 * s - 14} y={(y1 - 1) * s + 4} fontSize={12}>1</text>
+        <text x={-x0 * s - 14} y={(y1 - 3) * s + 4} fontSize={12}>3</text>
       </svg>
     )
   }
