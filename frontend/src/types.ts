@@ -163,6 +163,8 @@ export interface Dashboard {
   exam: ExamInfo
   redo?: { due: number; total: number; done: number }
   diag_done?: boolean
+  /** unfinished first diagnostic: how many tasks are already done (answers and photos are saved) */
+  diag_open?: { done: number; total: number } | null
   /** what the schedule rests on: a diagnostic, answers and photo checks, or nothing yet */
   route_basis?: RouteBasis
   /** the stage of the educational trajectory the schedule follows today */

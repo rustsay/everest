@@ -47,7 +47,7 @@ export default function Home() {
         </section>
       )}
       <div className="grid2 stagger">
-        {d.diag_done === false ? <DiagOffer /> : <RootCard d={d} />}
+        {d.diag_done === false ? <DiagOffer open={d.diag_open} /> : <RootCard d={d} />}
         <Daily d={d} />
       </div>
       <div className="grid2 stagger">
@@ -129,7 +129,7 @@ function Hero({ d }: { d: Dashboard }) {
         )}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
           {d.diag_done === false
-            ? <button className="btn btn-sm btn-gold" onClick={() => dispatchEvent(new Event('everest:diag'))}>Пройти диагностику</button>
+            ? <button className="btn btn-sm btn-gold" onClick={() => dispatchEvent(new Event('everest:diag'))}>{d.diag_open ? 'Продолжить диагностику' : 'Пройти диагностику'}</button>
             : <>
               <button className="btn btn-sm btn-gold" onClick={() => app.openModal('Как считается прогноз', <Forecast d={d} />, true)}>Как считается</button>
               <button className="btn btn-sm" style={{ background: 'rgba(255,255,255,.1)', color: 'var(--on-em)' }} onClick={() => app.go({ v: 'task', id: String(rootTaskN(d) ?? 1) })}>Что поднимет балл</button>
@@ -274,13 +274,20 @@ function rootTaskN(d: Dashboard): number | null {
   return t && typeof t.n === 'number' ? t.n : null
 }
 
-function DiagOffer() {
+function DiagOffer({ open }: { open?: { done: number; total: number } | null }) {
   return (
     <section className="card" aria-label="Диагностика" style={{ borderColor: 'var(--gold)', borderWidth: 1.5 }}>
       <span className="pill p-gold">Диагностика</span>
-      <h2 style={{ fontSize: 19, marginTop: 10 }}>Узнай свой прогноз и слабое место</h2>
-      <p className="muted" style={{ marginTop: 8 }}>Задания из демоверсии: по ответам посчитаем прогноз, найдём, где теряются баллы, и подстроим расписание. Её можно поставить на паузу.</p>
-      <button className="btn btn-em" style={{ marginTop: 14 }} onClick={() => dispatchEvent(new Event('everest:diag'))}>Начать диагностику</button>
+      {open ? <>
+        <h2 style={{ fontSize: 19, marginTop: 10 }}>Диагностика на паузе</h2>
+        <p className="muted" style={{ marginTop: 8 }}>Сделано {open.done} из {open.total}. Ответы и фото сохранены, продолжишь с того же места.</p>
+        <div className="bar" style={{ marginTop: 10 }} aria-hidden="true"><i style={{ width: `${Math.round((open.done / open.total) * 100)}%`, background: 'var(--gold)' }} /></div>
+        <button className="btn btn-em" style={{ marginTop: 14 }} onClick={() => dispatchEvent(new Event('everest:diag'))}>Продолжить диагностику</button>
+      </> : <>
+        <h2 style={{ fontSize: 19, marginTop: 10 }}>Узнай свой прогноз и слабое место</h2>
+        <p className="muted" style={{ marginTop: 8 }}>Задания из демоверсии: по ответам посчитаем прогноз, найдём, где теряются баллы, и подстроим расписание. Её можно поставить на паузу.</p>
+        <button className="btn btn-em" style={{ marginTop: 14 }} onClick={() => dispatchEvent(new Event('everest:diag'))}>Начать диагностику</button>
+      </>}
     </section>
   )
 }

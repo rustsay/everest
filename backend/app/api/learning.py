@@ -53,6 +53,20 @@ async def _diag_status(db: AsyncSession, user: User) -> dict:
     return {"diag_done": last is not None, "diag_in_progress": run is not None}
 
 
+async def _diag_open(db: AsyncSession, user: User) -> dict | None:
+    """An unfinished first diagnostic: every answer and photo is on the server, the home screen offers to continue."""
+    if user.role != "student":
+        return None
+    run = await crud.open_diagnostic(db, user.id, "first")
+    if run is None:
+        return None
+    from app.api.diag_work import missing
+    total = len(engine.items_of(run.exam_key, user.grade, run.variant, date.today(), run.answers))
+    gaps, _ = missing(run, user)
+    done = total - len(gaps)
+    return {"done": done, "total": total} if done > 0 else None
+
+
 # ---------- profile ----------
 
 @router.get("/me")
@@ -442,6 +456,7 @@ async def dashboard(user: User = Depends(get_current_user), db: AsyncSession = D
         "vdone": st.get("vdone", {}), "mocks": st.get("mocks", 0), "unread": await crud.unread_count(db, user.id),
         # without a diagnostic the forecast rests on default values: the client shows an invitation instead of a number
         "diag_done": await crud.last_finished_diagnostic(db, user.id) is not None,
+        "diag_open": await _diag_open(db, user),
         "route_basis": await service.route_basis(db, user.id, row, path),
         "path_stage": _stage_info(path, today), "target": st.get("target"), "part2": plan["part2"],
         "redo": {"due": sum(1 for r in (st.get("redo") or {}).values() if r["due"] <= today.isoformat()),

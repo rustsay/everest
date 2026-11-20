@@ -153,8 +153,9 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
             <li>Можно сделать паузу, прогресс сохранится. Задач много: диагностику можно проходить в несколько заходов.</li>
             <li>По ответам посчитаю прогноз, найду первопричину ошибок и соберу расписание.</li>
           </ul>
+          {resume && <p className="ob-sub" style={{ marginTop: 4 }}>Ответы и фото сохранены. Можно выйти и вернуться позже, хоть с другого устройства: продолжишь с того же места.</p>}
           <button className="btn btn-em ob-go" onClick={() => setPhase('q')}>{resume ? `Продолжить с задания ${i + 1}` : 'Начать диагностику'}</button>
-          {!required && onSkip && <button className="ob-link" onClick={async () => { await skipDiagnostic().catch(() => null); onSkip() }}>Пропустить</button>}
+          {!required && onSkip && <button className="ob-link" onClick={async () => { await skipDiagnostic().catch(() => null); onSkip() }}>{resume ? 'Выйти, продолжу позже' : 'Пропустить'}</button>}
         </div>
       </Frame>
     )
