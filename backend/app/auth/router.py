@@ -88,8 +88,12 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Минимум 6 символов")
     if body.role not in ("student", "teacher", "tutor"):
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Роль: student, teacher или tutor")
-    if body.grade is not None and body.grade not in {"5", "6", "7", "8", "9", "10", "11"}:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Класс от 5 до 11")
+    if body.grade is not None and body.grade not in {"9", "11"}:  # 5-8 and 10 are removed for now
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Класс: 9 или 11")
+    if body.grade == "9":
+        body.exam = "oge"
+    elif body.grade == "11" and body.exam not in ("prof", "base"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, "Экзамен: профильная или базовая математика")
     if settings.email_confirm:
         if not body.code:
             raise HTTPException(400, "Нужен код из письма")

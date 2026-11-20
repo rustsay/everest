@@ -1,4 +1,4 @@
-"""One-off converter: the open FIPI bank (ЕГЭ профиль) from the PDF collection of A. D. Ostromogilsky (MathStart, 2025)
+"""One-off converter: the open FIPI bank (ЕГЭ профиль) from a PDF collection with answers
 -> backend/app/learning/fipi/fipi.json + one PNG per problem (and per part-2 answer).
 
 Problems are kept as pictures cut from the PDF: formulas and drawings stay exactly as in the book; the text next to

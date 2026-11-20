@@ -1,4 +1,4 @@
-"""Open FIPI bank (ЕГЭ профиль): 841 problems with answers from the collection of A. D. Ostromogilsky (MathStart, 2025).
+"""Open FIPI bank (ЕГЭ профиль): 841 problems with answers.
 Built by tools/fipi_import.py: fipi/fipi.json + a picture of every problem (fipi/img/N.png, part-2 answers aN.png).
 The picture is what the student sees; the text is only for search and for the model.
 Problems are addressed as "f{N}" (N = number in the collection). The prototype of the task map is chosen by the
@@ -11,7 +11,7 @@ from functools import lru_cache
 from pathlib import Path
 
 DIR = Path(__file__).resolve().parent / "fipi"
-SOURCE = "Открытый банк ФИПИ (сборник А. Д. Остромогильского, 2025)"
+SOURCE = "Открытый банк ФИПИ"
 
 # topic of the collection -> prototype of our task map; None = decide by the text
 TOPIC = {
@@ -125,7 +125,7 @@ def _rows() -> list[dict]:
         out.append({
             "ref": f"f{n}", "pid": f"f{n}", "task": task, "proto": proto, "proto_name": names.get((task, proto), ""),
             "q": r.get("text") or "", "a": r.get("answer") if task <= 12 else None, "sol": "",
-            "src": f"{SOURCE}, № {n}, стр. {r['page']}", "img": f"/api/fipi/img/{n}.png",
+            "src": f"{SOURCE}, № {n}", "img": f"/api/fipi/img/{n}.png",
             "ans_img": f"/api/fipi/img/a{n}.png" if r.get("answer_img") else None, "topic": r.get("topic") or "",
         })
     return out

@@ -3,7 +3,7 @@ import { authConfig, demoLogin, login, putProfile, registerFull, resetPassword, 
 import type { Me } from '../types'
 import { Icon, Orn, StarBot, Typed, WideMountains } from '../design/ui'
 
-type Step = 'hello' | 'role' | 'name' | 'grade' | 'grade58' | 'exam' | 'account' | 'login'
+type Step = 'hello' | 'role' | 'name' | 'grade' | 'exam' | 'account' | 'login'
 
 interface Props {
   /** set when the user is logged in but has no class/exam yet */
@@ -153,26 +153,14 @@ export default function Onboarding({ me, onToken, onProfile }: Props) {
       <h1 className="ob-h">В каком ты классе?</h1>
       <div className="ob-list">
         <Choice label="11 класс" sub="ЕГЭ в этом году" on={d.grade === '11'} onClick={() => { setD({ ...d, grade: '11' }); show('exam') }} />
-        <Choice label="10 класс" sub="ЕГЭ в следующем году" on={d.grade === '10'} onClick={() => { setD({ ...d, grade: '10' }); show('exam') }} />
         <Choice label="9 класс" sub="ОГЭ в этом году" on={d.grade === '9'} onClick={() => { setD({ ...d, grade: '9' }); show('exam') }} />
-        <Choice label="5-8 класс" sub="проверка заданий и своя траектория" on={['5', '6', '7', '8'].includes(d.grade)} onClick={() => show('grade58')} />
-      </div>
-    </>)
-  } else if (step === 'grade58') {
-    body = (<>
-      <h1 className="ob-h">А точнее?</h1>
-      <div className="ob-grid4">
-        {['5', '6', '7', '8'].map((g) => (
-          <button key={g} className={`ob-sq ${d.grade === g ? 'on' : ''}`} onClick={() => { setD({ ...d, grade: g }); show('exam') }}>{g}<small>класс</small></button>
-        ))}
       </div>
     </>)
   } else if (step === 'exam') {
     const g = d.grade
-    const opts: [string, string, string][] = g === '11' || g === '10'
-      ? [['prof', 'Профильная математика', 'ЕГЭ, 19 заданий, вторая часть с решением'], ['base', 'Базовая математика', 'ЕГЭ, только ответы']]
-      : g === '9' ? [['oge', 'ОГЭ', '25 заданий, вторая часть с решением']]
-        : [['none', 'Пока ничего', 'проверка заданий и траектория'], ['oge', 'Готовлюсь к ОГЭ заранее', '']]
+    const opts: [string, string, string][] = g === '11'
+      ? [['prof', 'Профильная математика', 'ЕГЭ, 19 заданий, вторая часть с решением'], ['base', 'Базовая математика', 'ЕГЭ, 21 задание, только ответы']]
+      : [['oge', 'ОГЭ', '25 заданий, вторая часть с решением']]
     body = (<>
       <h1 className="ob-h">Что ты сдаёшь?</h1>
       <div className="ob-list">{opts.map(([v, l, s]) => <Choice key={v} label={l} sub={s} on={d.exam === v} onClick={() => afterExam(v)} />)}</div>

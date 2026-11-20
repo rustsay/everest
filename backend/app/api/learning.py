@@ -22,8 +22,8 @@ from app.learning.content import ACHIEVEMENTS, EGGS, EVENT_XP, EXAMS, NODE_BY_ID
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["learning"])
 
-GRADES = {"5", "6", "7", "8", "9", "10", "11"}
-EXAM_CHOICES = {"prof", "base", "oge", "none"}
+GRADES = {"9", "11"}  # 5-8 and 10 are removed for now (Nov 2026): no diagnostic and trajectory for them yet
+EXAM_CHOICES = {"prof", "base", "oge"}
 ROLES = {"student", "teacher", "tutor"}
 
 
@@ -38,7 +38,7 @@ def me_payload(user: User, state: dict, extra: dict | None = None) -> dict:
     return {
         "id": user.id, "email": user.email, "name": user.name or "", "role": user.role, "grade": user.grade, "exam": user.exam,
         "is_demo": bool(user.is_demo), "exam_info": exam_info(service.key_for(user)),
-        "needs_profile": user.role == "student" and not user.grade,
+        "needs_profile": user.role == "student" and user.grade not in GRADES,  # old 5-8 / 10 accounts choose again
         "diag_required": user.role == "student" and engine.diag_required(user.grade),
         "settings": {k: state.get(k) for k in ("plan", "care", "sound", "voice", "onb")},
         "llm_ready": settings.llm_ready,
@@ -78,12 +78,14 @@ async def put_profile(body: ProfileIn, user: User = Depends(get_current_user), d
         user.role = body.role
     if body.grade is not None:
         if body.grade not in GRADES:
-            raise HTTPException(422, "Класс от 5 до 11")
+            raise HTTPException(422, "Класс: 9 или 11")
         user.grade = body.grade
     if body.exam is not None:
         if body.exam not in EXAM_CHOICES:
-            raise HTTPException(422, "Экзамен: prof, base, oge или none")
+            raise HTTPException(422, "Экзамен: prof, base или oge")
         user.exam = body.exam
+    if user.role == "student" and user.grade == "9":
+        user.exam = "oge"
     if body.name is not None:
         user.name = body.name.strip()[:80]
     row = await service.get_state(db, user.id)
