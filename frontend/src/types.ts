@@ -156,7 +156,7 @@ export interface PlanBlock {
 }
 export interface PlanEvent { id: string; title: string; kind: 'own' | 'subject'; start?: string; min?: number; busy?: boolean }
 export interface MyEvent extends PlanEvent { repeat: 'weekly' | 'once'; weekdays: number[]; date?: string | null; until?: string | null }
-export interface PlanDay { date: string; rest?: boolean; busy?: boolean; heavy?: boolean; past?: boolean; mock?: number; blocks: PlanBlock[]; events?: PlanEvent[] }
+export interface PlanDay { date: string; rest?: boolean; busy?: boolean; pause?: boolean; heavy?: boolean; past?: boolean; mock?: number; blocks: PlanBlock[]; events?: PlanEvent[] }
 
 export type RouteBasis = 'path' | 'diag' | 'practice' | 'start'
 export interface Dashboard {

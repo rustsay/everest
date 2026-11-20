@@ -238,3 +238,14 @@ def _stage(m: str, a: date, b: date, hours: float, weeks: int, types: dict[str, 
     return {"title": mod["title"], "from": a.isoformat(), "to": b.isoformat(), "tasks": [f"T{n}" for n in ns], "module": m,
             "goal": goal, "check": check, "steps": steps[:10], "hours": round(hours), "weeks": weeks,
             "links": [{"label": f"Разборы № {n}", "go": f"video/t{n}"} for n in ns[:12]]}
+
+
+def check_order(stages: list[dict]) -> list[str]:
+    """Edits of the schedule: a module may not stand before the modules it needs (if they are in the trajectory)."""
+    pos = {s.get("module"): i for i, s in enumerate(stages) if s.get("module") in MODULES}
+    errs = []
+    for m, i in pos.items():
+        for r in MODULES[m]["req"]:
+            if r in pos and pos[r] > i:
+                errs.append(f"«{MODULES[m]['title']}» нельзя ставить раньше «{MODULES[r]['title']}»: по методике сначала {MODULES[r]['title']}")
+    return errs

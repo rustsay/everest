@@ -376,6 +376,11 @@ async def teacher_edit(pid: int, body: EditIn, teacher: User = Depends(require_t
     data = dict(p.data)
     if body.stages is not None:
         data = {**_edited(data, body.stages), "edited": True}
+        if data.get("exam") == "prof":
+            from app.learning.method import check_order
+            errs = check_order(data["stages"])
+            if errs:
+                raise HTTPException(400, errs[0])
     if body.summary is not None:
         data["summary"] = body.summary.strip()
     p.data = data
@@ -405,6 +410,11 @@ async def student_edit(body: MyEditIn, user: User = Depends(get_current_user), d
     if base is None:
         raise HTTPException(400, "Сначала собери траекторию, потом её можно править")
     data = _edited(dict(base.data), body.stages)
+    if data.get("exam") == "prof":
+        from app.learning.method import check_order
+        errs = check_order(data["stages"])
+        if errs:
+            raise HTTPException(400, errs[0])
     data.pop("kind", None)
     data.pop("edited", None)  # «поправлено учителем» belonged to the old version
     data["student_edit"] = {"comment": body.comment.strip(), "at": date.today().isoformat()}

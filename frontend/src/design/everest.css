@@ -961,3 +961,12 @@ small.up{color:var(--em-ink);font-weight:700}small.down{color:var(--bad);font-we
 .path-method{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px}
 .path-method>div{background:var(--surface-2);border-radius:14px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
 .path-method b{font-size:20px}
+
+/* trajectory stages in the schedule */
+.pse{list-style:none;display:flex;flex-direction:column;gap:6px;margin-top:8px;padding:0}
+.pse-i{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;padding:9px 12px;border-radius:12px;border:1px solid var(--line);background:var(--surface)}
+.pse-i.cur{border-color:var(--em-3);background:var(--em-soft)}
+.pse-i.pause{border-style:dashed;background:var(--surface-2)}
+.pse-t{display:flex;flex-direction:column;gap:2px;min-width:0}
+.pse-b{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+.iconbtn.sm{width:34px;height:34px;font-weight:800;font-size:16px}

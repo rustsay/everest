@@ -3,6 +3,7 @@ import { getPlan, putEvents, putSettings, setTarget, togglePlanBlock } from '../
 import { useApp } from '../app/store'
 import type { ExamInfo, Part2Info, PathStageInfo, PlanBlock, MyEvent, PlanData, RouteBasis, Target } from '../types'
 import { Icon, dkey, fmtD, plural, taskLabel } from '../design/ui'
+import PathStagesEdit from '../components/PathStagesEdit'
 
 type App = ReturnType<typeof useApp>
 
@@ -213,6 +214,7 @@ export default function Plan() {
         <RouteNote basis={p.route_basis} exam={ex} stage={p.path_stage} />
         <p className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>{ex.date_note}. Хотя бы один день в неделю лучше оставить для отдыха. Занятия лучше заканчивать до 21:30, чтобы не сбивать сон.</p>
       </section>
+      {app.me.role === 'student' && <PathStagesEdit onChanged={() => { load(); app.reload() }} />}
       <section className="card">
         <div className="card-h"><h2>Этапы до {ex.pct ? 'конца года' : 'экзамена'}</h2><span className="muted num">{totalW} {plural(totalW, 'неделя', 'недели', 'недель')}</span></div>
         <div className="phases-bar">{p.phases.map((ph, i) => (
@@ -233,7 +235,7 @@ export default function Plan() {
             {!x.past && !x.rest && x.blocks[0]?.block && <span className="wd-blk">{x.blocks[0].block}{p.settings.time ? ` · ${p.settings.time}` : ''}</span>}
             {!x.past && (x.events ?? []).map((e) => <div key={e.id} className={`pev ${e.kind}`}><b>{e.start ? `${e.start} ` : ''}{e.title}</b>{e.min ? <small>{e.min} мин{e.busy ? ' · весь день занят' : ''}</small> : e.busy ? <small>весь день занят</small> : null}</div>)}
             {!x.past && x.heavy && <p className="wd-warn">Много дел на день: больше 5 часов занятий</p>}
-            {x.past ? <p className="muted" style={{ fontSize: 12.5 }}>прошло</p> : x.busy ? <p className="rest-t">математика переносится</p> : x.rest ? <p className="rest-t"><Icon n="moon" s={16} /> {x.events?.length ? 'без математики' : 'отдых'}</p> : x.blocks.map((b) => (
+            {x.past ? <p className="muted" style={{ fontSize: 12.5 }}>прошло</p> : x.busy ? <p className="rest-t">математика переносится</p> : x.pause ? <p className="rest-t"><Icon n="moon" s={16} /> пауза в траектории</p> : x.rest ? <p className="rest-t"><Icon n="moon" s={16} /> {x.events?.length ? 'без математики' : 'отдых'}</p> : x.blocks.map((b) => (
               <div key={b.key} className={`pblock k-${b.k}`}>
                 <button className={`tick ${b.done ? 'on' : ''}`} aria-pressed={!!b.done} aria-label={`Отметить: ${b.title}`} onClick={() => tick(b.key!)}>
                   <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 8.5 L6.8 11.5 L12.5 5" fill="none" stroke={b.done ? '#fff' : 'transparent'} strokeWidth={2.4} strokeLinecap="round" strokeLinejoin="round" /></svg>

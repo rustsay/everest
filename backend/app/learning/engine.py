@@ -506,6 +506,10 @@ def build_plan(state: dict, key: str, today: date, stages: list[dict] | None = N
         if any(e.get("busy") for e in ev):  # the student marked the day as taken: mathematics moves on to the next day
             days.append({"date": d.isoformat(), "busy": True, "blocks": [], "events": ev})
             continue
+        ps_i = path_stage(stages, d)
+        if ps_i is not None and stages[ps_i].get("module") == "PAUSE":  # a pause in the trajectory (holidays): no mathematics
+            days.append({"date": d.isoformat(), "rest": True, "pause": True, "blocks": [], "events": ev})
+            continue
         heavy = sum(int(e.get("min") or 0) for e in ev) + mins > HEAVY_MIN
         open2 = part2_open(state, need, sim)
         if open2 and p2_first is None and any(t["part"] == 2 for t in need):
