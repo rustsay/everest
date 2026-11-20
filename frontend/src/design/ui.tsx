@@ -1,5 +1,5 @@
 import { CSSProperties, ReactNode, useEffect, useRef, useState } from 'react'
-export { speak, hush, prepareSpeech, setSpeechRate } from '../utils/speech'
+export { speak, hush, prepareSpeech, prepareSpeeches, setSpeechRate } from '../utils/speech'
 
 /* ---------- icons ---------- */
 const I: Record<string, string> = {

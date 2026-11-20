@@ -26,10 +26,12 @@ services:
     volumes:
       - uploads:/app/uploads
       - ocr_models:/root/.paddleocr
+      - speech_audio:/var/cache/everest-speech
     env_file:
       - .env
     environment:
       - UPLOADS_DIR=/app/uploads
+      - SPEECH_CACHE_DIR=/var/cache/everest-speech
       - DATABASE_URL=postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@db:5432/ege_checker
     depends_on:
       db:
@@ -57,3 +59,4 @@ volumes:
   pgdata:
   uploads:
   ocr_models:
+  speech_audio:

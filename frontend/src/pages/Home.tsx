@@ -2,7 +2,7 @@ import { FormEvent, useEffect, useRef, useState } from 'react'
 import { assignmentDone, dailyAnswer, dailyHint, mapAnalysis, sendEvent, togglePlanBlock } from '../api/client'
 import { useApp } from '../app/store'
 import type { Dashboard, PlanBlock } from '../types'
-import { Icon, Md, Orn, STAR_D, StarBot, Typed, fmt1, fmtD, plural, reduceMotion, taskLabel } from '../design/ui'
+import { Icon, Md, Orn, STAR_D, StarBot, Typed, fmt1, fmtD, plural, prepareSpeech, reduceMotion, taskLabel } from '../design/ui'
 import { RouteNote, blockGo } from './Plan'
 
 const hello = () => { const h = new Date().getHours(); return h < 5 ? 'Доброй ночи' : h < 12 ? 'Доброе утро' : h < 18 ? 'Добрый день' : 'Добрый вечер' }
@@ -20,16 +20,20 @@ export default function Home() {
   const app = useApp()
   const { dash: d, me } = app
   const [talk, setTalk] = useState(false)
+  const greeting = d ? greetLine(d) : ''
+  useEffect(() => {
+    if (app.voice && greeting) void prepareSpeech(greeting).catch(() => {})
+  }, [app.voice, greeting])
   if (!d) return <p className="muted">Загружаю…</p>
   const ex = d.exam
   return (
     <>
       <section className="greet" aria-label="Приветствие">
-        <button className="greet-star" onClick={() => app.say(greetLine(d))} aria-label="Поговорить со Звёздочкой"><StarBot size={80} talk={talk} /></button>
+        <button className="greet-star" onClick={() => app.say(greeting)} aria-label="Поговорить со Звёздочкой"><StarBot size={80} talk={talk} /></button>
         <div style={{ minWidth: 0, flex: 1 }}>
           <p className="muted">{me.grade ? `${me.grade} класс · ` : ''}{ex.short}</p>
           <h1>{hello()}, {me.name || 'друг'}</h1>
-          <Typed className="greet-say tw" text={greetLine(d)} speed={24} onTyping={setTalk} />
+          <Typed className="greet-say tw" text={greeting} speed={24} onTyping={setTalk} />
         </div>
         <Orn />
       </section>

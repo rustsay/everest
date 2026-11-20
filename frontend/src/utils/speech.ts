@@ -45,6 +45,19 @@ export function prepareSpeech(text: string): Promise<Blob> {
   return download
 }
 
+/** Warm a bounded number of phrases in parallel without blocking the interface. */
+export async function prepareSpeeches(texts: readonly string[], concurrency = 4): Promise<void> {
+  const queue = [...new Set(texts.map((text) => text.trim()).filter(Boolean))]
+  let cursor = 0
+  const worker = async () => {
+    while (cursor < queue.length) {
+      const text = queue[cursor++]
+      try { await prepareSpeech(text) } catch { /* an actual playback retries later */ }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, queue.length) }, worker))
+}
+
 export function hush(only?: SpeechChannel) {
   if (!only || channel === only) stop?.()
 }

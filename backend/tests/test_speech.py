@@ -1,5 +1,7 @@
 import asyncio
+import tempfile
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -14,12 +16,18 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         speech._cache.clear()
         speech._cache_bytes = 0
+        speech._pending.clear()
+        self.cache_dir = tempfile.TemporaryDirectory()
+        self.cache_patch = patch.object(speech, '_CACHE_DIR', Path(self.cache_dir.name))
+        self.cache_patch.start()
         self.app = FastAPI()
         self.app.include_router(speech.router)
         self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app), base_url="http://test")
 
     async def asyncTearDown(self):
         await self.client.aclose()
+        self.cache_patch.stop()
+        self.cache_dir.cleanup()
 
     def login(self, uid=1):
         self.app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=uid)
@@ -27,7 +35,7 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
     async def test_requires_login(self):
         self.assertEqual((await self.client.post('/speech', json={'text': 'Привет'})).status_code, 403)
 
-    async def test_input_and_private_audio_cache(self):
+    async def test_input_and_shared_persistent_audio_cache(self):
         self.login()
         for text in ('', '   ', 'x' * 6001):
             self.assertEqual((await self.client.post('/speech', json={'text': text})).status_code, 422)
@@ -40,7 +48,11 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(generate.await_count, 1)
             self.login(2)
             await self.client.post('/speech', json={'text': 'Привет'})
-            self.assertEqual(generate.await_count, 2)
+            self.assertEqual(generate.await_count, 1)
+            speech._cache.clear()
+            speech._cache_bytes = 0
+            await self.client.post('/speech', json={'text': 'Привет'})
+            self.assertEqual(generate.await_count, 1)
 
     async def test_cache_eviction_and_provider_error(self):
         self.login()
@@ -87,6 +99,23 @@ class SpeechTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(all(result.status_code == 200 for result in results))
             self.assertEqual(generate.await_count, 1)
             self.assertEqual(speech._cache_bytes, 2048)
+
+    async def test_prepare_many_deduplicates_and_uses_four_workers(self):
+        active = peak = 0
+
+        async def generate(key, text):
+            nonlocal active, peak
+            active += 1
+            peak = max(peak, active)
+            await asyncio.sleep(0.01)
+            active -= 1
+            return b'a' * 2048
+
+        lines = [f'Реплика {i}' for i in range(7)] + ['Реплика 2']
+        with patch.object(speech, '_generate', AsyncMock(side_effect=generate)) as generate_mock:
+            self.assertEqual(await speech.prepare_many(lines), 7)
+            self.assertEqual(generate_mock.await_count, 7)
+            self.assertEqual(peak, 4)
 
 
 if __name__ == '__main__':

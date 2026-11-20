@@ -2,7 +2,9 @@
 import asyncio
 import hashlib
 import logging
+import os
 from collections import OrderedDict
+from pathlib import Path
 
 import edge_tts
 from aiohttp import ClientError
@@ -17,10 +19,11 @@ log = logging.getLogger(__name__)
 VOICE = "ru-RU-SvetlanaNeural"
 RATE = "-6%"  # Same pace as the supplied video generator.
 _slots = asyncio.Semaphore(4)
-_cache: OrderedDict[tuple[int, str], bytes] = OrderedDict()
+_cache: OrderedDict[str, bytes] = OrderedDict()
 _cache_bytes = 0
 _MAX_CACHE_BYTES = 32 * 1024 * 1024
-_pending: dict[tuple[int, str], asyncio.Task] = {}
+_pending: dict[str, asyncio.Task] = {}
+_CACHE_DIR = Path(os.getenv("SPEECH_CACHE_DIR", "/tmp/everest-speech"))
 
 
 class SpeechIn(BaseModel):
@@ -51,14 +54,62 @@ async def _render(text: str) -> bytes:
     return audio
 
 
-async def _generate(key: tuple[int, str], text: str) -> bytes:
+def _remember(key: str, audio: bytes) -> bytes:
     global _cache_bytes
-    audio = await asyncio.wait_for(synthesize(text), timeout=40)
+    old = _cache.pop(key, None)
+    if old is not None:
+        _cache_bytes -= len(old)
     _cache[key] = audio
     _cache_bytes += len(audio)
     while _cache and (len(_cache) > 128 or _cache_bytes > _MAX_CACHE_BYTES):
         _cache_bytes -= len(_cache.popitem(last=False)[1])
     return audio
+
+
+def _disk_read(key: str) -> bytes | None:
+    try:
+        audio = (_CACHE_DIR / f"{key}.mp3").read_bytes()
+        return audio if len(audio) >= 1024 else None
+    except (FileNotFoundError, OSError):
+        return None
+
+
+def _disk_write(key: str, audio: bytes) -> None:
+    try:
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        target = _CACHE_DIR / f"{key}.mp3"
+        temporary = _CACHE_DIR / f".{key}.{os.getpid()}.tmp"
+        temporary.write_bytes(audio)
+        os.replace(temporary, target)
+    except OSError:
+        log.warning("Cannot persist speech cache", exc_info=True)
+
+
+async def _generate(key: str, text: str) -> bytes:
+    audio = await asyncio.to_thread(_disk_read, key)
+    if audio is None:
+        audio = await asyncio.wait_for(synthesize(text), timeout=40)
+        await asyncio.to_thread(_disk_write, key, audio)
+    return _remember(key, audio)
+
+
+def _key(text: str) -> str:
+    return hashlib.sha256(f"{VOICE}\0{RATE}\0{text}".encode()).hexdigest()
+
+
+async def prepare_many(texts: list[str]) -> int:
+    phrases = list(dict.fromkeys(text.strip() for text in texts if text.strip()))
+    cursor = 0
+
+    async def worker():
+        nonlocal cursor
+        while cursor < len(phrases):
+            text = phrases[cursor]
+            cursor += 1
+            await _generate(_key(text), text)
+
+    await asyncio.gather(*(worker() for _ in range(min(4, len(phrases)))))
+    return len(phrases)
 
 
 def _finished(key, task):
@@ -72,7 +123,9 @@ async def speech(body: SpeechIn, user: User = Depends(get_current_user)):
     text = body.text.strip()
     if not text:
         raise HTTPException(422, "Введите текст для озвучки.")
-    key = (user.id, hashlib.sha256(text.encode()).hexdigest())
+    # Reusing an exact phrase does not reveal the cache contents to another user,
+    # but makes fixed mascot messages instant for every account.
+    key = _key(text)
     audio = _cache.get(key)
     if audio is None:
         task = _pending.get(key)

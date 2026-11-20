@@ -1,7 +1,8 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { getDashboard } from '../api/client'
 import type { Dashboard, Me } from '../types'
-import { hush, reduceMotion, speak } from '../design/ui'
+import { hush, prepareSpeeches, reduceMotion, speak } from '../design/ui'
+import { STAR_SPEECH_VARIANTS } from '../utils/starSpeech'
 
 export type ViewName =
   | 'home' | 'plan' | 'check' | 'session' | 'trajectory' | 'video' | 'chat' | 'awards' | 'teacher' | 'materials' | 'tchat' | 'task' | 'bank' | 'practice' | 'variants' | 'variant' | 'path' | 'paths' | 'diag' | 'report' | 'admin'
@@ -113,6 +114,9 @@ export function AppProvider({ me: initialMe, onLogout, children }: { me: Me; onL
   useEffect(() => { document.body.dataset.view = view.v; setSpeech(null) }, [view.v])
   useEffect(() => {
     if (!voice) hush()
+  }, [voice])
+  useEffect(() => {
+    if (voice) void prepareSpeeches(STAR_SPEECH_VARIANTS)
   }, [voice])
   useEffect(() => () => hush(), [])
 
