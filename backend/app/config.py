@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     jwt_expire_days: int = 30
 
     # email codes (registration and «Забыли пароль»). No SMTP_HOST: the code is written to the backend log
-    email_confirm: bool = True
+    email_confirm: bool = False  # temporarily register without an email code
     smtp_host: str = ""
     smtp_port: int = 465
     smtp_user: str = ""
