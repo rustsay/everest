@@ -53,18 +53,22 @@ async def _diag_status(db: AsyncSession, user: User) -> dict:
     return {"diag_done": last is not None, "diag_in_progress": run is not None}
 
 
-async def _diag_open(db: AsyncSession, user: User) -> dict | None:
-    """An unfinished first diagnostic: every answer and photo is on the server, the home screen offers to continue."""
+async def _diag_progress(db: AsyncSession, user: User, mode: str) -> dict | None:
+    """Progress of an unfinished diagnostic/mock, including a newly started run with zero completed tasks."""
     if user.role != "student":
         return None
-    run = await crud.open_diagnostic(db, user.id, "first")
+    run = await crud.open_diagnostic(db, user.id, mode)
     if run is None:
         return None
     from app.api.diag_work import missing
     total = len(engine.items_of(run.exam_key, user.grade, run.variant, date.today(), run.answers))
     gaps, _ = missing(run, user)
-    done = total - len(gaps)
-    return {"done": done, "total": total} if done > 0 else None
+    return {"done": total - len(gaps), "total": total, "exam_mode": bool((run.answers or {}).get("_exam"))}
+
+
+async def _diag_open(db: AsyncSession, user: User) -> dict | None:
+    """An unfinished first diagnostic, always shown on the home screen, even before the first answer."""
+    return await _diag_progress(db, user, "first")
 
 
 # ---------- profile ----------
@@ -237,7 +241,7 @@ async def start_diagnostic(body: DiagStart, user: User = Depends(get_current_use
 class AnswerIn(BaseModel):
     item_id: str
     answer: str = Field("", max_length=60)
-    position: int = 0
+    position: int | None = None
 
 
 @router.put("/diagnostics/{diag_id}/answer")
@@ -255,9 +259,31 @@ async def save_answer(diag_id: int, body: AnswerIn, user: User = Depends(get_cur
             if (w.get(body.item_id) or {}).get("mode") == "dont_know":
                 w.pop(body.item_id)
                 d.answers = {**d.answers, "_work": w}
-        d.position = max(0, body.position)
+        if body.position is not None:
+            d.position = max(0, body.position)
         await db.commit()
     return {"ok": True}
+
+
+class DiagnosticProgressIn(BaseModel):
+    position: int = Field(0, ge=0)
+
+
+@router.put("/diagnostics/{diag_id}/progress")
+async def save_diagnostic_progress(diag_id: int, body: DiagnosticProgressIn,
+                                   user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Save the exact item currently open so the student can leave and resume from it later."""
+    from app.api.diag_work import _lock
+    d = await db.get(Diagnostic, diag_id)
+    if d is None or d.user_id != user.id or d.finished:
+        raise HTTPException(404, "Диагностика не найдена")
+    items = engine.items_of(d.exam_key, user.grade, d.variant, date.today(), d.answers)
+    position = min(body.position, max(0, len(items) - 1))
+    async with _lock(diag_id):
+        await db.refresh(d)
+        d.position = position
+        await db.commit()
+    return {"ok": True, "position": position}
 
 
 @router.post("/diagnostics/{diag_id}/finish")
@@ -457,6 +483,7 @@ async def dashboard(user: User = Depends(get_current_user), db: AsyncSession = D
         # without a diagnostic the forecast rests on default values: the client shows an invitation instead of a number
         "diag_done": await crud.last_finished_diagnostic(db, user.id) is not None,
         "diag_open": await _diag_open(db, user),
+        "mock_open": await _diag_progress(db, user, "mock"),
         "route_basis": await service.route_basis(db, user.id, row, path),
         "path_stage": _stage_info(path, today), "target": st.get("target"), "part2": plan["part2"],
         "redo": {"due": sum(1 for r in (st.get("redo") or {}).values() if r["due"] <= today.isoformat()),
