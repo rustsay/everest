@@ -52,6 +52,7 @@ export default function Home() {
       )}
       <div className="grid2 stagger">
         {d.diag_done === false ? <DiagOffer open={d.diag_open} mock={d.mock_open} /> : <RootCard d={d} />}
+        {d.diag_done !== false && d.mock_open && <MockResume mock={d.mock_open} />}
         <Daily d={d} />
       </div>
       <div className="grid2 stagger">
@@ -297,6 +298,17 @@ function DiagOffer({ open, mock }: { open?: { done: number; total: number } | nu
         <p className="muted" style={{ marginTop: 5 }}>{mock.done} из {mock.total} заданий · {mock.exam_mode ? 'экзаменационный режим: таймер продолжает идти' : 'обычный режим'}</p>
         <button className="btn btn-line" style={{ marginTop: 10 }} onClick={() => dispatchEvent(new Event('everest:mock'))}>Продолжить пробник</button>
       </div>}
+    </section>
+  )
+}
+
+function MockResume({ mock }: { mock: { done: number; total: number; exam_mode: boolean } }) {
+  return (
+    <section className="card" aria-label="Незавершённый пробник">
+      <span className="pill p-gold">Пробник</span>
+      <h2 style={{ fontSize: 19, marginTop: 10 }}>Пробник не завершён</h2>
+      <p className="muted" style={{ marginTop: 8 }}>{mock.done} из {mock.total} заданий · {mock.exam_mode ? 'экзаменационный режим: таймер продолжает идти' : 'обычный режим'}</p>
+      <button className="btn btn-em" style={{ marginTop: 14 }} onClick={() => dispatchEvent(new Event('everest:mock'))}>Продолжить пробник</button>
     </section>
   )
 }
