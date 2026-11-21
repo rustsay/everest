@@ -134,8 +134,10 @@ export const putSettings = (body: Record<string, unknown>) => apiFetch('/me/sett
 export const startDiagnostic = (mode: 'first' | 'mock', exam = false): Promise<DiagRun> =>
   apiFetch('/diagnostics', { method: 'POST', body: JSON.stringify({ mode, exam }) })
 export const openDiagnostic = (mode: 'first' | 'mock'): Promise<({ open: true } & DiagRun) | { open: false }> => apiFetch(`/diagnostics/open/${mode}`)
-export const saveAnswer = (id: number, item_id: string, answer: string, position: number) =>
+export const saveAnswer = (id: number, item_id: string, answer: string, position: number | null = null) =>
   apiFetch(`/diagnostics/${id}/answer`, { method: 'PUT', body: JSON.stringify({ item_id, answer, position }) })
+export const saveDiagnosticProgress = (id: number, position: number) =>
+  apiFetch(`/diagnostics/${id}/progress`, { method: 'PUT', body: JSON.stringify({ position }) })
 export const finishDiagnostic = (id: number): Promise<DiagResult> => apiFetch(`/diagnostics/${id}/finish`, { method: 'POST' })
 export async function uploadDiagWork(id: number, item: string, files: File[]): Promise<{ work: Record<string, DiagWork> }> {
   const form = new FormData()
