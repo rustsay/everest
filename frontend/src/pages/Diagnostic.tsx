@@ -1,5 +1,5 @@
 import { ReactNode, useEffect, useRef, useState } from 'react'
-import { finishDiagnostic, getDiagWork, openDiagnostic, saveAnswer, setDiagChoice, setDiagMode, skipDiagTask, skipDiagnostic, startDiagnostic, uploadDiagWork } from '../api/client'
+import { finishDiagnostic, getDiagWork, openDiagnostic, saveAnswer, saveDiagnosticProgress, setDiagChoice, setDiagMode, skipDiagTask, skipDiagnostic, startDiagnostic, uploadDiagWork } from '../api/client'
 import ProblemText from '../components/ProblemText'
 import type { DiagChoice, DiagItem, DiagResult, DiagRun, DiagWork, ExamInfo } from '../types'
 import { Icon, plural } from '../design/ui'
@@ -40,7 +40,7 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
   const finish = async (r: DiagRun) => {
     setPhase('finishing'); setErr('')
     try {
-      await Promise.all(Object.entries(r.answers).map(([k, v], idx) => saveAnswer(r.id, k, v, idx + 1).catch(() => null)))
+      await Promise.all(Object.entries(r.answers).filter(([k]) => !k.startsWith('_')).map(([k, v]) => saveAnswer(r.id, k, v, null).catch(() => null)))
       // photos are checked in the background: wait until every check is done
       for (let k = 0; k < 120; k++) {
         const w = (await getDiagWork(r.id)).work
@@ -81,6 +81,23 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
     return r
   }
   const setWork = (work: Record<string, DiagWork>) => setRun((r) => (r ? { ...r, work } : r))
+
+  // Persist the current item as the student moves around; answers and photos are already saved independently.
+  useEffect(() => {
+    if (phase !== 'q' || !run) return
+    saveDiagnosticProgress(run.id, i).catch(() => { /* progress is also recovered from saved answers */ })
+  }, [phase, run?.id, i])
+
+  const saveAndExit = async () => {
+    if (!run) { onPause?.(); return }
+    try {
+      await saveDiagnosticProgress(run.id, i)
+      if (mode === 'first') onPause?.()
+      else onPause?.()
+    } catch (e) {
+      setErr('Не удалось сохранить позицию. Проверь интернет и попробуй ещё раз.')
+    }
+  }
 
   /** The diagnostic by types: «не знаю» twice in a row inside one task - offer to skip the rest of its types. */
   const afterDontKnow = async (r: DiagRun) => {
@@ -150,7 +167,7 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
             <li>Правильные ответы не показываю до конца: это проверка, а не урок.</li>
             {run.typed && <li>Если два раза подряд нажмёшь «Не знаю» в одном задании, предложу пропустить остальные его типы.</li>}
             {run.typed && <li>Во второй части решай тот тип, который знаешь лучше. Остальные типы траектория проверит позже.</li>}
-            <li>Можно сделать паузу, прогресс сохранится. Задач много: диагностику можно проходить в несколько заходов.</li>
+            <li>В любой момент можно сохранить прогресс и выйти, а затем продолжить с того же задания.</li>
             <li>По ответам посчитаю прогноз, найду первопричину ошибок и соберу расписание.</li>
           </ul>
           {resume && <p className="ob-sub" style={{ marginTop: 4 }}>Ответы и фото сохранены. Можно выйти и вернуться позже, хоть с другого устройства: продолжишь с того же места.</p>}
@@ -170,12 +187,12 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
     <Frame top={<>
       {ex && deadline && <Timer deadline={deadline} />}
       {ex && <button className="ob-link" onClick={() => { if (window.confirm('Сдать пробник сейчас? Пустые задания засчитаются как нерешённые.')) finish(run) }}>Сдать</button>}
-      <button className="ob-link" onClick={() => { if (mode === 'mock') onPause?.(); else setPhase('intro') }}>{ex ? 'Выйти (время идёт)' : 'Пауза'}</button>
+      <button className="ob-link" onClick={saveAndExit}>{ex ? 'Сохранить и выйти (время идёт)' : 'Сохранить прогресс и выйти'}</button>
     </>}>
       <div className="q-prog"><span style={{ width: `${(i / n) * 100}%` }} /></div>
-      {ex && <div className="q-grid" aria-label="Задания">{run.items.map((x, k) => (
+      <div className="q-grid" aria-label="Навигация по заданиям">{run.items.map((x, k) => (
         <button key={x.id} className={`${k === i ? 'on' : ''} ${filled(x) ? 'done' : ''}`} onClick={() => { setI(k); setErr('') }} aria-label={`Задание ${x.n ?? k + 1}${filled(x) ? ', есть ответ' : ''}`}>{x.n ?? k + 1}</button>
-      ))}</div>}
+      ))}</div>
       <p className="q-meta">{mode === 'mock' ? 'Пробник' : 'Диагностика'} · {i + 1} из {n}
         {it.type ? ` · задание № ${it.n}, тип ${it.type} из ${it.of_types}: ${it.type_name}` : it.choices ? ` · часть 2, задание № ${it.n}` : it.n ? ` · ${it.t === 'self' ? 'часть 2' : 'часть 1'}, задание № ${it.n}` : ''}</p>
       {it.choices
@@ -213,7 +230,7 @@ function Frame({ children, top }: { children: ReactNode; top?: ReactNode }) {
 }
 
 const STATUS: Record<string, string> = {
-  pending: 'фото загружено, проверяю решение…', done: 'решение проверено', skipped: 'фото сохранено', error: 'фото сохранено, проверить не удалось',
+  pending: 'фото загружено', done: 'решение проверено', skipped: 'фото сохранено', error: 'фото сохранено, проверить не удалось',
 }
 
 /** Answer (first part) + the photo of the solution, «решил устно» (task 8) or «не знаю». */
@@ -237,13 +254,26 @@ function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext, onDontKnow, 
   const optional = item.photo === 'optional'
   const ready = exam || ((!num || ans.trim() !== '') && (mode === 'photo' || mode === 'oral' || optional))
 
-  const upload = async (files: FileList | null) => {
+  const upload = async (files: File[] | FileList | null) => {
     if (!files?.length) return
     setBusy(true); setMsg('')
     try { onWork((await uploadDiagWork(run.id, item.id, Array.from(files))).work) } catch (e) { setMsg(String(e).replace('Error: ', '')) }
     setBusy(false)
     if (fileRef.current) fileRef.current.value = ''
   }
+  useEffect(() => {
+    const onPaste = (event: ClipboardEvent) => {
+      if (busy || locked) return
+      const imageItems = Array.from(event.clipboardData?.items ?? []).filter((x) => x.type.startsWith('image/'))
+      if (!imageItems.length) return
+      const files = imageItems.map((x, idx) => x.getAsFile()).filter((x): x is File => !!x)
+        .map((file, idx) => new File([file], file.name || `clipboard-${Date.now()}-${idx}.png`, { type: file.type || 'image/png' }))
+      if (files.length) { event.preventDefault(); void upload(files) }
+    }
+    document.addEventListener('paste', onPaste)
+    return () => document.removeEventListener('paste', onPaste)
+  }, [run.id, item.id, busy, locked])
+
   const pick = async (m: 'dont_know' | 'oral' | 'clear') => {
     setBusy(true); setMsg('')
     try {
@@ -269,6 +299,7 @@ function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext, onDontKnow, 
       <div className="dw-box">
         <p className="dw-h">{num ? (exam || optional ? 'Если у тебя есть решение, можешь прикрепить фото: я посмотрю, где ошибка' : 'Решение') : `Решение (максимум ${item.max} б.)`}</p>
         <input ref={fileRef} type="file" accept="image/*,.pdf,.heic,.heif" multiple hidden onChange={(e) => upload(e.target.files)} />
+        <p className="dw-hint">Можно вставить скопированное изображение сочетанием Ctrl+V или ⌘V.</p>
         <div className="dw-btns">
           <button className={`btn ${mode === 'photo' ? 'btn-line' : 'btn-em'}`} disabled={busy || !!locked} onClick={() => fileRef.current?.click()}>
             <Icon n="check" s={18} />{mode === 'photo' ? 'Заменить фото' : 'Прикрепить фото решения'}</button>
