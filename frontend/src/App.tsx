@@ -129,7 +129,7 @@ function Main() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (mockRes) return <Result r={mockRes} name={me.name} sound={me.settings.sound !== false} onGo={() => { setMockRes(null); app.reload(); app.go('home') }} />
-  if (mock) return <Diagnostic mode="mock" required={false} exam={me.exam_info} onFinished={(r) => { setMock(false); setMockRes(r) }} onPause={() => { setMock(false); app.toast('Пробник на паузе. Продолжишь из расписания') }} />
+  if (mock) return <Diagnostic mode="mock" required={false} exam={me.exam_info} onFinished={(r) => { setMock(false); setMockRes(r) }} onPause={() => { setMock(false); app.reload(); app.toast('Прогресс пробника сохранён. Продолжить можно из личного кабинета') }} />
 
   let page
   switch (view.v) {
