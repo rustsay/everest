@@ -21,8 +21,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     platform: linux/amd64
-    ports:
-      - "8000:8000"
+    # The API is reached through Nginx, which supplies the HTTPS scheme.
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers", "--forwarded-allow-ips=*"]
     volumes:
       - uploads:/app/uploads
       - ocr_models:/root/.paddleocr
@@ -42,21 +42,41 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      target: development
+      target: https
     ports:
-      - "3000:5173"
+      - "80:80"
+      - "443:443"
+      - "3000:80"
     volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - letsencrypt:/etc/letsencrypt:ro
+      - acme_webroot:/var/www/certbot:ro
     environment:
-      VITE_API_TARGET: http://backend:8000
-      VITE_USE_POLLING: "true"
+      HTTPS_ENABLED: ${HTTPS_ENABLED:-false}
+      HTTPS_IP: ${HTTPS_IP:-144.31.194.150}
     depends_on:
       - backend
     restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot:v5.4.0
+    entrypoint: ["/bin/sh", "/opt/everest/certbot.sh"]
+    environment:
+      HTTPS_ENABLED: ${HTTPS_ENABLED:-false}
+      HTTPS_IP: ${HTTPS_IP:-144.31.194.150}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL:-}
+    volumes:
+      - ./deploy/certbot.sh:/opt/everest/certbot.sh:ro
+      - letsencrypt:/etc/letsencrypt
+      - acme_webroot:/var/www/certbot
+    depends_on:
+      - frontend
+    restart: unless-stopped
+    stop_grace_period: 30s
 
 volumes:
   pgdata:
   uploads:
   ocr_models:
   speech_audio:
+  letsencrypt:
+  acme_webroot:

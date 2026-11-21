@@ -1,0 +1,13 @@
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+# Bootstrap: keep the site and ACME challenge reachable before issuance.
+server {
+    listen 80;
+    server_name ${HTTPS_IP};
+
+    include /opt/everest-https/acme.conf;
+    include /opt/everest-https/app.conf;
+}
