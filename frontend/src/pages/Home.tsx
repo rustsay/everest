@@ -51,7 +51,7 @@ export default function Home() {
         </section>
       )}
       <div className="grid2 stagger">
-        {d.diag_done === false ? <DiagOffer open={d.diag_open} /> : <RootCard d={d} />}
+        {d.diag_done === false ? <DiagOffer open={d.diag_open} mock={d.mock_open} /> : <RootCard d={d} />}
         <Daily d={d} />
       </div>
       <div className="grid2 stagger">
@@ -278,7 +278,7 @@ function rootTaskN(d: Dashboard): number | null {
   return t && typeof t.n === 'number' ? t.n : null
 }
 
-function DiagOffer({ open }: { open?: { done: number; total: number } | null }) {
+function DiagOffer({ open, mock }: { open?: { done: number; total: number } | null; mock?: { done: number; total: number; exam_mode: boolean } | null }) {
   return (
     <section className="card" aria-label="Диагностика" style={{ borderColor: 'var(--gold)', borderWidth: 1.5 }}>
       <span className="pill p-gold">Диагностика</span>
@@ -292,6 +292,11 @@ function DiagOffer({ open }: { open?: { done: number; total: number } | null }) 
         <p className="muted" style={{ marginTop: 8 }}>Задания из демоверсии: по ответам посчитаем прогноз, найдём, где теряются баллы, и подстроим расписание. Её можно поставить на паузу.</p>
         <button className="btn btn-em" style={{ marginTop: 14 }} onClick={() => dispatchEvent(new Event('everest:diag'))}>Начать диагностику</button>
       </>}
+      {mock && <div style={{ marginTop: 18, paddingTop: 14, borderTop: '1px solid var(--line)' }}>
+        <b>Пробник не завершён</b>
+        <p className="muted" style={{ marginTop: 5 }}>{mock.done} из {mock.total} заданий · {mock.exam_mode ? 'экзаменационный режим: таймер продолжает идти' : 'обычный режим'}</p>
+        <button className="btn btn-line" style={{ marginTop: 10 }} onClick={() => dispatchEvent(new Event('everest:mock'))}>Продолжить пробник</button>
+      </div>}
     </section>
   )
 }
