@@ -354,14 +354,17 @@ async def diag_analytics(diag_id: int, user: User = Depends(get_current_user), d
     if d is None or d.user_id != user.id or not d.finished:
         raise HTTPException(404, "Диагностика не найдена")
     res = dict(d.result or {})
+    from app.learning import analytics
+    items = engine.items_of(d.exam_key, user.grade, d.variant, (d.created_at or datetime.now()).date(), d.answers)
     if "analytics" not in res:
         row = await service.get_state(db, user.id)
-        items = engine.items_of(d.exam_key, user.grade, d.variant, (d.created_at or datetime.now()).date(), d.answers)
-        from app.learning import analytics
         res["analytics"] = {**analytics.build(items, d.answers or {}, engine.build_model(row.data, d.exam_key), d.exam_key,
                                               row.data.get("target")), "summary": None}
         d.result = res
         await db.commit()
+    available = {it["id"]: analytics.walkthrough_available(it, d.answers or {}) for it in items}
+    res["analytics"] = {**res["analytics"], "rows": [
+        {**row, "walkthrough_available": available.get(row["id"], False)} for row in res["analytics"]["rows"]]}
     return {"id": d.id, "mode": d.mode, "date": d.created_at.date().isoformat() if d.created_at else None, **res}
 
 

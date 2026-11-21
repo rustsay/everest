@@ -95,7 +95,7 @@ export default function App() {
     return (
       <Diagnostic mode="first" required={false} exam={me.exam_info}
         onFinished={(r) => { setResult(r); setStage('result') }}
-        onPause={() => { setStage('app'); reveal(me) }}
+        onPause={() => { history.replaceState(null, '', viewHash({ v: 'home' })); setStage('app') }}
         onSkip={() => { const m = { ...me, settings: { ...me.settings, onb: 'skipped' } }; setMe(m); setStage('app'); reveal(m) }} />
     )
   }
@@ -129,7 +129,7 @@ function Main() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (mockRes) return <Result r={mockRes} name={me.name} sound={me.settings.sound !== false} onGo={() => { setMockRes(null); app.reload(); app.go('home') }} />
-  if (mock) return <Diagnostic mode="mock" required={false} exam={me.exam_info} onFinished={(r) => { setMock(false); setMockRes(r) }} onPause={() => { setMock(false); app.reload(); app.toast('Прогресс пробника сохранён. Продолжить можно из личного кабинета') }} />
+  if (mock) return <Diagnostic mode="mock" required={false} exam={me.exam_info} onFinished={(r) => { setMock(false); setMockRes(r) }} onPause={() => { setMock(false); app.go('home'); app.reload(); app.toast('Продолжить пробник можно из личного кабинета') }} />
 
   let page
   switch (view.v) {

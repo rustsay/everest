@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { TaskResult, TaskStatus, TASK_INFO } from '../types'
 import ResultModal from './ResultModal'
+import { clipboardImages } from '../utils/clipboard'
 
 interface Props {
   sessionId: string
@@ -53,7 +54,13 @@ export default function TaskCard({ sessionId, taskId, result, agentProgress, onU
   return (
     <>
       <div
+        tabIndex={0}
         className={`tcard ${dragging ? 'drag' : status === 'done' ? 'done' : status === 'error' ? 'err' : ''}`}
+        onPaste={(event) => {
+          if (status !== 'pending' && status !== 'error') return
+          const files = clipboardImages(event.clipboardData)
+          if (files.length) { event.preventDefault(); onUpload(files) }
+        }}
         onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
         onDragLeave={() => setDragging(false)}
         onDrop={(e) => {
@@ -81,7 +88,7 @@ export default function TaskCard({ sessionId, taskId, result, agentProgress, onU
         {(status === 'pending' || status === 'error') && (
           <button onClick={() => inputRef.current?.click()} className="drop" style={{ padding: 14, cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
             <b>Сфотографируйте или перетащите сюда</b>
-            <span className="muted" style={{ fontSize: 12 }}>можно несколько фото, jpg, png или pdf</span>
+            <span className="muted" style={{ fontSize: 12 }}>можно несколько фото, jpg, png или pdf · вставка фото: Ctrl+V или ⌘V</span>
           </button>
         )}
         {status === 'done' && <button onClick={() => setShowModal(true)} className="btn btn-sm btn-ghost">Подробный разбор →</button>}

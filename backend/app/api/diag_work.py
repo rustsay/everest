@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from datetime import date
 from pathlib import Path
 
@@ -96,7 +97,8 @@ def public_work(answers: dict) -> dict:
             for k, v in (answers.get("_work") or {}).items()}
 
 
-async def _analyze(diag_id: int, item_id: str, item: dict, pages: list[tuple[bytes, str]], picked: dict | None = None) -> None:
+async def _analyze(diag_id: int, item_id: str, item: dict, pages: list[tuple[bytes, str]], picked: dict | None = None,
+                   upload_id: str | None = None) -> None:
     """Background: check the photo and store the result in the diagnostic.
     picked: the type the student chose in a part-2 item of the diagnostic by types (its problem is checked)."""
     result, status, error = None, "done", ""
@@ -134,7 +136,7 @@ async def _analyze(diag_id: int, item_id: str, item: dict, pages: list[tuple[byt
             if d is None or d.finished:
                 return
             w = dict(((d.answers or {}).get("_work") or {}).get(item_id) or {})
-            if w.get("mode") != "photo":
+            if w.get("mode") != "photo" or (upload_id is not None and w.get("upload_id") != upload_id):
                 return  # the student changed the choice while the check was running
             w.update({"status": status, "result": result, "error": error})
             _set_work(d, item_id, w)
@@ -166,17 +168,21 @@ async def upload_work(diag_id: int, item_id: str, files: list[UploadFile] = File
             raise HTTPException(400, "Файл больше 15 МБ")
         pages += file_pages(data, f.filename or "photo.jpg", 10 - len(pages))
     pages = [(b, f"p{i}.jpg") for i, (b, _) in enumerate(pages)]
-    folder = _folder(diag_id, item_id)
-    folder.mkdir(parents=True, exist_ok=True)
-    for old in folder.glob("*.jpg"):
-        old.unlink()
-    for b, name in pages:
-        (folder / name).write_bytes(b)
+    upload_id = uuid.uuid4().hex
     async with _lock(diag_id):
         await db.refresh(d)
-        _set_work(d, item_id, {"mode": "photo", "status": "pending", "files": len(pages)})
+        if item.get("choices") and chosen(item, d.answers or {}) != picked:
+            raise HTTPException(409, "Тип задания изменился. Прикрепите решение ещё раз")
+        folder = _folder(diag_id, item_id)
+        folder.mkdir(parents=True, exist_ok=True)
+        for old in folder.glob("*.jpg"):
+            old.unlink()
+        for b, name in pages:
+            (folder / name).write_bytes(b)
+        _set_work(d, item_id, {"mode": "photo", "status": "pending", "files": len(pages), "upload_id": upload_id},
+                  answer="" if (d.answers or {}).get(item_id) == "?" else None)
         await db.commit()
-    asyncio.create_task(_analyze(diag_id, item_id, item, pages, picked))
+    asyncio.create_task(_analyze(diag_id, item_id, item, pages, picked, upload_id))
     return {"work": public_work(d.answers)}
 
 
@@ -242,6 +248,8 @@ class ChoiceIn(BaseModel):
 async def set_choice(diag_id: int, item_id: str, body: ChoiceIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     """Part 2 of the diagnostic by types: which type the student solves. A photo of another type is dropped."""
     d = await _own(db, diag_id, user)
+    from app.api.learning import exam_guard
+    exam_guard(d)
     item = _items(d, user).get(item_id)
     if item is None or not item.get("choices"):
         raise HTTPException(404, "Нет такого задания")
@@ -254,6 +262,7 @@ async def set_choice(diag_id: int, item_id: str, body: ChoiceIn, user: User = De
         if ch.get(item_id) != body.type:
             ch[item_id] = body.type
             ans["_choice"] = ch
+            ans.pop(item_id, None)
             d.answers = ans
             if ((ans.get("_work") or {}).get(item_id) or {}).get("mode") in ("photo", "dont_know"):
                 _set_work(d, item_id, None)

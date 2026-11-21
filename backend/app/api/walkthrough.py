@@ -1,11 +1,15 @@
 """Board walkthroughs of problems from the bank and the task maps: the student opens any problem and watches it solved
-step by step. Built once per problem and shared. With the model: steps from the condition, the known answer and the
+step by step. Bank walkthroughs are shared; diagnostic walkthroughs are cached per learner and task with feedback.
+With the model: steps from the condition, the known answer and the
 solution of the bank (the answer is not changed). Without the model: the bank solution split into steps."""
 from __future__ import annotations
 
 import base64
+import hashlib
+import json
 import logging
 import re
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
@@ -17,8 +21,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.deps import get_current_user
 from app.config import settings
 from app.db.database import get_db
-from app.db.models import ProblemWalkthrough, User
-from app.learning import fipi, problems, service
+from app.db.models import Diagnostic, ProblemWalkthrough, User
+from app.learning import analytics, engine, fipi, problems, service
 from app.learning.taskmaps import TASK_MAPS
 
 log = logging.getLogger(__name__)
@@ -113,6 +117,107 @@ async def walkthrough(body: RefIn, user: User = Depends(get_current_user), db: A
         if steps is None:
             raise HTTPException(503, "Для этой задачи пока нет решения в банке, а ИИ не подключён: разбор не из чего собрать")
         row = await _persist_walkthrough(db, body.ref, source, steps)
+    return {**meta, "source": row.source, "steps": row.steps}
+
+
+def _diagnostic_feedback(item: dict, answers: dict) -> dict:
+    kind, note, _, _ = analytics.item_kind(item, answers)
+    work = (answers.get("_work") or {}).get(item["id"]) or {}
+    result = work.get("result") if work.get("status") == "done" else None
+    answer = answers.get(item["id"])
+    return {
+        "kind": kind, "label": analytics.KIND[kind],
+        "answer": str(answer) if item["t"] == "num" and answer not in (None, "", "?") else None,
+        "right": str(item["a"]) if item["t"] == "num" else None,
+        "note": note, "errors": [str(e) for e in ((result or {}).get("errors") or [])][:4],
+    }
+
+
+def _diagnostic_input(problem: dict) -> tuple[str, list[str]]:
+    """Use the original condition and its pictures; never substitute a typical problem."""
+    from app.learning.exambank import path_of
+    prompt = problem.get("q") or "Условие задачи на картинке."
+    # Exact coordinates of the fixed diagrams drawn by DiagnosticFigure in the client.
+    diagrams = {
+        "tangent": "Касательная проходит через отмеченные точки (−1; 3) и (4; 2), x₀ = 1.",
+        "hyper": "На графике y = k/x отмечены точки (1; 5) и (5; 1).",
+        "trig": "На графике y = a·cos x + b отмечены точки (0; 3) и (π; −1). Шаг сетки по Ox равен π/2.",
+        "expo": "На графике показательной функции отмечены точки (−1; 4) и (0; 1).",
+    }
+    if problem.get("fig") in diagrams:
+        prompt += "\nДанные исходного рисунка: " + diagrams[problem["fig"]]
+    images = []
+    for field, description in (
+        ("ctx_img", "Общее условие (текст, план или таблица)"),
+        ("img", "Точное условие с формулами и рисунком"),
+        ("ans_img", "Верный ответ из сборника"),
+    ):
+        if problem.get(field):
+            path = path_of(problem[field])
+            if path is None or not path.is_file():
+                raise HTTPException(503, "Не удалось загрузить исходную картинку задачи. Попробуйте позже")
+            images.append(base64.b64encode(path.read_bytes()).decode())
+            prompt += f"\n{description} — на картинке № {len(images)}."
+    if problem.get("a"):
+        prompt += f"\nВерный ответ: {problem['a']}"
+    if problem.get("sol"):
+        prompt += f"\nРешение из банка (опирайся на него, ответ не меняй): {problem['sol']}"
+    return prompt, images
+
+
+@router.post("/diagnostics/{diag_id}/items/{item_id}/walkthrough")
+async def diagnostic_walkthrough(diag_id: int, item_id: str, user: User = Depends(get_current_user),
+                                 db: AsyncSession = Depends(get_db)):
+    d = await db.get(Diagnostic, diag_id)
+    if d is None or d.user_id != user.id or not d.finished:
+        raise HTTPException(404, "Завершённая диагностика не найдена")
+    items = engine.items_of(d.exam_key, user.grade, d.variant, (d.created_at or datetime.now()).date(), d.answers)
+    item = next((it for it in items if it["id"] == item_id), None)
+    if item is None:
+        raise HTTPException(404, "Нет такого задания в диагностике")
+    problem = item
+    if item.get("choices"):
+        from app.learning.diag_types import chosen
+        problem = chosen(item, d.answers or {})
+        if problem is None:
+            raise HTTPException(400, "В этом задании тип не был выбран: конкретной задачи для разбора нет")
+    problem = dict(problem)
+    # A reference can supply a written solution, but the diagnostic's condition remains authoritative.
+    if problem.get("ref") and not problem.get("sol"):
+        found = await problems.resolve(db, [problem["ref"]])
+        bank = found.get(problem["ref"])
+        if bank and bank.get("q") == problem.get("q") and bank.get("img") == problem.get("img"):
+            problem["sol"] = bank.get("sol")
+            problem["ans_img"] = problem.get("ans_img") or bank.get("ans_img")
+    feedback = _diagnostic_feedback(item, d.answers or {})
+    identity = json.dumps({"version": 1, "user": user.id, "diagnostic": d.id, "item": item_id,
+                           "exam": d.exam_key, "problem": problem, "feedback": feedback}, sort_keys=True, ensure_ascii=False)
+    ref = "diag:" + hashlib.sha256(identity.encode()).hexdigest()[:35]
+    meta = {"ref": ref, "task": item.get("n"), "q": problem.get("q") or "Условие на изображении",
+            "title": problem.get("name") or item.get("type_name") or (f"Задание № {item['n']}" if item.get("n") else "Разбор задачи"),
+            "proto_name": problem.get("name") or item.get("type_name") or "", "fig": None,
+            "condition_fig": problem.get("fig"), "img": problem.get("img"), "ctx_img": problem.get("ctx_img"),
+            "feedback": feedback, "diagnostic_id": d.id, "item_id": item_id}
+    row = (await db.execute(select(ProblemWalkthrough).where(ProblemWalkthrough.ref == ref))).scalars().first()
+    if row is None:
+        steps, source = None, "solution"
+        if settings.llm_ready:
+            from app.video.steps import generate_steps
+            prompt, images = _diagnostic_input(problem)
+            try:
+                data = await generate_steps(prompt, images, feedback=feedback)
+                steps, source = data["steps"], "ai"
+            except Exception:  # noqa: BLE001 - a written solution is a safe fallback
+                log.exception("diagnostic walkthrough %s/%s: model failed", diag_id, item_id)
+        if steps is None and problem.get("sol"):
+            steps = from_solution(problem["sol"], problem.get("a"))
+            notes = feedback["errors"] or ([feedback["note"]] if feedback["note"] else [])
+            if notes:
+                steps.insert(0, {"title": "На что обратить внимание", "lines": [s[:90] for s in notes[:4]], "text": " ".join(notes)})
+        if not steps:
+            raise HTTPException(503, "Для разбора этой задачи нужен ИИ: готового решения в банке нет. Попробуйте позже")
+        # Private to this diagnostic and this learner; never reuse another student's explanation.
+        row = await _persist_walkthrough(db, ref, source, steps)
     return {**meta, "source": row.source, "steps": row.steps}
 
 

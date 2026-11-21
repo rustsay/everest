@@ -61,6 +61,13 @@ def item_kind(it: dict, answers: dict) -> tuple[str, str, float, float]:
     return "unchecked", str(w.get("error") or ""), 0.0, mx
 
 
+def walkthrough_available(item: dict, answers: dict) -> bool:
+    if item.get("choices"):
+        from app.learning.diag_types import chosen
+        item = chosen(item, answers)
+    return bool(item and (item.get("q") or item.get("img")))
+
+
 def build(items: list[dict], answers: dict, model: dict, key: str, target: dict | None = None) -> dict:
     tasks = {t["id"]: t for t in EXAMS[key]["tasks"]}
     rows = []
@@ -78,6 +85,7 @@ def build(items: list[dict], answers: dict, model: dict, key: str, target: dict 
         rows.append({
             "id": it["id"], "n": it.get("n"), "task": it["task"], "name": it.get("type_name") or t.get("name") or it.get("src", ""),
             "type": it.get("type"), "share": share,
+            "walkthrough_available": walkthrough_available(it, answers),
             "part": t.get("part", 1), "block": engine.task_block(t) if t.get("need") else "alg",
             "kind": kind, "label": KIND[kind], "note": note[:300], "errors": errors, "pts": pts, "max": mx,
             "answer": None if it["t"] != "num" or answers.get(it["id"]) in (None, "?") else str(answers.get(it["id"])),

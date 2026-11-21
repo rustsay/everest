@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 /** Show source problem images in a reliable in-page viewer instead of relying on a new browser tab. */
 export default function ProblemText({ q, img, small, ctx }: { q: string; img?: string | null; small?: boolean; ctx?: string | null }) {
@@ -29,11 +30,25 @@ export default function ProblemText({ q, img, small, ctx }: { q: string; img?: s
 }
 
 function ImageViewer({ src, onClose }: { src: string; onClose: () => void }) {
-  return (
-    <div className="prob-lightbox" role="dialog" aria-modal="true" aria-label="Изображение задания" onClick={onClose}>
-      <button type="button" className="prob-lightbox-close" onClick={onClose} aria-label="Закрыть изображение">×</button>
+  const close = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null
+    const overflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    close.current?.focus()
+    return () => { document.body.style.overflow = overflow; previous?.focus() }
+  }, [])
+
+  // The animated page creates a containing block for fixed elements. Keep the viewer outside it.
+  return createPortal(
+    <div className="prob-lightbox" role="dialog" aria-modal="true" aria-label="Изображение задания" onClick={onClose} onKeyDown={(e) => {
+      if (e.key === 'Escape') { e.stopPropagation(); onClose() }
+      if (e.key === 'Tab') { e.preventDefault(); close.current?.focus() }
+    }}>
+      <button ref={close} type="button" className="prob-lightbox-close" onClick={onClose} aria-label="Закрыть изображение">×</button>
       <img src={src} alt="Условие задания" onClick={(e) => e.stopPropagation()} />
-    </div>
+    </div>,
+    document.body,
   )
 }
 

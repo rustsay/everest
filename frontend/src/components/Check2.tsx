@@ -4,6 +4,7 @@ import { useApp } from '../app/store'
 import type { Check2Item, Check2Result, PracticeItem } from '../types'
 import { Icon, fmtD } from '../design/ui'
 import ProblemText from './ProblemText'
+import useImagePaste from '../hooks/useImagePaste'
 
 /** OGE, second part (20-25): a photo of the full solution, 0-2 points. A bank problem is graded against the answer of the collection. */
 export default function Check2() {
@@ -18,6 +19,7 @@ export default function Check2() {
   const [busy, setBusy] = useState(false)
   const [res, setRes] = useState<Check2Result | null>(null)
   const [hist, setHist] = useState<Check2Item[]>([])
+  useImagePaste((images) => setFiles((previous) => [...previous, ...images].slice(0, 5)), busy)
   const loadHist = () => check2History().then((r) => setHist(r.items)).catch(() => null)
   useEffect(() => { loadHist() }, [])
   useEffect(() => {
@@ -70,6 +72,7 @@ export default function Check2() {
         <div className="field"><label htmlFor="c2Files">Фото решения (до 5)</label>
           <input id="c2Files" className="input" type="file" accept="image/*,.pdf,.heic" multiple style={{ paddingTop: 10 }}
             onChange={(e) => setFiles(Array.from(e.target.files ?? []).slice(0, 5))} /></div>
+        <p className="muted" style={{ fontSize: 13 }}>Фото можно вставить из буфера: Ctrl+V или ⌘V.{files.length > 0 && ` Прикреплено: ${files.map((file) => file.name).join(', ')}.`}</p>
         <button className="btn btn-gold" type="submit" disabled={busy}><Icon n="check" s={18} c="#16231F" />{busy ? 'Проверяю…' : 'Проверить'}</button>
       </form>
       {res && (

@@ -1,11 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { ReactNode, useEffect, useRef, useState } from 'react'
 import { useApp } from '../app/store'
 import { Icon, StarBot, hush, prepareSpeech, reduceMotion, setSpeechRate, speak } from '../design/ui'
 import type { VTask, Step } from '../pages/videoData'
 import BoardFig from './BoardFig'
 import ProblemText from './ProblemText'
+import type { WalkthroughFeedback } from '../types'
 
-export default function SolutionBoard({ n, task, onBack, onUnderstood, onNotUnderstood, proto, label, backLabel, doneLabel, img, ctx }: {
+export default function SolutionBoard({ n, task, onBack, onUnderstood, onNotUnderstood, proto, label, backLabel, doneLabel, img, ctx, feedback, conditionFigure }: {
   n?: number; task: VTask; onBack: () => void; onUnderstood: () => void; onNotUnderstood: (step: Step) => void
   /** figure of a task map prototype (bank problems: string or null, so the typical drawing is not shown); label: line above the title */
   proto?: string | null; label?: string; backLabel?: string; doneLabel?: string
@@ -13,6 +14,8 @@ export default function SolutionBoard({ n, task, onBack, onUnderstood, onNotUnde
   img?: string | null
   /** OGE 1-5: the shared text above the problem */
   ctx?: string | null
+  feedback?: WalkthroughFeedback
+  conditionFigure?: ReactNode
 }) {
   const app = useApp()
   const v = task
@@ -110,6 +113,16 @@ export default function SolutionBoard({ n, task, onBack, onUnderstood, onNotUnde
       <div className="v-head"><button className="btn btn-sm btn-ghost" onClick={onBack}><Icon n="prev" s={16} />{backLabel ?? 'Все задания'}</button>
         <div style={{ minWidth: 0 }}><p className="muted">{label ?? (n ? 'Разбор · задание ' + n : 'Разбор своей задачи')}</p><h1>{v.t}</h1></div></div>
       <div className="v-cond"><span className="label">Условие</span>{img ? <ProblemText q={v.c} img={img} ctx={ctx} small /> : <p>{v.c}</p>}</div>
+      {conditionFigure}
+      {feedback && <section className="card" aria-label="Твой результат в диагностике">
+        <b>Твой результат: {feedback.label}</b>
+        {feedback.answer != null && <p style={{ marginTop: 6 }}>Твой ответ: <b>{feedback.answer}</b>{feedback.right != null && <> · верный: <b>{feedback.right}</b></>}</p>}
+        {feedback.note && feedback.note !== feedback.errors.join('; ') && <p style={{ marginTop: 6 }}>{feedback.note}</p>}
+        {feedback.errors.length > 0 && <ul style={{ marginTop: 6, paddingLeft: 20, listStyle: 'disc' }}>{feedback.errors.map((error, i) => <li key={i}>{error}</li>)}</ul>}
+        {!feedback.note && !feedback.errors.length && <p className="muted" style={{ marginTop: 6 }}>{feedback.kind === 'dont_know' || feedback.kind === 'none'
+          ? 'В диагностике решения не было. Разберём задачу с начала.'
+          : 'Точный шаг ошибки не определён. Сравни своё решение с шагами разбора.'}</p>}
+      </section>}
       <div className="row">
         <section style={{ flex: '1.5 1 440px', minWidth: 0 }} aria-label="Видеоразбор">
           <div className="board">

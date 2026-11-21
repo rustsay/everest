@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import SolutionBoard from '../components/SolutionBoard'
 import GeoFig from '../components/GeoFig'
-import { getPractice, getWalkthrough, sendEvent } from '../api/client'
+import { getDiagnosticWalkthrough, getPractice, getWalkthrough, sendEvent } from '../api/client'
 import { useApp } from '../app/store'
 import { Icon, plural } from '../design/ui'
 import { VTASK } from './videoData'
@@ -10,12 +10,17 @@ import ProblemText from '../components/ProblemText'
 import { examRange } from '../types'
 import ExamSwitch from '../components/ExamSwitch'
 import type { PracticeItem, Walkthrough } from '../types'
+import type { DiagnosticWalkthrough } from '../types'
+import { DiagnosticFigure } from './Diagnostic'
 
 /** «Разборы»: tabs 1-19. In each: the typical walkthrough of the task and walkthroughs of the bank problems.
- * Routes: #video (tab 1), #video/t5 (tab 5), #video/5 (typical board), #video/p-<ref> (bank problem), #video/custom-<id>. */
+ * Routes: #video (tab 1), #video/t5 (tab 5), #video/5 (typical board), #video/p-<ref> (bank problem),
+ * #video/diag-<diagnostic id>-<item id> (personal diagnostic walkthrough), #video/custom-<id>. */
 export default function Videos() {
   const app = useApp()
   const id = app.view.id ?? ''
+  const diagnostic = id.match(/^diag-(\d+)-(.+)$/)
+  if (diagnostic) return <DiagnosticBoard key={id} diagnosticId={Number(diagnostic[1])} itemId={diagnostic[2]} />
   if (id.startsWith('custom-')) return <GeneratedVideos detailId={id.slice(7)} />
   if (id.startsWith('p-')) return <BankBoard key={id} r={id.slice(2)} />
   const ex = app.exam
@@ -95,6 +100,32 @@ function List({ tab }: { tab: number }) {
       <p className="muted" style={{ fontSize: 12.5 }}>{prof ? 'Типовые разборы собраны на задачах в формате ЕГЭ. ' : ''} Разборы задач банка строятся по условию, ответу и решению из банка. Голос включается в пузыре Звёздочки.</p>
     </>
   )
+}
+
+function DiagnosticBoard({ diagnosticId, itemId }: { diagnosticId: number; itemId: string }) {
+  const app = useApp()
+  const [w, setW] = useState<DiagnosticWalkthrough | null>(null)
+  const [err, setErr] = useState('')
+  const [retry, setRetry] = useState(0)
+  useEffect(() => {
+    let disposed = false
+    setErr(''); setW(null)
+    getDiagnosticWalkthrough(diagnosticId, itemId).then((value) => { if (!disposed) setW(value) })
+      .catch((e) => { if (!disposed) setErr(e instanceof Error ? e.message : 'Не удалось собрать разбор') })
+    return () => { disposed = true }
+  }, [diagnosticId, itemId, retry])
+  const back = () => app.go({ v: 'diag', id: String(diagnosticId) })
+  if (err) return <section className="card" style={{ display: 'grid', gap: 10 }}>
+    <h2>Разбор не получился</h2><p className="muted">{err}</p>
+    <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-line" onClick={back}>К результатам</button><button className="btn btn-em" onClick={() => setRetry((n) => n + 1)}>Попробовать ещё раз</button></div>
+  </section>
+  if (!w) return <section className="card"><p className="muted">Готовлю разбор этой задачи с учётом твоего ответа и замечаний проверки…</p></section>
+  const task = { t: w.title, c: w.q, s: w.steps.map((s) => [s.title, s.lines, s.text] as [string, string[], string]) }
+  return <SolutionBoard n={w.task ?? undefined} proto={null} task={task} img={w.img} ctx={w.ctx_img} feedback={w.feedback}
+    conditionFigure={w.condition_fig ? <DiagnosticFigure k={w.condition_fig} /> : undefined}
+    label="Разбор задачи из диагностики" backLabel="К результатам" doneLabel="Понял, к результатам"
+    onBack={back} onUnderstood={back}
+    onNotUnderstood={(step) => app.go({ v: 'chat', id: `Разбор моей задачи из диагностики${w.task ? ', задание ' + w.task : ''}. Условие: ${w.q}. Мой ответ: ${w.feedback.answer ?? 'нет ответа'}. Замечания проверки: ${w.feedback.note} ${w.feedback.errors.join('; ')}. Не понял шаг «${step[0]}»: ${step[1].join('; ')}. Объясни по-другому.` })} />
 }
 
 function BankBoard({ r }: { r: string }) {

@@ -336,7 +336,7 @@ class LearningPath(Base):
 
 
 class ProblemWalkthrough(Base):
-    """A board walkthrough of one bank / task map problem, shared by all students (built once)."""
+    """Cached board steps: shared bank refs or private diagnostic hashes behind the diagnostic ownership check."""
     __tablename__ = "problem_walkthroughs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

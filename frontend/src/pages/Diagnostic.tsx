@@ -3,6 +3,7 @@ import { finishDiagnostic, getDiagWork, openDiagnostic, saveAnswer, saveDiagnost
 import ProblemText from '../components/ProblemText'
 import type { DiagChoice, DiagItem, DiagResult, DiagRun, DiagWork, ExamInfo } from '../types'
 import { Icon, plural } from '../design/ui'
+import useImagePaste from '../hooks/useImagePaste'
 
 interface Props {
   mode: 'first' | 'mock'
@@ -19,6 +20,21 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
   const [i, setI] = useState(0)
   const [err, setErr] = useState('')
   const [deadline, setDeadline] = useState<number | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [itemBusy, setItemBusy] = useState(false)
+  const busyRef = useRef(false)
+  busyRef.current = itemBusy || saving
+  const saves = useRef<Promise<unknown>>(Promise.resolve())
+  const enqueueSave = (save: () => Promise<unknown>) => {
+    const pending = saves.current.catch(() => {}).then(save)
+    saves.current = pending
+    // Failed autosaves are retried from the current answers before exiting or finishing.
+    void pending.catch(() => {})
+  }
+  const persistAnswers = async (r: DiagRun) => {
+    await saves.current.catch(() => {})
+    await Promise.all(Object.entries(r.answers).filter(([key]) => !key.startsWith('_')).map(([key, value]) => saveAnswer(r.id, key, value, null)))
+  }
 
   const begin = (r: DiagRun) => {
     setRun(r); setI(Math.min(r.position, r.items.length - 1))
@@ -40,7 +56,10 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
   const finish = async (r: DiagRun) => {
     setPhase('finishing'); setErr('')
     try {
-      await Promise.all(Object.entries(r.answers).filter(([k]) => !k.startsWith('_')).map(([k, v]) => saveAnswer(r.id, k, v, null).catch(() => null)))
+      // On resuming an expired exam, the server rejects edits after its grace period.
+      // Finish using the answers already stored on the server in that case.
+      if (r.exam_mode && deadline && Date.now() > deadline + 90_000) await saves.current.catch(() => {})
+      else await persistAnswers(r)
       // photos are checked in the background: wait until every check is done
       for (let k = 0; k < 120; k++) {
         const w = (await getDiagWork(r.id)).work
@@ -69,34 +88,42 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
   runRef.current = run
   useEffect(() => {
     if (!deadline || phase !== 'q') return
-    const t = window.setInterval(() => { if (Date.now() >= deadline && runRef.current) { clearInterval(t); finish(runRef.current) } }, 1000)
+    const t = window.setInterval(() => { if (Date.now() >= deadline && runRef.current && !busyRef.current) { clearInterval(t); finish(runRef.current) } }, 1000)
     return () => clearInterval(t)
   }, [deadline, phase]) // eslint-disable-line react-hooks/exhaustive-deps
   const setAnswer = (value: string) => {
     if (!run) return
     const it = run.items[i]
     const r = { ...run, answers: { ...run.answers, [it.id]: value } }
-    setRun(r)
-    saveAnswer(run.id, it.id, value, i + 1).catch(() => { /* retried on finish */ })
+    setRun((current) => current ? { ...current, answers: { ...current.answers, [it.id]: value } } : current)
+    enqueueSave(() => saveAnswer(run.id, it.id, value, null))
     return r
   }
-  const setWork = (work: Record<string, DiagWork>) => setRun((r) => (r ? { ...r, work } : r))
+  const beforeWork = () => saves.current.catch(() => {})
+  const setWork = (work: Record<string, DiagWork>) => setRun((r) => {
+    if (!r) return r
+    const answers = { ...r.answers }
+    if (work[r.items[i].id]?.mode === 'photo' && answers[r.items[i].id] === '?') delete answers[r.items[i].id]
+    return { ...r, answers, work }
+  })
 
   // Persist the current item as the student moves around; answers and photos are already saved independently.
   useEffect(() => {
     if (phase !== 'q' || !run) return
-    saveDiagnosticProgress(run.id, i).catch(() => { /* progress is also recovered from saved answers */ })
+    enqueueSave(() => saveDiagnosticProgress(run.id, i))
   }, [phase, run?.id, i])
 
   const saveAndExit = async () => {
+    if (saving || itemBusy) return
     if (!run) { onPause?.(); return }
+    setSaving(true); setErr('')
     try {
-      await Promise.all(Object.entries(run.answers).filter(([key]) => !key.startsWith('_')).map(([key, value]) => saveAnswer(run.id, key, value, null)))
+      await persistAnswers(run)
       await saveDiagnosticProgress(run.id, i)
       onPause?.()
     } catch (e) {
-      setErr('Не удалось сохранить позицию. Проверь интернет и попробуй ещё раз.')
-    }
+      setErr('Не удалось сохранить прогресс. Проверь интернет и попробуй ещё раз.')
+    } finally { setSaving(false) }
   }
 
   /** The diagnostic by types: «не знаю» twice in a row inside one task - offer to skip the rest of its types. */
@@ -182,31 +209,39 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
 
   const it = run.items[i], n = run.items.length
   const ex = !!run.exam_mode
-  const filled = (x: DiagItem) => (x.t === 'num' ? !!run.answers[x.id] && run.answers[x.id] !== '?' : run.work[x.id]?.mode === 'photo') || !!run.choice?.[x.id]
+  const filled = (x: DiagItem) => run.work[x.id]?.mode === 'dont_know' || run.answers[x.id] === '?' || (x.t === 'num' ? !!run.answers[x.id]?.trim() : run.work[x.id]?.mode === 'photo')
+  const blocked = saving || itemBusy
   return (
     <Frame top={<>
       {ex && deadline && <Timer deadline={deadline} />}
-      {ex && <button className="ob-link" onClick={() => { if (window.confirm('Сдать пробник сейчас? Пустые задания засчитаются как нерешённые.')) finish(run) }}>Сдать</button>}
-      <button className="ob-link" onClick={saveAndExit}>{ex ? 'Сохранить и выйти (время идёт)' : 'Сохранить прогресс и выйти'}</button>
+      {ex && <button className="ob-link" disabled={blocked} onClick={() => { if (window.confirm('Сдать пробник сейчас? Пустые задания засчитаются как нерешённые.')) finish(run) }}>Сдать</button>}
+      <button className="ob-link" disabled={blocked} onClick={saveAndExit}>{saving ? 'Сохраняю…' : ex ? 'Сохранить и выйти (время идёт)' : 'Сохранить прогресс и выйти'}</button>
     </>}>
       <div className="q-prog"><span style={{ width: `${(i / n) * 100}%` }} /></div>
       <div className="q-grid" aria-label="Навигация по заданиям">{run.items.map((x, k) => (
-        <button key={x.id} className={`${k === i ? 'on' : ''} ${filled(x) ? 'done' : ''}`} onClick={() => { setI(k); setErr('') }} aria-label={`Задание ${x.n ?? k + 1}${filled(x) ? ', есть ответ' : ''}`}>{x.n ?? k + 1}</button>
+        <button key={x.id} disabled={blocked} aria-current={k === i ? 'step' : undefined} className={`${k === i ? 'on' : ''} ${filled(x) ? 'done' : ''}`} onClick={() => { setI(k); setErr('') }} aria-label={`Задание ${x.type ?? x.n ?? k + 1}${filled(x) ? ', заполнено' : ''}`}>{x.type ?? x.n ?? k + 1}</button>
       ))}</div>
       <p className="q-meta">{mode === 'mock' ? 'Пробник' : 'Диагностика'} · {i + 1} из {n}
         {it.type ? ` · задание № ${it.n}, тип ${it.type} из ${it.of_types}: ${it.type_name}` : it.choices ? ` · часть 2, задание № ${it.n}` : it.n ? ` · ${it.t === 'self' ? 'часть 2' : 'часть 1'}, задание № ${it.n}` : ''}</p>
+      <fieldset disabled={saving} style={{ display: 'flex', flexDirection: 'column', gap: 16, border: 0, padding: 0, margin: 0, minWidth: 0 }}>
       {it.choices
-        ? <ChoiceBox key={it.id} run={run} item={it} onChoice={(c, w) => setRun((r) => (r ? { ...r, choice: c, work: w } : r))} />
+        ? <ChoiceBox key={`choice-${it.id}`} run={run} item={it} disabled={blocked} onBusy={setItemBusy} beforeWork={beforeWork} onChoice={(c, w) => setRun((r) => {
+            if (!r) return r
+            const answers = { ...r.answers }
+            if (r.choice?.[it.id] !== c[it.id]) delete answers[it.id]
+            return { ...r, answers, choice: c, work: w }
+          })} />
         : <>
-          <div className="q-text">{it.img ? <ProblemText q={it.q} img={it.img} ctx={it.ctx_img} /> : it.q.split('\n').map((l, k) => <span key={k}>{l}<br /></span>)}</div>
-          {it.fig && <Figure k={it.fig} />}
+          <div className="q-text">{it.img ? <ProblemText key={it.id} q={it.q} img={it.img} ctx={it.ctx_img} /> : it.q.split('\n').map((l, k) => <span key={k}>{l}<br /></span>)}</div>
+          {it.fig && <DiagnosticFigure k={it.fig} />}
           <p className="q-src">{it.src}</p>
         </>}
       {it.t === 'self'
         ? <SelfAssess item={it} value={run.answers[it.id]} onPick={(v) => { const r = setAnswer(v); if (r) next(r) }} />
-        : <ItemWork key={it.id} run={run} item={it} llm={run.llm_ready} exam={ex} onAnswer={setAnswer} onWork={setWork} onNext={() => next(run)}
+        : <ItemWork key={`work-${it.id}`} run={run} item={it} llm={run.llm_ready} exam={ex} disabled={blocked} onBusy={setItemBusy} beforeWork={beforeWork} onAnswer={setAnswer} onWork={setWork} onNext={() => next(run)}
             onDontKnow={(r) => afterDontKnow(r)} locked={it.choices && !run.choice?.[it.id] ? 'Сначала выбери тип задания выше' : ''} />}
-      {i > 0 && <button className="ob-link" onClick={() => { setI(i - 1); setErr('') }}>Назад</button>}
+      </fieldset>
+      {i > 0 && <button className="ob-link" disabled={blocked} onClick={() => { setI(i - 1); setErr('') }}>Назад</button>}
       {err && <p className="auth-msg">{err}</p>}
     </Frame>
   )
@@ -234,8 +269,10 @@ const STATUS: Record<string, string> = {
 }
 
 /** Answer (first part) + the photo of the solution, «решил устно» (task 8) or «не знаю». */
-function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext, onDontKnow, locked }: {
+function ItemWork({ run, item, llm, exam, disabled, onBusy, beforeWork, onAnswer, onWork, onNext, onDontKnow, locked }: {
   run: DiagRun; item: DiagItem; llm: boolean; exam?: boolean
+  disabled: boolean; onBusy: (busy: boolean) => void
+  beforeWork: () => Promise<unknown>
   onAnswer: (v: string) => DiagRun | undefined; onWork: (w: Record<string, DiagWork>) => void; onNext: () => void
   /** after «не знаю»: the parent decides where to go (the diagnostic by types may offer to skip the task) */
   onDontKnow?: (r: DiagRun) => void
@@ -248,6 +285,7 @@ function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext, onDontKnow, 
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
+  const uploading = useRef(false)
   const w = run.work[item.id]
   const mode = w?.mode && w.mode !== 'dont_know' ? w.mode : null
   // in exam conditions any task can be left (blank = not solved), and the first part needs only the answer; base: photo optional
@@ -255,28 +293,20 @@ function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext, onDontKnow, 
   const ready = exam || ((!num || ans.trim() !== '') && (mode === 'photo' || mode === 'oral' || optional))
 
   const upload = async (files: File[] | FileList | null) => {
-    if (!files?.length) return
-    setBusy(true); setMsg('')
-    try { onWork((await uploadDiagWork(run.id, item.id, Array.from(files))).work) } catch (e) { setMsg(String(e).replace('Error: ', '')) }
-    setBusy(false)
+    if (!files?.length || uploading.current || disabled || locked) return
+    uploading.current = true
+    setBusy(true); onBusy(true); setMsg('')
+    try { await beforeWork(); onWork((await uploadDiagWork(run.id, item.id, Array.from(files))).work) } catch (e) { setMsg(String(e).replace('Error: ', '')) }
+    uploading.current = false
+    setBusy(false); onBusy(false)
     if (fileRef.current) fileRef.current.value = ''
   }
-  useEffect(() => {
-    const onPaste = (event: ClipboardEvent) => {
-      if (busy || locked) return
-      const imageItems = Array.from(event.clipboardData?.items ?? []).filter((x) => x.type.startsWith('image/'))
-      if (!imageItems.length) return
-      const files = imageItems.map((x, idx) => x.getAsFile()).filter((x): x is File => !!x)
-        .map((file, idx) => new File([file], file.name || `clipboard-${Date.now()}-${idx}.png`, { type: file.type || 'image/png' }))
-      if (files.length) { event.preventDefault(); void upload(files) }
-    }
-    document.addEventListener('paste', onPaste)
-    return () => document.removeEventListener('paste', onPaste)
-  }, [run.id, item.id, busy, locked])
+  useImagePaste((files) => { void upload(files) }, busy || disabled || !!locked)
 
   const pick = async (m: 'dont_know' | 'oral' | 'clear') => {
-    setBusy(true); setMsg('')
+    setBusy(true); onBusy(true); setMsg('')
     try {
+      await beforeWork()
       const r = await setDiagMode(run.id, item.id, m)
       onWork(r.work)
       if (m === 'dont_know') {
@@ -284,7 +314,7 @@ function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext, onDontKnow, 
         if (onDontKnow && nr) onDontKnow({ ...nr, work: r.work }); else onNext()
       }
     } catch (e) { setMsg(String(e).replace('Error: ', '')) }
-    setBusy(false)
+    setBusy(false); onBusy(false)
   }
   const go = () => { if (num && (ans.trim() || !exam)) onAnswer(ans.trim()); onNext() }
 
@@ -293,7 +323,7 @@ function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext, onDontKnow, 
       {num && (
         <form className="ob-form" onSubmit={(e) => { e.preventDefault(); if (ready) go() }}>
           <label htmlFor="qIn" className="sr">Ответ</label>
-          <input id="qIn" className="input ob-input" inputMode="text" autoComplete="off" placeholder="Ответ" value={ans} onChange={(e) => { setAns(e.target.value); onAnswer(e.target.value) }} />
+          <input id="qIn" className="input ob-input" inputMode="text" autoComplete="off" maxLength={60} placeholder="Ответ" value={ans} onChange={(e) => { setAns(e.target.value); onAnswer(e.target.value) }} />
         </form>
       )}
       <div className="dw-box">
@@ -301,20 +331,21 @@ function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext, onDontKnow, 
         <input ref={fileRef} type="file" accept="image/*,.pdf,.heic,.heif" multiple hidden onChange={(e) => upload(e.target.files)} />
         <p className="dw-hint">Можно вставить скопированное изображение сочетанием Ctrl+V или ⌘V.</p>
         <div className="dw-btns">
-          <button className={`btn ${mode === 'photo' ? 'btn-line' : 'btn-em'}`} disabled={busy || !!locked} onClick={() => fileRef.current?.click()}>
+          <button className={`btn ${mode === 'photo' ? 'btn-line' : 'btn-em'}`} disabled={busy || disabled || !!locked} onClick={() => fileRef.current?.click()}>
             <Icon n="check" s={18} />{mode === 'photo' ? 'Заменить фото' : 'Прикрепить фото решения'}</button>
-          {item.oral && <button className={`btn ${mode === 'oral' ? 'btn-em' : 'btn-line'}`} disabled={busy} onClick={() => pick(mode === 'oral' ? 'clear' : 'oral')}>
+          {item.oral && <button className={`btn ${mode === 'oral' ? 'btn-em' : 'btn-line'}`} disabled={busy || disabled} onClick={() => pick(mode === 'oral' ? 'clear' : 'oral')}>
             {mode === 'oral' ? <Icon n="ok" s={18} /> : null}Решил устно</button>}
         </div>
         {mode === 'photo' && w && <p className={`dw-st ${w.status === 'pending' ? 'pend' : ''}`}>{w.files} {plural(w.files, 'страница', 'страницы', 'страниц')} · {STATUS[w.status ?? 'pending']}{w.comment && w.status !== 'pending' ? `: ${w.comment}` : ''}</p>}
         {mode === 'photo' && !llm && <p className="dw-st">ИИ не подключён: решение сохранено, засчитается ответ.</p>}
         {mode === 'oral' && <p className="dw-st">Отмечено: решено устно, засчитается ответ.</p>}
+        {busy && <p className="dw-st" role="status">Сохраняю…</p>}
         {locked && <p className="dw-st">{locked}</p>}
         {msg && <p className="auth-msg">{msg}</p>}
       </div>
       <div className="dw-go">
-        <button className="btn btn-em" disabled={!ready || busy} onClick={go}>Дальше</button>
-        {!exam && <button className="ob-link" disabled={busy} onClick={() => pick('dont_know')}>{num ? 'Не знаю' : 'Не знаю, как решать'}</button>}
+        <button className="btn btn-em" disabled={!ready || busy || disabled || !!locked} onClick={go}>Дальше</button>
+        {!exam && <button className="ob-link" disabled={busy || disabled} onClick={() => pick('dont_know')}>{num ? 'Не знаю' : 'Не знаю, как решать'}</button>}
       </div>
       {exam && <p className="dw-hint">Можно пропустить и вернуться: номера заданий сверху.</p>}
       {!ready && optional && <p className="dw-hint">Впиши ответ или нажми «Не знаю».</p>}
@@ -324,16 +355,16 @@ function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext, onDontKnow, 
 }
 
 /** Part 2 of the diagnostic by types: the student picks one type of the task and solves its problem. */
-function ChoiceBox({ run, item, onChoice }: { run: DiagRun; item: DiagItem; onChoice: (c: Record<string, string>, w: Record<string, DiagWork>) => void }) {
+function ChoiceBox({ run, item, disabled, onBusy, beforeWork, onChoice }: { run: DiagRun; item: DiagItem; disabled: boolean; onBusy: (busy: boolean) => void; beforeWork: () => Promise<unknown>; onChoice: (c: Record<string, string>, w: Record<string, DiagWork>) => void }) {
   const cur = run.choice?.[item.id]
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
   const pick = async (c: DiagChoice) => {
     if (c.type === cur) return
     if (run.work[item.id]?.mode === 'photo' && !window.confirm('Фото решения прикреплено к другому типу. Выбрать этот тип? Фото придётся прикрепить заново.')) return
-    setBusy(true); setMsg('')
-    try { const r = await setDiagChoice(run.id, item.id, c.type); onChoice(r.choice, r.work) } catch (e) { setMsg(String(e).replace('Error: ', '')) }
-    setBusy(false)
+    setBusy(true); onBusy(true); setMsg('')
+    try { await beforeWork(); const r = await setDiagChoice(run.id, item.id, c.type); onChoice(r.choice, r.work) } catch (e) { setMsg(String(e).replace('Error: ', '')) }
+    setBusy(false); onBusy(false)
   }
   const sel = item.choices!.find((c) => c.type === cur)
   return (
@@ -341,7 +372,7 @@ function ChoiceBox({ run, item, onChoice }: { run: DiagRun; item: DiagItem; onCh
       <p className="q-ask">Выбери тип задания № {item.n}, который будешь решать (максимум {item.max} б.). Остальные типы траектория проверит позже.</p>
       <div className="dch-list" role="radiogroup" aria-label={`Типы задания ${item.n}`}>
         {item.choices!.map((c) => (
-          <button key={c.type} role="radio" aria-checked={c.type === cur} className={`dch-opt ${c.type === cur ? 'on' : ''}`} disabled={busy} onClick={() => pick(c)}>
+          <button key={c.type} role="radio" aria-checked={c.type === cur} className={`dch-opt ${c.type === cur ? 'on' : ''}`} disabled={busy || disabled} onClick={() => pick(c)}>
             <b className="num">{c.type}</b><span>{c.name}</span>
           </button>
         ))}
@@ -349,7 +380,7 @@ function ChoiceBox({ run, item, onChoice }: { run: DiagRun; item: DiagItem; onCh
       {msg && <p className="auth-msg">{msg}</p>}
       {sel && (
         <div className="dch-prob">
-          <div className="q-text">{sel.img ? <ProblemText q={sel.q} img={sel.img} /> : sel.q.split('\n').map((l, k) => <span key={k}>{l}<br /></span>)}</div>
+          <div className="q-text">{sel.img ? <ProblemText key={sel.type} q={sel.q} img={sel.img} ctx={sel.ctx_img} /> : sel.q.split('\n').map((l, k) => <span key={k}>{l}<br /></span>)}</div>
           <p className="q-src">{sel.src}</p>
         </div>
       )}
@@ -374,7 +405,7 @@ function SelfAssess({ item, value, onPick }: { item: DiagItem; value?: string; o
 }
 
 /* ---------- figures for tasks 8 and 11 (drawn from the demo data) ---------- */
-function Figure({ k }: { k: string }) {
+export function DiagnosticFigure({ k }: { k: string }) {
   const grid = (x0: number, x1: number, y0: number, y1: number, s: number) => {
     const out = []
     for (let x = x0; x <= x1; x++) out.push(<line key={'x' + x} x1={(x - x0) * s} y1={0} x2={(x - x0) * s} y2={(y1 - y0) * s} stroke="#dfe6e2" />)

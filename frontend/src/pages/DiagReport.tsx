@@ -106,7 +106,7 @@ export function DiagAnalyticsView({ r, a }: { r: DiagResult & { date?: string | 
               {x.errors.length > 0 && <ul className="da-err">{x.errors.map((e, i) => <li key={i}>{e}</li>)}</ul>}
               {x.topics.length > 0 && TONE[x.kind] !== 'ok' && <p className="muted" style={{ fontSize: 12.5 }}>Темы: {x.topics.join(', ')}</p>}
             </div>
-            {x.n && TONE[x.kind] !== 'ok' && <button className="btn btn-sm btn-ghost" onClick={() => app.go({ v: 'video', id: 't' + x.n })} title="Разборы этого задания"><Icon n="play" s={16} /></button>}
+            {r.id && x.walkthrough_available !== false && TONE[x.kind] !== 'ok' && <button className="btn btn-sm btn-ghost" onClick={() => app.go({ v: 'video', id: `diag-${r.id}-${x.id}` })} title="Разбор этой задачи с учётом твоего ответа" aria-label={`Разбор задачи ${x.type ?? x.n ?? x.name}`}><Icon n="play" s={16} /></button>}
           </div>
         ))}</div>
       </section>

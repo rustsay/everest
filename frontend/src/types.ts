@@ -260,6 +260,7 @@ export interface DiagRow {
   errors: string[]; pts: number; max: number; answer: string | null; right: string | null; photo: boolean; topics: string[]
   /** the diagnostic by types: "1.3" */
   type?: string | null
+  walkthrough_available?: boolean
 }
 export interface DiagAnalytics {
   rows: DiagRow[]; counts: Record<string, number>; blocks: { name: string; pts: number; max: number; pct: number }[]
@@ -369,6 +370,13 @@ export interface TeacherPaths {
 export interface Walkthrough {
   ref: string; task: number; q: string; title: string; proto_name: string; fig: string | null; source: 'ai' | 'solution'
   steps: { title: string; lines: string[]; text: string }[]; img?: string | null; ctx_img?: string | null
+}
+export interface WalkthroughFeedback {
+  kind: string; label: string; answer: string | null; right: string | null; note: string; errors: string[]
+}
+export interface DiagnosticWalkthrough extends Omit<Walkthrough, 'task'> {
+  task: number | null
+  diagnostic_id: number; item_id: string; feedback: WalkthroughFeedback; condition_fig?: string | null
 }
 
 // ---------- photo check of the first part ----------

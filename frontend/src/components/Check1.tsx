@@ -4,6 +4,7 @@ import { useApp } from '../app/store'
 import type { Check1Item, Check1Result, PracticeItem } from '../types'
 import { Icon, fmtD } from '../design/ui'
 import ProblemText from './ProblemText'
+import useImagePaste from '../hooks/useImagePaste'
 
 const VERDICT: Record<string, [string, string]> = {
   ok: ['Верно', 'p-em'], ok_doubt: ['Ответ верный, но решение стоит проверить', 'p-gold'],
@@ -25,6 +26,7 @@ export default function Check1({ preset, presetTask, from = 1, to = 12, title }:
   const [busy, setBusy] = useState(false)
   const [res, setRes] = useState<Check1Result | null>(null)
   const [hist, setHist] = useState<Check1Item[]>([])
+  useImagePaste((images) => setFiles((previous) => [...previous, ...images].slice(0, 5)), busy)
   const loadHist = () => check1History(exam).then((r) => setHist(r.items)).catch(() => null)
   useEffect(() => { loadHist() }, [exam]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
@@ -81,6 +83,7 @@ export default function Check1({ preset, presetTask, from = 1, to = 12, title }:
             <input id="c1Files" className="input" type="file" accept="image/*,.pdf,.heic" multiple style={{ paddingTop: 10 }}
               onChange={(e) => setFiles(Array.from(e.target.files ?? []).slice(0, 5))} /></div>
         </div>
+        <p className="muted" style={{ fontSize: 13 }}>Фото можно вставить из буфера: Ctrl+V или ⌘V.{files.length > 0 && ` Прикреплено: ${files.map((file) => file.name).join(', ')}.`}</p>
         <button className="btn btn-gold" type="submit" disabled={busy}><Icon n="check" s={18} c="#16231F" />{busy ? 'Проверяю…' : 'Проверить'}</button>
       </form>
       {res && <Verdict r={res} />}

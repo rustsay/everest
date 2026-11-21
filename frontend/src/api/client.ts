@@ -113,7 +113,7 @@ export function openWs(sessionId: string): WebSocket {
 import type {
   Me, Dashboard, PlanData, DiagRun, DiagResult, NotificationItem, ChatMsg, TeacherOverview, StudentDetail, Textbook, MaterialOut, MaterialHead, Slide,
   TaskMapData, TmAnswer, TmFile, SkillExplain, BankItem, BankTask, PracticeItem, VariantSummary, VariantFull,
-  MyPath, PathOut, PathStage, TeacherPaths, DiagWork, Target, Walkthrough, DiagListItem, DiagAnalytics, Check1Result, Check1Item, Check2Result, Check2Item, RedoItem, WeekReport, ClassWeek, MyEvent,
+  MyPath, PathOut, PathStage, TeacherPaths, DiagWork, Target, Walkthrough, DiagnosticWalkthrough, DiagListItem, DiagAnalytics, Check1Result, Check1Item, Check2Result, Check2Item, RedoItem, WeekReport, ClassWeek, MyEvent,
   PushSettings, AdminStats, AdminUser,
 } from '../types'
 
@@ -347,6 +347,16 @@ export const getWalkthrough = (ref: string): Promise<Walkthrough> => {
   const request = (apiFetch('/walkthrough', { method: 'POST', body: JSON.stringify({ ref }) }) as Promise<Walkthrough>)
     .finally(() => walkthroughPending.delete(ref))
   walkthroughPending.set(ref, request)
+  return request
+}
+const diagnosticWalkthroughPending = new Map<string, Promise<DiagnosticWalkthrough>>()
+export const getDiagnosticWalkthrough = (id: number, item: string): Promise<DiagnosticWalkthrough> => {
+  const key = `${id}:${item}`
+  const current = diagnosticWalkthroughPending.get(key)
+  if (current) return current
+  const request = (apiFetch(`/diagnostics/${id}/items/${encodeURIComponent(item)}/walkthrough`, { method: 'POST' }) as Promise<DiagnosticWalkthrough>)
+    .finally(() => diagnosticWalkthroughPending.delete(key))
+  diagnosticWalkthroughPending.set(key, request)
   return request
 }
 export const getPractice = (task?: number, proto?: string, exam?: string): Promise<{ items: PracticeItem[]; counts: Record<string, number>; tasks: BankTask[]; total?: number; exam?: string }> =>

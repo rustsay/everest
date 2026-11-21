@@ -51,8 +51,8 @@ export default function Home() {
         </section>
       )}
       <div className="grid2 stagger">
-        {d.diag_done === false ? <DiagOffer open={d.diag_open} mock={d.mock_open} /> : <RootCard d={d} />}
-        {d.diag_done !== false && d.mock_open && <MockResume mock={d.mock_open} />}
+        {d.diag_done === false || d.diag_open ? <DiagOffer open={d.diag_open} mock={d.mock_open} /> : <RootCard d={d} />}
+        {d.diag_done !== false && !d.diag_open && d.mock_open && <MockResume mock={d.mock_open} />}
         <Daily d={d} />
       </div>
       <div className="grid2 stagger">
