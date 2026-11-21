@@ -8,7 +8,6 @@ import WorkUpload from '../components/WorkUpload'
 interface Props {
   sessionId: string
   onBack: () => void
-  onOpenTrajectory?: (id: string) => void
   /** called after each finished check: the dashboard reloads the forecast */
   onChecked?: () => void
 }
@@ -16,7 +15,7 @@ interface Props {
 const TASK_IDS = Object.keys(TASK_INFO).map(Number)
 const MAX_TOTAL = 20
 
-export default function Session({ sessionId, onBack, onOpenTrajectory, onChecked }: Props) {
+export default function Session({ sessionId, onBack, onChecked }: Props) {
   const [results, setResults] = useState<Record<number, TaskResult>>({})
   const [mode, setMode] = useState<'all' | 'manual'>('all')
   const [agentProgress, setAgentProgress] = useState<Record<number, Record<number, number>>>({})
@@ -123,9 +122,6 @@ export default function Session({ sessionId, onBack, onOpenTrajectory, onChecked
             >
               {reportLoading === 'pdf' ? '…' : '↓ PDF'}
             </button>
-            {onOpenTrajectory && (
-              <button onClick={() => onOpenTrajectory(sessionId)} className="btn btn-sm btn-em">Траектория →</button>
-            )}
           </div>
         )}
       </div>
