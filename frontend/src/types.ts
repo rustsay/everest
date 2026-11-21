@@ -165,6 +165,8 @@ export interface Dashboard {
   diag_done?: boolean
   /** unfinished first diagnostic: how many tasks are already done (answers and photos are saved) */
   diag_open?: { done: number; total: number } | null
+  /** unfinished mock (including one in exam conditions, where the timer keeps running) */
+  mock_open?: { done: number; total: number; exam_mode: boolean } | null
   /** what the schedule rests on: a diagnostic, answers and photo checks, or nothing yet */
   route_basis?: RouteBasis
   /** the stage of the educational trajectory the schedule follows today */
