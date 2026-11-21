@@ -92,8 +92,7 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
     if (!run) { onPause?.(); return }
     try {
       await saveDiagnosticProgress(run.id, i)
-      if (mode === 'first') onPause?.()
-      else onPause?.()
+      onPause?.()
     } catch (e) {
       setErr('Не удалось сохранить позицию. Проверь интернет и попробуй ещё раз.')
     }
@@ -182,7 +181,7 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
 
   const it = run.items[i], n = run.items.length
   const ex = !!run.exam_mode
-  const filled = (x: DiagItem) => (x.t === 'num' ? !!run.answers[x.id] && run.answers[x.id] !== '?' : run.work[x.id]?.mode === 'photo')
+  const filled = (x: DiagItem) => (x.t === 'num' ? !!run.answers[x.id] && run.answers[x.id] !== '?' : run.work[x.id]?.mode === 'photo') || !!run.choice?.[x.id]
   return (
     <Frame top={<>
       {ex && deadline && <Timer deadline={deadline} />}
@@ -293,7 +292,7 @@ function ItemWork({ run, item, llm, exam, onAnswer, onWork, onNext, onDontKnow, 
       {num && (
         <form className="ob-form" onSubmit={(e) => { e.preventDefault(); if (ready) go() }}>
           <label htmlFor="qIn" className="sr">Ответ</label>
-          <input id="qIn" className="input ob-input" inputMode="text" autoComplete="off" placeholder="Ответ" value={ans} onChange={(e) => setAns(e.target.value)} />
+          <input id="qIn" className="input ob-input" inputMode="text" autoComplete="off" placeholder="Ответ" value={ans} onChange={(e) => { setAns(e.target.value); onAnswer(e.target.value) }} />
         </form>
       )}
       <div className="dw-box">
