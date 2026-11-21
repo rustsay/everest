@@ -95,6 +95,7 @@ export default function App() {
     return (
       <Diagnostic mode="first" required={false} exam={me.exam_info}
         onFinished={(r) => { setResult(r); setStage('result') }}
+        onPause={() => { setStage('app'); reveal(me) }}
         onSkip={() => { const m = { ...me, settings: { ...me.settings, onb: 'skipped' } }; setMe(m); setStage('app'); reveal(m) }} />
     )
   }
