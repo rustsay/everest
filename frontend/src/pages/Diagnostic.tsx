@@ -91,6 +91,7 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
   const saveAndExit = async () => {
     if (!run) { onPause?.(); return }
     try {
+      await Promise.all(Object.entries(run.answers).filter(([key]) => !key.startsWith('_')).map(([key, value]) => saveAnswer(run.id, key, value, null)))
       await saveDiagnosticProgress(run.id, i)
       onPause?.()
     } catch (e) {
