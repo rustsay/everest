@@ -38,22 +38,26 @@ export default function Home() {
         <Orn />
       </section>
       <Deadline d={d} />
-      <div className="row stagger">
-        <Hero d={d} />
-        <Route d={d} />
-      </div>
-      <Rises d={d} />
-      {(d.redo?.due ?? 0) > 0 && (
-        <section className="card redo-cta" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <div style={{ flex: '1 1 240px' }}><b>Работа над ошибками: {d.redo!.due} {plural(d.redo!.due, 'задача', 'задачи', 'задач')} на сегодня</b>
-            <p className="muted" style={{ fontSize: 13.5 }}>Задачи, где была ошибка. Реши заново: две верные подряд, и ошибка исправлена.</p></div>
-          <button className="btn btn-gold" onClick={() => { app.go('practice'); setTimeout(() => document.getElementById('redo')?.scrollIntoView({ behavior: 'smooth' }), 400) }}>Исправить</button>
-        </section>
-      )}
-      <div className="grid2 stagger">
-        {d.diag_done === false || d.diag_open ? <DiagOffer open={d.diag_open} mock={d.mock_open} /> : <RootCard d={d} />}
-        {d.diag_done !== false && !d.diag_open && d.mock_open && <MockResume mock={d.mock_open} />}
-        <Daily d={d} />
+      <div className="home-overview">
+        <div className="home-column">
+          <Hero d={d} />
+          <Rises d={d} />
+          {(d.redo?.due ?? 0) > 0 && (
+            <section className="card redo-cta home-redo" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ flex: '1 1 240px' }}><b>Работа над ошибками: {d.redo!.due} {plural(d.redo!.due, 'задача', 'задачи', 'задач')} на сегодня</b>
+                <p className="muted" style={{ fontSize: 13.5 }}>Задачи, где была ошибка. Реши заново: две верные подряд, и ошибка исправлена.</p></div>
+              <button className="btn btn-gold" onClick={() => { app.go('practice'); setTimeout(() => document.getElementById('redo')?.scrollIntoView({ behavior: 'smooth' }), 400) }}>Исправить</button>
+            </section>
+          )}
+          <div className="home-offer">
+            {d.diag_done === false || d.diag_open ? <DiagOffer open={d.diag_open} mock={d.mock_open} /> : <RootCard d={d} />}
+            {d.diag_done !== false && !d.diag_open && d.mock_open && <MockResume mock={d.mock_open} />}
+          </div>
+        </div>
+        <div className="home-column">
+          <Route d={d} />
+          <Daily d={d} />
+        </div>
       </div>
       <div className="grid2 stagger">
         <Secret d={d} />
@@ -196,7 +200,7 @@ function Route({ d }: { d: Dashboard }) {
   const done = blocks.filter((b) => b && b.done).length
   const cur = blocks.findIndex((b) => b && !b.done)
   return (
-    <section className="card" style={{ flex: '1 1 300px', display: 'flex', flexDirection: 'column', gap: 10 }} aria-label="Маршрут на сегодня">
+    <section className="card home-route" style={{ display: 'flex', flexDirection: 'column', gap: 10 }} aria-label="Маршрут на сегодня">
       <div className="card-h" style={{ margin: 0 }}><h2>Маршрут на сегодня{d.today.time ? ` · ${d.today.time}` : ''}</h2><span className="muted num">{done} из {blocks.length || 0}</span></div>
       <div className="bar"><i style={{ width: `${blocks.length ? (done / blocks.length) * 100 : 0}%`, background: 'var(--em)' }} /></div>
       <RouteNote basis={d.route_basis} exam={d.exam} stage={d.path_stage} />
@@ -224,7 +228,7 @@ function Rises({ d }: { d: Dashboard }) {
   const h = d.history, ex = d.exam, max = ex.pct ? 100 : ex.max
   if (h.length < 2) {
     return (
-      <section className="card" aria-label="Взлёты и падения">
+      <section className="card home-rises" aria-label="Взлёты и падения">
         <div className="card-h"><div><h2>Взлёты и падения</h2><p className="muted" style={{ fontSize: 13 }}>{ex.pct ? 'готовность, %' : 'прогноз по замерам'}</p></div></div>
         <p className="muted">{h.length ? `Первая точка: ${h[0].value}${ex.pct ? '%' : ' из ' + ex.max} (${h[0].source}, ${fmtD(h[0].date)}). График появится после следующего замера: пробника из расписания или проверки по фото.` : 'Пройди диагностику, и здесь появится первая точка.'}</p>
       </section>
@@ -246,7 +250,7 @@ function Rises({ d }: { d: Dashboard }) {
   })
   const demo = h.some((p) => p.source === 'пример')
   return (
-    <section className="card" aria-label="Взлёты и падения">
+    <section className="card home-rises" aria-label="Взлёты и падения">
       <div className="card-h"><div><h2>Взлёты и падения</h2><p className="muted" style={{ fontSize: 13 }}>{ex.pct ? 'готовность, %' : 'прогноз, ' + ex.unit + ' баллы'} · {n} {plural(n, 'замер', 'замера', 'замеров')}</p></div>{demo && <span className="pill p-gold">есть точки-примеры</span>}</div>
       <div className="rise-grid">
         <div style={{ minWidth: 0 }}>

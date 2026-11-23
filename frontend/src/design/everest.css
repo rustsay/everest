@@ -103,9 +103,22 @@ textarea.input{padding:10px 14px;min-height:80px;resize:vertical}
 .input:focus{border-color:var(--em-3)}
 
 /* hero */
-.hero{background:var(--hero);color:var(--on-em);border-radius:28px;padding:22px 22px 14px;position:relative;overflow:hidden;flex:2 1 520px;align-self:flex-start}
+.home-overview{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(300px,1fr);align-items:stretch;gap:18px}
+.home-column,.home-offer{display:grid;align-content:stretch;gap:18px;min-width:0}
+.hero{background:var(--hero);color:var(--on-em);border-radius:28px;padding:22px 22px 14px;position:relative;overflow:hidden}
 .hero .muted{color:var(--on-em-muted)}
 .hero-score{font-family:var(--f-display);font-size:60px;font-weight:600;line-height:1}
+@media(max-width:1100px){
+  .home-overview{display:flex;flex-direction:column}
+  .home-column{display:contents}
+  .home-overview>.home-column>*{width:100%;min-width:0}
+  .home-overview .hero{order:0}
+  .home-route{order:1}
+  .home-rises{order:2}
+  .home-redo{order:3}
+  .home-offer{order:4}
+  .home-overview .daily{order:5}
+}
 .snow{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .snow i{position:absolute;top:-10px;width:4px;height:4px;border-radius:50%;background:rgba(255,255,255,.45);animation:snow linear infinite}
 .cloud{position:absolute;height:22px;border-radius:11px;background:var(--hero-2);animation:cloud linear infinite}
@@ -347,6 +360,7 @@ textarea.input{padding:10px 14px;min-height:80px;resize:vertical}
 
 /* rises and falls */
 .rise-grid{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);gap:22px;align-items:start}
+.home-rises .rise-grid{grid-template-columns:minmax(0,1fr)}
 @media (max-width:900px){.rise-grid{grid-template-columns:minmax(0,1fr)}}
 .rise-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;font-weight:700;margin-top:6px}
 .rise-legend i{display:inline-block;width:14px;height:4px;border-radius:2px;margin-right:6px;vertical-align:middle}
