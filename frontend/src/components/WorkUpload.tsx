@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { addWorkPhotos, checkWorkPhotos, getWorkPhotos, saveWorkPhotos, workPhotoPreview, WorkPhoto } from '../api/client'
 import { TASK_INFO } from '../types'
 import { clipboardImages } from '../utils/clipboard'
+import PastePhotoButton from './PastePhotoButton'
 
 function Photo({ sid, page }: { sid: string; page: WorkPhoto }) {
   const [src, setSrc] = useState('')
@@ -62,9 +63,10 @@ export default function WorkUpload({ sessionId, onStarted, hasErrors }: { sessio
     <h2>Загрузите всю работу сразу</h2>
     <p className="muted" style={{ margin: '8px 0 16px' }}>Выберите фотографии или PDF со всеми страницами работы одним разом. Мы предложим номера заданий — проверьте распределение перед отправкой. Продолжение решения отнесите к тому же заданию; если на листе несколько заданий, отметьте все.</p>
     <div onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); void add(Array.from(e.dataTransfer.files)) }}>
-      <button className="drop" disabled={!!busy} onClick={() => input.current?.click()} style={{ width: '100%', padding: 24, font: 'inherit', color: 'inherit', cursor: 'pointer' }}><b>{pages.length ? 'Добавить файлы' : 'Выбрать файлы работы'}</b><span className="muted">или перетащите их сюда · до 30 страниц · PDF, HEIC, JPG, JPEG, PNG, WebP</span><span className="muted">Скопированное фото: выделите эту область и нажмите Ctrl+V или ⌘V.</span></button>
+      <button className="drop" disabled={!!busy} onClick={() => input.current?.click()} style={{ width: '100%', padding: 24, font: 'inherit', color: 'inherit', cursor: 'pointer' }}><b>{pages.length ? 'Добавить файлы' : 'Выбрать файлы работы'}</b><span className="muted">или перетащите их сюда · до 30 страниц · PDF, HEIC, HEIF, JPG, JPEG, PNG, WebP · до 15 МБ на файл</span></button>
       <input ref={input} type="file" multiple accept=".pdf,.heic,.heif,.jpg,.jpeg,.png,.webp,application/pdf,image/heic,image/heif,image/jpeg,image/png,image/webp" hidden onChange={(e) => { void add(Array.from(e.target.files ?? [])); e.target.value = '' }} />
     </div>
+    <div className="photo-files-actions"><PastePhotoButton onFiles={add} disabled={!!busy} /><span className="muted">или Ctrl+V / ⌘V</span></div>
     {busy && <p role="status" style={{ marginTop: 12 }}>{busy}</p>}
     {error && <p role="alert" style={{ color: 'var(--red)', marginTop: 12 }}>{error}</p>}
     {!!pages.length && <>

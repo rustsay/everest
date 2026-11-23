@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { StarBot, Typed, reduceMotion } from '../design/ui'
 import { useApp } from '../app/store'
 
@@ -29,29 +29,84 @@ export default function Tour({ teacher, onEnd }: { teacher: boolean; onEnd: () =
   const [i, setI] = useState(0)
   const [rect, setRect] = useState<DOMRect | null>(null)
   const [talk, setTalk] = useState(false)
+  const bubbleRef = useRef<HTMLDivElement>(null)
+  const [bubbleSize, setBubbleSize] = useState({ width: 320, height: 0 })
+  const hasTarget = rect !== null
   // the tour points at the first screen; if the user leaves it, the tour ends
-  const { view } = useApp()
+  const { view, dash } = useApp()
+  const waitingForDashboard = !teacher && !dash
   const v0 = useRef(view.v)
   useEffect(() => { if (view.v !== v0.current) endRef.current() }, [view.v])
 
   useEffect(() => {
+    if (waitingForDashboard) return
     if (i >= steps.length) { endRef.current(); return }
     const el = visibleEl(steps[i][0])
     if (!el) { setI(i + 1); return }
+    let frame: number | null = null
+    const updateRect = () => {
+      frame = null
+      setRect(el.getBoundingClientRect())
+    }
+    const scheduleUpdate = () => {
+      if (frame === null) frame = requestAnimationFrame(updateRect)
+    }
+    // Capture scrolls from the page and any scrollable ancestor of the target.
+    window.addEventListener('scroll', scheduleUpdate, { capture: true, passive: true })
+    window.addEventListener('resize', scheduleUpdate)
+    const observer = new ResizeObserver(scheduleUpdate)
+    observer.observe(el)
+    updateRect()
     el.scrollIntoView({ block: 'center', behavior: reduceMotion ? 'auto' : 'smooth' })
-    const t = setTimeout(() => setRect(el.getBoundingClientRect()), reduceMotion ? 0 : 380)
-    return () => clearTimeout(t)
-  }, [i, steps])
+    return () => {
+      window.removeEventListener('scroll', scheduleUpdate, true)
+      window.removeEventListener('resize', scheduleUpdate)
+      observer.disconnect()
+      if (frame !== null) cancelAnimationFrame(frame)
+    }
+  }, [i, steps, waitingForDashboard])
+
+  useLayoutEffect(() => {
+    const bubble = bubbleRef.current
+    if (!bubble) return
+    const measure = () => setBubbleSize({ width: bubble.offsetWidth, height: bubble.offsetHeight })
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(bubble)
+    return () => observer.disconnect()
+  }, [i, hasTarget])
 
   if (i >= steps.length || !rect) return null
-  const pad = 8, below = rect.bottom + 200 < innerHeight
+  const pad = 8, margin = 16, gap = 16
+  const { width, height } = bubbleSize
+  const clamp = (n: number, max: number) => Math.max(margin, Math.min(max, n))
+  let left = rect.left, top = rect.bottom + gap
+  if (top + height > innerHeight - margin) {
+    if (rect.top - gap - height >= margin) {
+      top = rect.top - gap - height
+    } else if (rect.right + gap + width <= innerWidth - margin) {
+      left = rect.right + gap
+      top = rect.top
+    } else if (rect.left - gap - width >= margin) {
+      left = rect.left - gap - width
+      top = rect.top
+    } else if (rect.top > innerHeight - rect.bottom) {
+      top = rect.top - gap - height
+    }
+  }
+  left = clamp(left, innerWidth - width - margin)
+  top = clamp(top, innerHeight - height - margin)
+  const visible = height > 0 && rect.bottom > 0 && rect.top < innerHeight && rect.right > 0 && rect.left < innerWidth
   return (
-    <div>
+    <div style={{ visibility: visible ? 'visible' : 'hidden' }}>
       <div className="tour-spot" style={{ left: rect.left - pad, top: rect.top - pad, width: rect.width + pad * 2, height: rect.height + pad * 2 }} />
-      <div className="tour-bub" style={{ left: Math.max(16, Math.min(innerWidth - 336, rect.left)), ...(below ? { top: rect.bottom + 16 } : { bottom: innerHeight - rect.top + 16 }) }}>
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+      <div ref={bubbleRef} className="tour-bub" style={{ left, top }}>
+        <div className="tour-message">
           <StarBot size={46} talk={talk} />
-          <Typed key={i} text={steps[i][1]} speed={20} onTyping={setTalk} />
+          <div className="tour-text">
+            <p className="tw" aria-hidden="true" style={{ visibility: 'hidden' }}>{steps[i][1]}▍</p>
+            <Typed key={i} text={steps[i][1]} speed={20} onTyping={setTalk} />
+          </div>
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
           <span className="muted num">{i + 1} из {steps.length}</span>

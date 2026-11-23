@@ -26,12 +26,14 @@ export default function Shell({ children }: { children: ReactNode }) {
   const cur = view.v === 'session' || view.v === 'trajectory' ? 'check' : view.v === 'variant' ? (teacher ? 'variants' : 'practice') : view.v
   const inMore = more.some(([v]) => v === cur)
   const [pop, setPop] = useState<NotificationItem[] | null>(null)
+  const [notesBusy, setNotesBusy] = useState(false)
   const sayIdx = useRef<Record<string, number>>({})
   const clicks = useRef<number[]>([])
   const logoClicks = useRef<number[]>([])
   const [spin, setSpin] = useState(false)
   const [shake, setShake] = useState(false)
-  const unread = dash?.unread ?? 0
+  const [unread, setUnread] = useState(dash?.unread ?? 0)
+  useEffect(() => { setUnread(dash?.unread ?? 0) }, [dash?.unread])
 
   /* ---------- easter eggs ---------- */
   const egg = async (id: string, msg: string) => {
@@ -92,9 +94,26 @@ export default function Shell({ children }: { children: ReactNode }) {
     app.say(lines[i])
   }
 
+  const markNotesRead = async (ids?: number[]) => {
+    const result = await readNotifications(ids)
+    setPop((notes) => notes?.map((n) => !ids || ids.includes(n.id) ? { ...n, read: true } : n) ?? null)
+    setUnread(result.unread)
+    void app.reload()
+  }
   const openBell = async () => {
+    if (notesBusy) return
     if (pop) { setPop(null); return }
-    try { setPop((await getNotifications()).notifications) } catch { setPop([]) }
+    setNotesBusy(true)
+    try {
+      const notes = (await getNotifications()).notifications
+      setPop(notes)
+      const ids = notes.filter((n) => !n.read).map((n) => n.id)
+      if (ids.length) {
+        try { await markNotesRead(ids) }
+        catch { app.toast('Не удалось отметить уведомления прочитанными. Попробуй «Прочитать все».') }
+      }
+    } catch { app.toast('Не удалось загрузить уведомления. Попробуй ещё раз.') }
+    finally { setNotesBusy(false) }
   }
 
   const profile = () => app.openModal('Профиль', <Profile />)
@@ -139,7 +158,7 @@ export default function Shell({ children }: { children: ReactNode }) {
               </button>
             </>
           )}
-          <button className="iconbtn" id="bellBtn" onClick={openBell} aria-label={unread ? `Уведомления, непрочитанных: ${unread}` : 'Уведомления'} aria-expanded={!!pop}>
+          <button className="iconbtn" id="bellBtn" onClick={openBell} disabled={notesBusy} aria-busy={notesBusy} aria-label={unread ? `Уведомления, непрочитанных: ${unread}` : 'Уведомления'} aria-expanded={!!pop}>
             <Icon n="bell" />
             {unread > 0 && <span className="badge num">{unread}</span>}
           </button>
@@ -159,10 +178,18 @@ export default function Shell({ children }: { children: ReactNode }) {
         <div className="pop" role="dialog" aria-label="Уведомления">
           <div className="card-h" style={{ padding: '6px 6px 0', marginBottom: 6 }}>
             <h2>Уведомления</h2>
-            <button className="btn btn-sm btn-ghost" onClick={async () => { await readNotifications(); setPop(pop.map((n) => ({ ...n, read: true }))); app.reload() }}>Прочитать все</button>
+            <button className="btn btn-sm btn-ghost" disabled={notesBusy || (!unread && pop.every((n) => n.read))} onClick={async () => {
+              setNotesBusy(true)
+              try { await markNotesRead() }
+              catch { app.toast('Не удалось отметить уведомления прочитанными. Попробуй ещё раз.') }
+              finally { setNotesBusy(false) }
+            }}>Прочитать все</button>
           </div>
           {pop.length ? pop.map((n) => (
-            <button key={n.id} className={`note ${n.read ? 'read' : ''}`} onClick={async () => { await readNotifications(n.id).catch(() => null); setPop(null); app.reload(); if (n.go) go(n.go as ViewName) }}>
+            <button key={n.id} className={`note ${n.read ? 'read' : ''}`} disabled={notesBusy} onClick={async () => {
+              if (!n.read) await markNotesRead([n.id]).catch(() => app.toast('Не удалось отметить уведомление прочитанным.'))
+              setPop(null); if (n.go) go(n.go as ViewName)
+            }}>
               <span className="nd" />
               <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: 'block', fontWeight: n.read ? 600 : 800, fontSize: 14 }}>{n.text}</span>
                 <span className="muted" style={{ fontSize: 12 }}>{n.created_at ? new Date(n.created_at + (n.created_at.endsWith('Z') ? '' : 'Z')).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : ''}</span></span>

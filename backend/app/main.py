@@ -40,7 +40,7 @@ async def lifespan(app: FastAPI):
     await init_db()
     await recover_videos()
     import asyncio
-    weekly = asyncio.create_task(weekly_loop())  # weekly reports: notifications and parent emails
+    weekly = asyncio.create_task(weekly_loop())  # in-app weekly report notifications
     reminders = asyncio.create_task(remind_loop())  # daily push reminders on study days
     stats = asyncio.create_task(activity.flush_loop())  # who used which section: for the admin panel
     # Warm up PaddleOCR in a background thread so models download once, not on the first check.

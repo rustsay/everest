@@ -134,7 +134,7 @@ function Hero({ d }: { d: Dashboard }) {
         )}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
           {d.diag_done === false
-            ? <button className="btn btn-sm btn-gold" onClick={() => dispatchEvent(new Event('everest:diag'))}>{d.diag_open ? 'Продолжить диагностику' : 'Пройти диагностику'}</button>
+            ? <button className="btn btn-sm btn-gold" onClick={() => dispatchEvent(new Event('everest:diag'))}>{d.diag_open ? 'Продолжить диагностику' : 'Начать диагностику'}</button>
             : <>
               <button className="btn btn-sm btn-gold" onClick={() => app.openModal('Как считается прогноз', <Forecast d={d} />, true)}>Как считается</button>
               <button className="btn btn-sm" style={{ background: 'rgba(255,255,255,.1)', color: 'var(--on-em)' }} onClick={() => app.go({ v: 'task', id: String(rootTaskN(d) ?? 1) })}>Что поднимет балл</button>

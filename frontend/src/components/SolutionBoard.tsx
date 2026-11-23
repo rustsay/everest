@@ -110,7 +110,9 @@ export default function SolutionBoard({ n, task, onBack, onUnderstood, onNotUnde
         <div style={{ minWidth: 0 }}><p className="muted">{label ?? (n ? 'Разбор · задание ' + n : 'Разбор своей задачи')}</p><h1><BoardMath text={v.t} /></h1></div>
         {onRefresh && <button className="btn btn-sm btn-line" onClick={onRefresh} disabled={refreshing}>Обновить разбор</button>}
       </div>
-      <div className="v-cond"><span className="label">Условие</span>{img || ctx ? <ProblemText q={v.c} img={img} ctx={ctx} small /> : <p><BoardMath text={v.c} /></p>}</div>
+      <div className="v-cond"><span className="label">Условие</span>{img || ctx
+        ? <ProblemText q={v.c} img={img} ctx={ctx} small typeset />
+        : <p><ProblemText q={v.c} typeset /></p>}</div>
       {conditionFigure}
       {feedback && <section className="card" aria-label="Твой результат в диагностике">
         <b>Твой результат: {feedback.label}</b>

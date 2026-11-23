@@ -2,6 +2,8 @@ import { useRef, useState } from 'react'
 import { TaskResult, TaskStatus, TASK_INFO } from '../types'
 import ResultModal from './ResultModal'
 import { clipboardImages } from '../utils/clipboard'
+import PastePhotoButton from './PastePhotoButton'
+import PhotoAttachment from './PhotoAttachment'
 
 interface Props {
   sessionId: string
@@ -36,13 +38,19 @@ export default function TaskCard({ sessionId, taskId, result, agentProgress, onU
   const inputRef = useRef<HTMLInputElement>(null)
   const [showModal, setShowModal] = useState(false)
   const [dragging, setDragging] = useState(false)
+  const [files, setFiles] = useState<File[]>([])
   const info = TASK_INFO[taskId]
   const status = result?.status ?? 'pending'
   const judge = result?.judge_decision
 
+  const upload = (selected: File[]) => {
+    if (!selected.length || status === 'ocr' || status === 'checking') return
+    setFiles(selected)
+    onUpload(selected)
+  }
   const handleFiles = (fileList: FileList | null) => {
     if (!fileList || fileList.length === 0) return
-    onUpload(Array.from(fileList))
+    upload(Array.from(fileList))
   }
 
   const scoreColor = () => {
@@ -59,7 +67,7 @@ export default function TaskCard({ sessionId, taskId, result, agentProgress, onU
         onPaste={(event) => {
           if (status !== 'pending' && status !== 'error') return
           const files = clipboardImages(event.clipboardData)
-          if (files.length) { event.preventDefault(); onUpload(files) }
+          if (files.length) { event.preventDefault(); upload(files) }
         }}
         onDragOver={(e) => { e.preventDefault(); setDragging(true) }}
         onDragLeave={() => setDragging(false)}
@@ -82,15 +90,19 @@ export default function TaskCard({ sessionId, taskId, result, agentProgress, onU
           )}
         </div>
         <p className="muted" style={{ fontSize: 13.5 }}>{STATUS_LABEL[status]}</p>
+        {files.length > 0 && <ul className="photo-files-list" aria-label="Прикреплённые файлы решения">
+          {files.map((file, index) => <li key={`${file.name}-${index}`}><PhotoAttachment file={file} /></li>)}
+        </ul>}
         {(status === 'ocr' || status === 'checking') && <div className="phase run" style={{ alignSelf: 'flex-start' }}>{status === 'ocr' ? 'Распознаём почерк' : 'Проверяем по критериям'}</div>}
         {status === 'checking' && <ProgressDots agentProgress={agentProgress} />}
         {status === 'error' && result?.error && <p style={{ fontSize: 12.5, color: 'var(--red)', wordBreak: 'break-word' }}>{result.error}</p>}
         {(status === 'pending' || status === 'error') && (
           <button onClick={() => inputRef.current?.click()} className="drop" style={{ padding: 14, cursor: 'pointer', font: 'inherit', color: 'inherit' }}>
             <b>Сфотографируйте или перетащите сюда</b>
-            <span className="muted" style={{ fontSize: 12 }}>можно несколько фото, jpg, png или pdf · вставка фото: Ctrl+V или ⌘V</span>
+            <span className="muted" style={{ fontSize: 12 }}>до 5 файлов · JPG, JPEG, PNG или PDF · до 15 МБ на файл</span>
           </button>
         )}
+        {(status === 'pending' || status === 'error') && <PastePhotoButton onFiles={upload} />}
         {status === 'done' && <button onClick={() => setShowModal(true)} className="btn btn-sm btn-ghost">Подробный разбор →</button>}
         <input
           ref={inputRef}

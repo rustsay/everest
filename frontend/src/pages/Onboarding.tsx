@@ -29,11 +29,15 @@ export default function Onboarding({ me, onToken, onProfile }: Props) {
   const [d, setD] = useState<{ role: string; name: string; grade: string; exam: string }>({
     role: me?.role ?? 'student', name: me?.name ?? '', grade: '', exam: '',
   })
-  const [err, setErr] = useState('')
+  const [error, setError] = useState<{ scope: string; message: string } | null>(null)
   const [busy, setBusy] = useState(false)
   // email code: at registration (when the server asks for it) and for «Забыли пароль»
   const [acc, setAcc] = useState<{ email: string; password: string } | null>(null)
   const [mode, setMode] = useState<'login' | 'reset' | 'reset2'>('login')
+  // Keep late responses attached to the form that submitted the request.
+  const errorScope = step === 'login' ? `${step}:${mode}` : step
+  const err = error?.scope === errorScope ? error.message : ''
+  const setErr = (message: string) => setError(message ? { scope: errorScope, message } : null)
   const [resetEmail, setResetEmail] = useState('')
   const [info, setInfo] = useState('')
   const fail = (e2: unknown) => setErr(String(e2).replace('Error: ', ''))
@@ -45,8 +49,12 @@ export default function Onboarding({ me, onToken, onProfile }: Props) {
     if (c) inviteInfo(c).then(setInv).catch(() => { setInvBad(true); clearInvite() })
   }, [me])
 
-  const show = (s: Step) => { setBack((b) => [...b, step]); setStep(s); setErr('') }
-  const goBack = () => setBack((b) => { const nb = [...b]; const p = nb.pop(); if (p) setStep(p); return nb })
+  const show = (s: Step) => { setBack((b) => [...b, step]); setStep(s); setErr(''); setInfo('') }
+  const goBack = () => {
+    const previous = back[back.length - 1]
+    if (!previous) return
+    setBack(back.slice(0, -1)); setStep(previous); setErr(''); setInfo('')
+  }
 
   const afterExam = async (exam: string) => {
     const nd = { ...d, exam }

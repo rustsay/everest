@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { getMe, joinClass, putSettings } from './api/client'
 import { clearInvite, pendingInvite } from './invite'
 import Shell from './app/Shell'
@@ -35,12 +35,24 @@ export default function App() {
   const [stage, setStage] = useState<Stage>(token ? 'loading' : 'onb')
   const [result, setResult] = useState<DiagResult | null>(null)
   const [tour, setTour] = useState(false)
+  const [tourPending, setTourPending] = useState(false)
+  const revealedFor = useRef<number | null>(null)
+
+  const finishTour = useCallback(() => {
+    setTour(false)
+    setTourPending(false)
+    setMe((current) => current ? { ...current, settings: { ...current.settings, onb: 'done' } } : current)
+    void putSettings({ onb: 'done' }).catch(() => null)
+  }, [])
 
   const logout = useCallback(() => {
     localStorage.removeItem('token')
     localStorage.removeItem('email')
     setToken(null)
     setMe(null)
+    setTour(false)
+    setTourPending(false)
+    revealedFor.current = null
     setStage('onb')
     history.replaceState(null, '', '/')
   }, [])
@@ -69,17 +81,31 @@ export default function App() {
   }, [token, route, logout])
 
   const reveal = (m: Me) => {
+    if (m.settings.onb === 'done' || revealedFor.current === m.id) return
+    revealedFor.current = m.id
     history.replaceState(null, '', viewHash({ v: m.role === 'student' ? 'home' : 'teacher' }))
-    document.body.classList.add('reveal')
-    setTimeout(() => document.body.classList.remove('reveal'), 2400)
-    setTimeout(() => setTour(true), 1700)
+    setTourPending(true)
   }
 
   useEffect(() => {
-    const on = () => setStage('diag')
+    if (stage !== 'app' || !tourPending) return
+    window.scrollTo({ top: 0, behavior: 'instant' })
+    document.body.classList.add('reveal')
+    const timer = window.setTimeout(() => {
+      document.body.classList.remove('reveal')
+      setTour(true)
+    }, 2400)
+    return () => { window.clearTimeout(timer); document.body.classList.remove('reveal') }
+  }, [stage, tourPending])
+
+  useEffect(() => {
+    const on = () => {
+      if (tour || tourPending) finishTour()
+      setStage('diag')
+    }
     addEventListener('everest:diag', on)
     return () => removeEventListener('everest:diag', on)
-  }, [])
+  }, [tour, tourPending, finishTour])
 
   const onToken = (t: string, email: string) => {
     localStorage.setItem('token', t)
@@ -95,8 +121,13 @@ export default function App() {
     return (
       <Diagnostic mode="first" required={false} exam={me.exam_info}
         onFinished={(r) => { setResult(r); setStage('result') }}
-        onPause={() => { history.replaceState(null, '', viewHash({ v: 'home' })); setStage('app') }}
-        onSkip={() => { const m = { ...me, settings: { ...me.settings, onb: 'skipped' } }; setMe(m); setStage('app'); reveal(m) }} />
+        onPause={() => {
+          history.replaceState(null, '', viewHash({ v: 'home' }))
+          const m = me.settings.onb === 'new' ? { ...me, settings: { ...me.settings, onb: 'skipped' } } : me
+          if (m !== me) void putSettings({ onb: 'skipped' }).catch(() => null)
+          setMe(m); setStage('app'); reveal(m)
+        }}
+        onSkip={() => { const m = { ...me, settings: { ...me.settings, onb: me.settings.onb === 'done' ? 'done' : 'skipped' } }; setMe(m); setStage('app'); reveal(m) }} />
     )
   }
   if (stage === 'result' && result) {
@@ -105,7 +136,7 @@ export default function App() {
   return (
     <AppProvider me={me} onLogout={logout}>
       <Main />
-      {tour && <Tour teacher={me.role !== 'student'} onEnd={() => { setTour(false); putSettings({ onb: 'done' }).catch(() => null) }} />}
+      {tour && <Tour teacher={me.role !== 'student'} onEnd={finishTour} />}
     </AppProvider>
   )
 }

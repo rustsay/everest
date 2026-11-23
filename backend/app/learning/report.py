@@ -49,12 +49,8 @@ def plural(n: int, one: str, few: str, many: str) -> str:
     return one if n % 10 == 1 else few if 2 <= n % 10 <= 4 else many
 
 
-def ru(d: str) -> str:
-    return f"{d[8:10]}.{d[5:7]}"
-
-
 def lines(w: dict) -> list[str]:
-    """The report in plain sentences (screen, notification, email)."""
+    """The report in plain sentences for the student's weekly summary."""
     out = [f"Дней с занятиями: {w['active']} из 7."]
     if w["solved"]:
         out.append(f"Решено задач с первой попытки: {w['solved']}, верно {w['ok']} ({w['acc']}%).")

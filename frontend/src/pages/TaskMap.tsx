@@ -9,6 +9,7 @@ import StaleServer from '../components/StaleServer'
 import type { SkillExplain, TaskMapData, TmAnswer, TmProblem, TmProto, TmSkill, TmStat } from '../types'
 import { Icon, Md } from '../design/ui'
 import GeoFig from '../components/GeoFig'
+import ProblemPhotoCheck from '../components/ProblemPhotoCheck'
 
 type Sel = { kind: 'proto' | 'skill' | 'task'; id: string } | null
 
@@ -292,11 +293,15 @@ function ProtoPanel({ d, p, onChanged, onPick }: { d: TaskMapData; p: TmProto; o
   )
 }
 
-export function Problem({ n, i, q, onDone }: { n: number; i: number; q: TmProblem; onDone: () => void }) {
+export function Problem({ n, i, q, onDone, problemRef }: { n: number; i: number; q: TmProblem; onDone: () => void; problemRef?: string }) {
   const app = useApp()
   const [v, setV] = useState('')
   const [res, setRes] = useState<TmAnswer | null>(null)
   const [busy, setBusy] = useState(false)
+  const [photo, setPhoto] = useState(false)
+  const [photoOpened, setPhotoOpened] = useState(false)
+  const ref = problemRef ?? (/^([fb]\d+|[ge]\d+\.\d+(\.\d+)?)$/.test(q.id) ? q.id : `s${n}:${q.id}`)
+  const openPhoto = () => { setPhotoOpened(true); setPhoto(true) }
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     if (!v.trim() || busy) return
@@ -308,8 +313,8 @@ export function Problem({ n, i, q, onDone }: { n: number; i: number; q: TmProble
     <div className={`tm-prob ${res ? (res.ok ? 'ok' : 'no') : was === 1 ? 'ok' : was === 0 ? 'no' : ''}`}>
       <div className="prob-q"><b>{i + 1}.</b> <ProblemText q={q.q} img={q.img} ctx={q.ctx_img} small /></div>
       {q.src && <p className="muted" style={{ fontSize: 12, marginTop: 4 }}>Источник: {q.src}</p>}
-      {q.check === 'photo' && !res && was == null ? (
-        <><button className="btn btn-sm btn-line" style={{ marginTop: 10 }} onClick={() => app.go({ v: 'check', id: 'p2' })}><Icon n="check" s={16} />Решить и проверить по фото</button><AnswerPic src={q.ans_img} /></>
+      {photo ? null : q.check === 'photo' && !res && was == null ? (
+        <><button className="btn btn-sm btn-line" style={{ marginTop: 10 }} onClick={openPhoto}><Icon n="check" s={16} />Решить и проверить по фото</button><AnswerPic src={q.ans_img} /></>
       ) : res ? (
         <p className="tm-res"><b>{res.ok ? 'Верно.' : `Неверно, ответ ${res.answer}.`}</b> {res.sol}{!res.first && !res.redo && <span className="muted"> В процент идёт первая попытка.</span>}
           {res.redo === 'added' && <span className="muted"> Задача вернётся в «Работе над ошибками» через 3 дня.</span>}
@@ -322,10 +327,13 @@ export function Problem({ n, i, q, onDone }: { n: number; i: number; q: TmProble
         <form className="tm-ans" onSubmit={submit}>
           <input className="input" inputMode="text" placeholder="Ответ" value={v} onChange={(e) => setV(e.target.value)} aria-label={`Ответ к задаче ${i + 1}`} />
           <button className="btn btn-em" type="submit" disabled={busy || !v.trim()}>Проверить</button>
-          {n <= 12 && <button type="button" className="btn btn-ghost" title="Ответ и фото решения: найдём ошибку"
-            onClick={() => app.go({ v: 'check', id: `1-${n}-${/^([fb]\d+|[ge]\d+\.\d+(\.\d+)?)$/.test(q.id) ? q.id : `s${n}:${q.id}`}` })}><Icon n="check" s={16} />По фото</button>}
+          {n < examRange(app.exam).p2 && <button type="button" className="btn btn-ghost" title="Ответ и фото решения: найдём ошибку"
+            onClick={openPhoto}><Icon n="check" s={16} />По фото</button>}
         </form>
       )}
+      {photoOpened && <div hidden={!photo}>
+        <ProblemPhotoCheck task={n} problemRef={ref} initialAnswer={v} onDone={onDone} onClose={() => setPhoto(false)} />
+      </div>}
     </div>
   )
 }

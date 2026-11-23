@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import BoardMath, { MathVector } from './BoardMath'
 
 /** Show source problem images in a reliable in-page viewer instead of relying on a new browser tab. */
-export default function ProblemText({ q, img, small, ctx }: { q: string; img?: string | null; small?: boolean; ctx?: string | null }) {
+export default function ProblemText({ q, img, small, ctx, typeset }: { q: string; img?: string | null; small?: boolean; ctx?: string | null; typeset?: boolean }) {
   const [bad, setBad] = useState(false)
   const [zoom, setZoom] = useState<string | null>(null)
   if (ctx) {
@@ -13,7 +14,7 @@ export default function ProblemText({ q, img, small, ctx }: { q: string; img?: s
             <img className="prob-img" src={ctx} alt="Общее условие" loading="lazy" onError={() => setBad(true)} />
           </button>
         </details>
-        <ProblemText q={q} img={img} small={small} />
+        <ProblemText q={q} img={img} small={small} typeset={typeset} />
         {zoom && <ImageViewer src={zoom} onClose={() => setZoom(null)} />}
       </>
     )
@@ -26,7 +27,9 @@ export default function ProblemText({ q, img, small, ctx }: { q: string; img?: s
       {zoom && <ImageViewer src={zoom} onClose={() => setZoom(null)} />}
     </>
   )
-  return <>{q}</>
+  return <span style={{ whiteSpace: 'pre-line' }}>{typeset ? <BoardMath text={q} /> : q.split(/(\p{L}\u20d7)/u).map((part, index) =>
+    /^\p{L}\u20d7$/u.test(part) ? <MathVector key={index} letter={part.slice(0, -1)} /> : part,
+  )}</span>
 }
 
 function ImageViewer({ src, onClose }: { src: string; onClose: () => void }) {

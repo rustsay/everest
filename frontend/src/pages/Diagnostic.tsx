@@ -4,6 +4,8 @@ import ProblemText from '../components/ProblemText'
 import type { DiagChoice, DiagItem, DiagResult, DiagRun, DiagWork, ExamInfo } from '../types'
 import { Icon, plural } from '../design/ui'
 import useImagePaste from '../hooks/useImagePaste'
+import PhotoFiles from '../components/PhotoFiles'
+import DiagWorkPhotos from '../components/DiagWorkPhotos'
 
 interface Props {
   mode: 'first' | 'mock'
@@ -168,7 +170,8 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
 
   if (phase === 'intro') {
     const nNum = run.items.filter((x) => x.t === 'num').length, nSelf = run.items.length - nNum
-    const resume = run.position > 0
+    const resume = run.position > 0 || Object.values(run.answers).some((answer) => answer.trim())
+      || Object.keys(run.work).length > 0 || Object.keys(run.choice ?? {}).length > 0
     return (
       <Frame>
         <div className="ob-intro">
@@ -232,7 +235,7 @@ export default function Diagnostic({ mode, required, exam, onFinished, onSkip, o
             return { ...r, answers, choice: c, work: w }
           })} />
         : <>
-          <div className="q-text">{it.img ? <ProblemText key={it.id} q={it.q} img={it.img} ctx={it.ctx_img} /> : it.q.split('\n').map((l, k) => <span key={k}>{l}<br /></span>)}</div>
+          <div className="q-text"><ProblemText key={it.id} q={it.q} img={it.img} ctx={it.ctx_img} /></div>
           {it.fig && <DiagnosticFigure k={it.fig} />}
           <p className="q-src">{it.src}</p>
         </>}
@@ -284,7 +287,6 @@ function ItemWork({ run, item, llm, exam, disabled, onBusy, beforeWork, onAnswer
   const [ans, setAns] = useState(init && init !== '?' ? init : '')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState('')
-  const fileRef = useRef<HTMLInputElement>(null)
   const uploading = useRef(false)
   const w = run.work[item.id]
   const mode = w?.mode && w.mode !== 'dont_know' ? w.mode : null
@@ -299,7 +301,6 @@ function ItemWork({ run, item, llm, exam, disabled, onBusy, beforeWork, onAnswer
     try { await beforeWork(); onWork((await uploadDiagWork(run.id, item.id, Array.from(files))).work) } catch (e) { setMsg(String(e).replace('Error: ', '')) }
     uploading.current = false
     setBusy(false); onBusy(false)
-    if (fileRef.current) fileRef.current.value = ''
   }
   useImagePaste((files) => { void upload(files) }, busy || disabled || !!locked)
 
@@ -328,14 +329,13 @@ function ItemWork({ run, item, llm, exam, disabled, onBusy, beforeWork, onAnswer
       )}
       <div className="dw-box">
         <p className="dw-h">{num ? (exam || optional ? 'Если у тебя есть решение, можешь прикрепить фото: я посмотрю, где ошибка' : 'Решение') : `Решение (максимум ${item.max} б.)`}</p>
-        <input ref={fileRef} type="file" accept="image/*,.pdf,.heic,.heif" multiple hidden onChange={(e) => upload(e.target.files)} />
-        <p className="dw-hint">Можно вставить скопированное изображение сочетанием Ctrl+V или ⌘V.</p>
+        <PhotoFiles id={`diag-${run.id}-${item.id}-files`} files={[]} onChange={(files) => { void upload(files) }} disabled={busy || disabled || !!locked}
+          actionLabel={mode === 'photo' ? 'Заменить фото решения' : 'Прикрепить фото или PDF'} />
         <div className="dw-btns">
-          <button className={`btn ${mode === 'photo' ? 'btn-line' : 'btn-em'}`} disabled={busy || disabled || !!locked} onClick={() => fileRef.current?.click()}>
-            <Icon n="check" s={18} />{mode === 'photo' ? 'Заменить фото' : 'Прикрепить фото решения'}</button>
           {item.oral && <button className={`btn ${mode === 'oral' ? 'btn-em' : 'btn-line'}`} disabled={busy || disabled} onClick={() => pick(mode === 'oral' ? 'clear' : 'oral')}>
             {mode === 'oral' ? <Icon n="ok" s={18} /> : null}Решил устно</button>}
         </div>
+        {mode === 'photo' && w && <DiagWorkPhotos id={run.id} item={item.id} work={w} />}
         {mode === 'photo' && w && <p className={`dw-st ${w.status === 'pending' ? 'pend' : ''}`}>{w.files} {plural(w.files, 'страница', 'страницы', 'страниц')} · {STATUS[w.status ?? 'pending']}{w.comment && w.status !== 'pending' ? `: ${w.comment}` : ''}</p>}
         {mode === 'photo' && !llm && <p className="dw-st">ИИ не подключён: решение сохранено, засчитается ответ.</p>}
         {mode === 'oral' && <p className="dw-st">Отмечено: решено устно, засчитается ответ.</p>}
@@ -380,7 +380,7 @@ function ChoiceBox({ run, item, disabled, onBusy, beforeWork, onChoice }: { run:
       {msg && <p className="auth-msg">{msg}</p>}
       {sel && (
         <div className="dch-prob">
-          <div className="q-text">{sel.img ? <ProblemText key={sel.type} q={sel.q} img={sel.img} ctx={sel.ctx_img} /> : sel.q.split('\n').map((l, k) => <span key={k}>{l}<br /></span>)}</div>
+          <div className="q-text"><ProblemText key={sel.type} q={sel.q} img={sel.img} ctx={sel.ctx_img} /></div>
           <p className="q-src">{sel.src}</p>
         </div>
       )}

@@ -70,3 +70,10 @@ test('board math renders legacy TeX and preserves scope of the radicand', () => 
   assert.match(html, /class="board-math-slash"/)
   assert.doesNotMatch(html, /\\|sqrt|frac\{/)
 })
+
+test('board math keeps the vector notation added in main alongside roots', () => {
+  const html = renderToStaticMarkup(createElement(BoardMath, { text: '|a\u20d7| = sqrt(12² + 16²)' }))
+  assert.match(html, /class="math-vector" role="img" aria-label="вектор a"/)
+  assert.match(html, /class="board-math-root"/)
+  assert.doesNotMatch(html, /sqrt/)
+})

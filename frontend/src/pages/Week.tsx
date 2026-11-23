@@ -1,10 +1,10 @@
-import { FormEvent, useEffect, useState } from 'react'
-import { classWeek, setParentEmail, weekReport } from '../api/client'
+import { useEffect, useState } from 'react'
+import { classWeek, weekReport } from '../api/client'
 import { useApp } from '../app/store'
 import type { ClassWeek, WeekReport } from '../types'
 import { fmtD } from '../design/ui'
 
-/** #report for a student: the last 7 days, the forecast, the goal, what is next; a weekly email to a parent. */
+/** #report for a student: the last 7 days, the forecast, the goal, and what is next. */
 export default function WeekPage() {
   const app = useApp()
   const [w, setW] = useState<WeekReport | null>(null)
@@ -39,30 +39,7 @@ export default function WeekPage() {
           {w.redo_due > 0 && <button className="btn btn-gold" style={{ marginTop: 10 }} onClick={() => app.go('practice')}>Работа над ошибками: {w.redo_due}</button>}
         </section>
       )}
-      <Parent w={w} />
     </>
-  )
-}
-
-function Parent({ w }: { w: WeekReport }) {
-  const app = useApp()
-  const [mail, setMail] = useState(w.parent_email ?? '')
-  const [saved, setSaved] = useState(w.parent_email ?? null)
-  const save = async (e: FormEvent) => {
-    e.preventDefault()
-    try { const r = await setParentEmail(mail.trim() || null); setSaved(r.parent_email); app.toast(r.parent_email ? 'Почта сохранена' : 'Отчёт родителю выключен') }
-    catch (err) { app.toast(String(err).replace('Error: ', '')) }
-  }
-  return (
-    <section className="card">
-      <h2>Отчёт родителю</h2>
-      <p className="muted" style={{ fontSize: 13.5, marginTop: 4 }}>Раз в неделю, в понедельник, родитель получит на почту эти итоги. {w.smtp ? '' : 'Почтовый сервер пока не подключён: письма начнут уходить, когда его настроят.'}</p>
-      <form className="mat-form" onSubmit={save} style={{ marginTop: 10 }}>
-        <div className="field" style={{ flex: '1 1 240px' }}><label htmlFor="parMail">Почта родителя</label>
-          <input id="parMail" className="input" type="email" value={mail} onChange={(e) => setMail(e.target.value)} placeholder="name@mail.ru" /></div>
-        <button className="btn btn-em" type="submit">{saved && !mail.trim() ? 'Выключить' : 'Сохранить'}</button>
-      </form>
-    </section>
   )
 }
 

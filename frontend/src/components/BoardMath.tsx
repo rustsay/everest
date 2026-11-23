@@ -10,6 +10,13 @@ const SYMBOLS: Record<string, string> = {
 }
 const CLOSE: Record<string, string> = { '(': ')', '[': ']', '{': '}' }
 
+export function MathVector({ letter }: { letter: string }) {
+  return <span className="math-vector" role="img" aria-label={'вектор ' + letter}>
+    <svg viewBox="0 0 16 6" preserveAspectRatio="none" aria-hidden="true"><path d="M1 3h13M11 1l3 2-3 2" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+    <span aria-hidden="true">{letter}</span>
+  </span>
+}
+
 // Parse only presentation notation. The board never evaluates a formula or inserts HTML.
 function group(source: string, start: number) {
   if (!(source[start] in CLOSE)) return null
@@ -59,6 +66,12 @@ function typeset(source: string, depth = 0): ReactNode {
   for (let i = 0; i < source.length;) {
     const rest = source.slice(i)
     const previous = source[i - 1] || ''
+    const vector = rest.match(/^(\p{L})\u20d7/u)
+    if (vector) {
+      add(<MathVector key={i} letter={vector[1]} />)
+      i += vector[0].length
+      continue
+    }
     const boundary = !/[\p{L}\p{N}_]/u.test(previous)
     const root = rest.match(/^(\\sqrt|√|∛|∜)/)
       || (boundary ? rest.match(/^(?:Math\.)?sqrt(?=\s*[(\[{]|\s+[0-9A-Za-zΑ-ω])/i) : null)

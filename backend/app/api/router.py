@@ -2,7 +2,7 @@ import asyncio
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from typing import List
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -131,6 +131,7 @@ async def upload_task(
     files: List[UploadFile] = File(...),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    ref: str = Form("", max_length=40),
 ):
     if task_id not in VALID_TASK_IDS:
         raise HTTPException(400, f"Допустимые задания: {sorted(VALID_TASK_IDS)}")
@@ -150,6 +151,11 @@ async def upload_task(
     if not session or session.user_id != current_user.id:
         raise HTTPException(403, "Сессия не найдена")
 
+    problem = None
+    if ref:
+        from app.api.check1 import _exam, _problem
+        problem = await _problem(db, ref, task_id, "", _exam(current_user, "prof"))
+
     file_inputs: list[tuple[bytes, str]] = []
     for idx, f in enumerate(files):
         data = await f.read()
@@ -168,7 +174,7 @@ async def upload_task(
     initial = TaskResult(task_id=task_id, status=TaskStatus.ocr)
     await upsert_task_result(db, session_id, initial)
 
-    asyncio.create_task(_process_task(session_id, task_id, file_inputs))
+    asyncio.create_task(_process_task(session_id, task_id, file_inputs, problem=problem))
     return {"task_id": task_id, "status": "processing"}
 
 
@@ -297,7 +303,7 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
 
 # ---------- Background processing ----------
 
-async def _process_task(session_id: str, task_id: int, file_inputs: list[tuple[bytes, str]]):
+async def _process_task(session_id: str, task_id: int, file_inputs: list[tuple[bytes, str]], problem: dict | None = None):
     tag = f"session={session_id[:8]} task={task_id}"
 
     async def emit(event: dict) -> None:
@@ -335,11 +341,16 @@ async def _process_task(session_id: str, task_id: int, file_inputs: list[tuple[b
             })
 
             log.info("[%s] agents start", tag)
+            context = {}
+            if problem is not None:
+                from app.api.diag_work import _problem_image
+                context = {"problem": problem["q"], "problem_image": _problem_image(problem)}
             verdicts, judge = await check_task(
                 task_id=task_id,
                 ocr_text=ocr_data["text"],
                 image_bytes_list=scan_jpegs,
                 emit=emit,
+                **context,
             )
             log.info(
                 "[%s] judge done score=%d/%d consensus=%s",

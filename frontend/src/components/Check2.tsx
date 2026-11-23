@@ -5,6 +5,7 @@ import type { Check2Item, Check2Result, PracticeItem } from '../types'
 import { Icon, fmtD } from '../design/ui'
 import ProblemText from './ProblemText'
 import useImagePaste from '../hooks/useImagePaste'
+import PhotoFiles from './PhotoFiles'
 
 /** OGE, second part (20-25): a photo of the full solution, 0-2 points. A bank problem is graded against the answer of the collection. */
 export default function Check2() {
@@ -23,19 +24,22 @@ export default function Check2() {
   const loadHist = () => check2History().then((r) => setHist(r.items)).catch(() => null)
   useEffect(() => { loadHist() }, [])
   useEffect(() => {
+    let active = true
     setItems(null)
+    setRef('')
     getPractice(task, undefined, exam).then((r) => {
+      if (!active) return
       const list = r.items.filter((x) => !x.analog)  // prototypes of the collection; analogs are in «Банк задач»
       setItems(list)
-      setRef((v) => (list.some((x) => x.ref === v) ? v : list[0]?.ref ?? ''))
-    }).catch(() => setItems([]))
+    }).catch(() => { if (active) setItems([]) })
+    return () => { active = false }
   }, [task, exam])
   const cur = items?.find((x) => x.ref === ref)
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    if (mode === 'bank' && !cur) return app.toast('Выбери задачу из банка')
     if (!files.length) return app.toast('Прикрепи фото решения')
     if (mode === 'own' && !problem.trim()) return app.toast('Впиши условие задачи')
-    if (mode === 'bank' && !ref) return app.toast('Выбери задачу из банка')
     setBusy(true); setRes(null)
     try {
       setRes(await checkSecondPart({ task, files, exam, ...(mode === 'bank' ? { ref } : { problem }) }))
@@ -51,7 +55,7 @@ export default function Check2() {
       <form onSubmit={submit} className="c1-form">
         <div className="mat-form">
           <div className="field" style={{ flex: '0 1 130px' }}><label htmlFor="c2Task">Задание</label>
-            <select id="c2Task" className="input" value={task} onChange={(e) => { setTask(Number(e.target.value)); setRes(null) }}>
+            <select id="c2Task" className="input" value={task} onChange={(e) => { setTask(Number(e.target.value)); setRef(''); setRes(null) }}>
               {[20, 21, 22, 23, 24, 25].map((n) => <option key={n} value={n}>№ {n}</option>)}</select></div>
           <div style={{ flex: '1 1 260px' }}><span className="flabel">Какая задача</span>
             <div className="seg" role="group" aria-label="Какая задача">
@@ -61,6 +65,7 @@ export default function Check2() {
         {mode === 'bank' ? (
           <div className="field"><label htmlFor="c2Ref">Задача</label>
             <select id="c2Ref" className="input" value={ref} onChange={(e) => { setRef(e.target.value); setRes(null) }} disabled={!items?.length}>
+              <option value="">{items === null ? 'Загружаю задачи…' : items.length ? 'Выбери задачу' : 'Нет задач для этого задания'}</option>
               {items?.map((x, i) => <option key={x.ref} value={x.ref}>{i + 1}. {x.proto_name ? `${x.proto_name}: ` : ''}{x.q.slice(0, 80)}</option>)}</select>
             {cur && <div className="c1-q"><ProblemText q={cur.q} img={cur.img} /></div>}
           </div>
@@ -69,11 +74,8 @@ export default function Check2() {
             <textarea id="c2Prob" className="input" rows={3} maxLength={3000} value={problem} onChange={(e) => setProblem(e.target.value)} placeholder="Перепиши условие или сфотографируй его вместе с решением" />
             <small className="muted">У своей задачи нет ответа из сборника: Звёздочка оценит решение сама и может ошибиться.</small></div>
         )}
-        <div className="field"><label htmlFor="c2Files">Фото решения (до 5)</label>
-          <input id="c2Files" className="input" type="file" accept="image/*,.pdf,.heic" multiple style={{ paddingTop: 10 }}
-            onChange={(e) => setFiles(Array.from(e.target.files ?? []).slice(0, 5))} /></div>
-        <p className="muted" style={{ fontSize: 13 }}>Фото можно вставить из буфера: Ctrl+V или ⌘V.{files.length > 0 && ` Прикреплено: ${files.map((file) => file.name).join(', ')}.`}</p>
-        <button className="btn btn-gold" type="submit" disabled={busy}><Icon n="check" s={18} c="#16231F" />{busy ? 'Проверяю…' : 'Проверить'}</button>
+        <PhotoFiles id="c2Files" files={files} onChange={setFiles} disabled={busy} />
+        <button className="btn btn-gold" type="submit" disabled={busy || (mode === 'bank' && !cur)}><Icon n="check" s={18} c="#16231F" />{busy ? 'Проверяю…' : 'Проверить'}</button>
       </form>
       {res && (
         <div className={`c1-res ${tone(res)}`}>

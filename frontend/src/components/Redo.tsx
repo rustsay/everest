@@ -23,7 +23,7 @@ export default function Redo() {
           {d.items.map((it, i) => (
             <div key={it.ref}>
               <p className="label" style={{ margin: '0 0 6px 4px' }}>№ {it.task} · {it.proto_name || 'задача'} · {it.step ? 'второй повтор' : 'первый повтор'}</p>
-              <Problem n={it.task} i={i} q={{ id: it.pid, q: it.q, done: null, sol: null, src: it.src, check: it.check, img: it.img }}
+              <Problem n={it.task} i={i} problemRef={it.ref} q={{ id: it.pid, q: it.q, done: null, sol: null, src: it.src, check: it.check, img: it.img }}
                 onDone={() => { setTimeout(load, 1500); app.reload() }} />
             </div>
           ))}
