@@ -16,12 +16,14 @@ from app.config import settings, NO_LLM
 from app.db.database import AsyncSessionLocal, get_db
 from app.db.models import GeneratedVideo, User
 from app.video.steps import generate_steps, display_steps
+from app.video.geometry import looks_geometric
 
 router = APIRouter(prefix='/videos', tags=['videos'])
 log = logging.getLogger(__name__)
 _queue = asyncio.Semaphore(1)
 _enqueue = asyncio.Lock()
 _jobs: set[asyncio.Task] = set()
+FORMAT_VERSION = 2
 
 def media_dir() -> Path:
     path = Path(settings.uploads_dir) / 'videos'
@@ -37,7 +39,10 @@ def view(row: GeneratedVideo) -> dict:
     # Stable during polling: changing a <video> URL would restart playback.
     token = jwt.encode({'sub': str(row.user_id), 'video': str(row.id), 'purpose': 'video-media', 'exp': (int(time.time()) // 3600 + 5) * 3600}, settings.secret_key, algorithm=settings.jwt_algorithm)
     base = f'/api/videos/{row.id}/media/'
-    return {'id': str(row.id), 'problem': row.problem, 'title': row.title, 'status': row.status, 'stage': row.stage, 'error': row.error, 'duration': row.duration, 'steps': display_steps(row.steps, row.html),
+    needs_refresh = row.status == 'ready' and row.format_version < FORMAT_VERSION
+    steps = [] if needs_refresh and looks_geometric(row.problem) else display_steps(row.steps, row.html)
+    return {'id': str(row.id), 'problem': row.problem, 'title': row.title, 'status': row.status, 'stage': row.stage, 'error': row.error, 'duration': row.duration,
+            'steps': steps, 'diagram': row.diagram, 'needs_refresh': needs_refresh,
             'created_at': row.created_at.isoformat(), 'board_url': base+'board?token='+token if row.html else None,
             'video_url': base+'mp4?token='+token if row.status == 'ready' and (media_dir()/f'{row.id}.mp4').is_file() else None,
             'audio_url': base+'mp3?token='+token if row.status == 'ready' and (media_dir()/f'{row.id}.mp3').is_file() else None}
@@ -58,15 +63,15 @@ async def generate(vid):
         try:
             async with AsyncSessionLocal() as db:
                 row = await db.get(GeneratedVideo, vid)
-                problem, steps, title = row.problem, display_steps(row.steps, row.html), row.title
-            if not steps:
-                await change(vid, stage='Готовим пошаговое решение')
-                data = await generate_steps(problem)
-                steps, title = data['steps'], data['title']
-            await change(vid, title=title, steps=steps, status='ready', stage='Разбор готов', error=None)
+                problem = row.problem
+            geometry = looks_geometric(problem)
+            await change(vid, stage='Готовим решение и чертёж' if geometry else 'Готовим пошаговое решение')
+            data = await generate_steps(problem, require_geometry=geometry)
+            await change(vid, title=data['title'], steps=data['steps'], diagram=data.get('diagram'),
+                         format_version=FORMAT_VERSION, status='ready', stage='Разбор готов', error=None)
         except Exception:
             log.exception('Step generation failed: %s', vid)
-            await change(vid, status='error', stage='', error='Не удалось подготовить разбор. Попробуйте ещё раз.')
+            await change(vid, status='error', stage='', error='Не удалось подготовить проверенный разбор. Проверьте, что условие полное, и попробуйте ещё раз.')
 
 def launch(vid):
     task = asyncio.create_task(generate(vid))
@@ -108,8 +113,8 @@ async def get_video(vid: uuid.UUID, user: User = Depends(get_current_user), db: 
 async def retry(vid: uuid.UUID, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     async with _enqueue:
         row = await own(vid, user, db)
-        if row.status != 'error':
-            raise HTTPException(409, 'Повтор доступен для незавершённого разбора.')
+        if row.status != 'error' and not (row.status == 'ready' and row.format_version < FORMAT_VERSION):
+            raise HTTPException(409, 'Разбор уже готов или готовится.')
         await check_capacity(db, user.id)
         row.status, row.stage, row.error = 'pending', 'В очереди', None
         await db.commit(); launch(row.id)

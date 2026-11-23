@@ -413,7 +413,18 @@ body[data-view="home"] .mascot-fab{display:none}
 .board-lines{flex:1;display:flex;flex-direction:column;gap:2px;justify-content:center}
 .board .ln{font-family:var(--f-hand);font-size:clamp(22px,3.4vw,30px);line-height:1.2;white-space:pre-wrap;word-break:break-word}
 .board .ln.old{font-size:clamp(17px,2.4vw,21px);opacity:.45}
-.board .ln.cur::after{content:"|";animation:blink .7s infinite;color:var(--gold-hi)}
+.board-work{display:grid;gap:6px;min-width:0;overflow-x:auto}
+.board-reason{margin:4px 0 0;color:var(--on-em);font-size:15px;line-height:1.58;white-space:pre-line;overflow-wrap:anywhere}
+.board-math-root,.board-math-fraction{display:inline-flex;white-space:nowrap;vertical-align:middle}
+.board-math-root{position:relative;align-items:stretch;font-family:var(--f-body);padding-inline:.61em .04em}
+.board-math-root-sign{position:absolute;inset:0 auto 0 0;width:.66em;height:100%;overflow:visible}
+.board-math-radicand{border-top:1px solid currentColor;padding:.07em .12em 0;line-height:1}
+.board-math-root-index{position:absolute;inset:0 auto auto 0;font-size:.58em;line-height:1}
+.board-math-symbol{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+.board-math-fraction{flex-direction:column;align-items:stretch;text-align:center;margin:.04em .12em;font-size:.78em;line-height:1.08}
+.board-math-fraction>span{padding:0 .16em}
+.board-math-fraction>.board-math-slash{height:1px;overflow:hidden;padding:0;background:currentColor;font-size:0}
+.board-math-script{font-size:.72em;line-height:0;white-space:nowrap}
 .board-say{display:flex;gap:10px;align-items:flex-end}
 .board-say .say-b{background:#fff;color:#16231F;border-radius:16px 16px 16px 4px;padding:10px 12px;font-weight:600;font-size:14px;flex:1;min-height:42px}
 .bprog{display:flex;gap:5px;margin-top:10px}
@@ -777,6 +788,28 @@ body.reveal #view>*:nth-child(1){animation-delay:.35s}body.reveal #view>*:nth-ch
 .board-fig{flex:none;width:min(38%,210px);height:auto;margin-top:4px}
 .board-fig.geo{display:grid;place-items:center}
 @media (max-width:640px){.board-mid{flex-direction:column-reverse}.board-fig{width:62%;align-self:center}}
+.board--geometry{container:solution-board / inline-size}
+.board--geometry .board-mid{flex-direction:column-reverse;align-items:stretch}
+.board--geometry .board-lines{flex:none}
+.walk-figure{width:min(100%,420px);min-width:0;margin:0;align-self:center;color:var(--on-em)}
+@container solution-board (min-width:500px){
+  .board--geometry .board-mid{flex-direction:row;align-items:flex-start;gap:18px}
+  .board--geometry .board-lines{flex:1}
+  .walk-figure{width:min(52%,420px);flex:none;align-self:flex-start}
+}
+.walk-figure figcaption{display:flex;gap:4px 8px;justify-content:space-between;align-items:baseline;flex-wrap:wrap;font-size:13px}
+.walk-figure figcaption span{font-size:12px;color:var(--on-em-muted)}
+.walk-figure svg{display:block;width:100%;height:auto}
+.walk-figure svg text{fill:currentColor;font-family:inherit;font-size:17px;font-weight:700;text-anchor:middle;dominant-baseline:middle;paint-order:stroke;stroke:var(--hero);stroke-width:3px;stroke-linejoin:round}
+.walk-edge,.walk-mark{fill:none;stroke:currentColor;stroke-width:1.6;vector-effect:non-scaling-stroke;stroke-linecap:round}
+.walk-edge.hidden,.walk-edge.auxiliary{stroke-dasharray:5 4}
+.walk-edge.hidden{opacity:.65}
+.walk-edge.auxiliary{color:var(--on-em-muted)}
+.walk-mark,.walk-figure svg .walk-measure{color:var(--gold-hi)}
+.walk-edge.active{stroke:var(--gold-hi);stroke-width:2.8;opacity:1}
+.walk-face{fill:var(--gold-hi);fill-opacity:.16;stroke:var(--gold-hi);stroke-opacity:.7;stroke-dasharray:4 3;vector-effect:non-scaling-stroke}
+.walk-figure-key{display:flex;flex-wrap:wrap;gap:4px 10px;margin:0;padding:0;list-style:none;font-size:12px;color:var(--on-em-muted)}
+.walk-figure-key li.active{color:var(--gold-hi);font-weight:700}
 
 /* walkthroughs: typical card and bank problems */
 .vt-typ{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:14px;padding:14px;border-radius:14px;background:var(--em-soft)}

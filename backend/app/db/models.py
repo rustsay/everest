@@ -36,6 +36,8 @@ class GeneratedVideo(Base):
     stage: Mapped[str] = mapped_column(String(250), default="В очереди")
     html: Mapped[str | None] = mapped_column(Text)
     steps: Mapped[list | None] = mapped_column(JSONB)
+    diagram: Mapped[dict | None] = mapped_column(JSONB)
+    format_version: Mapped[int] = mapped_column(Integer, server_default="0")
     error: Mapped[str | None] = mapped_column(Text)
     duration: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -343,6 +345,7 @@ class ProblemWalkthrough(Base):
     ref: Mapped[str] = mapped_column(String(40), unique=True, nullable=False, index=True)
     source: Mapped[str] = mapped_column(String(12), nullable=False)  # ai | solution
     steps: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    diagram: Mapped[dict | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 

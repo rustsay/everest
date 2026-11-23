@@ -28,18 +28,31 @@ export default function GeneratedVideos({ detailId }: { detailId?: string }) {
     try { const v = await generateVideo(problem.trim()); setProblem(''); await load(); open(v.id) }
     catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
+  const refresh = async (id: string) => {
+    setBusy(true); setError('')
+    try { await retryVideo(id); await load() }
+    catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }
   if (detailId) {
-    if (active?.steps?.length) {
-      const task: VTask = { t: active.title, c: active.problem, s: active.steps.map((s) => [s.title, s.lines, s.text]) }
-      return <SolutionBoard key={active.id} task={task} onBack={() => app.go('video')} onUnderstood={() => { app.toast('Разбор пройден'); app.go('video') }} onNotUnderstood={(step) => app.go({ v: 'chat', id: `Условие: ${active.problem}\nНе понял шаг «${step[0]}»: ${step[1].join('; ')}. Объясни по-другому и начни с вопроса.` })} />
+    if (active?.status === 'ready' && active.steps.length) {
+      const task: VTask = { t: active.title, c: active.problem, s: active.steps.map((s) => [s.title, s.lines, s.text, s.explanation]) }
+      return <>
+        {error && <p role="alert">{error}</p>}
+        <SolutionBoard key={active.id} task={task} diagram={active.diagram} refreshing={busy || pending}
+          onRefresh={active.needs_refresh ? () => void refresh(active.id) : undefined}
+          onBack={() => app.go('video')} onUnderstood={() => { app.toast('Разбор пройден'); app.go('video') }}
+          onNotUnderstood={(step) => app.go({ v: 'chat', id: `Условие: ${active.problem}\nНе понял шаг «${step[0]}»: ${step[1].join('; ')}. Объясни по-другому и начни с вопроса.` })} />
+      </>
     }
     return <>
       <button className="btn btn-sm btn-ghost" onClick={() => app.go('video')}>← Все задания</button>
       <section className="card"><h1>{active?.title || 'Разбор своей задачи'}</h1>
         {active && <p className="muted" style={{ margin: '12px 0', whiteSpace: 'pre-wrap' }}>{active.problem}</p>}
-        {loading ? <p role="status">Загружаем разбор…</p> : active?.status === 'pending' ? <p role="status">{active.stage || 'Готовим пошаговое решение'}… Можно вернуться позже — разбор сохранится.</p> : <p role="alert">{error || (active ? 'Не удалось подготовить решение. Попробуйте ещё раз.' : 'Разбор не найден.')}</p>}
-        {active?.status === 'error' && <button className="btn btn-em" disabled={busy || pending} onClick={async () => { setBusy(true); setError(''); try { await retryVideo(active.id); await load() } catch (e) { setError((e as Error).message) } finally { setBusy(false) } }}>Повторить</button>}
-        {error && active?.status === 'error' && <p role="alert">{error}</p>}
+        {loading ? <p role="status">Загружаем разбор…</p> : active?.status === 'pending' ? <p role="status">{active.stage || 'Готовим пошаговое решение'}… Можно вернуться позже — разбор сохранится.</p> : active?.needs_refresh
+          ? <p>Обновите разбор, чтобы получить объяснение с чертежом.</p>
+          : <p role="alert">{active?.error ?? (active ? 'Не удалось подготовить решение.' : 'Разбор не найден.')}</p>}
+        {(active?.status === 'error' || active?.needs_refresh) && <button className="btn btn-em" disabled={busy || pending} onClick={() => void refresh(active.id)}>{active.needs_refresh ? 'Обновить разбор' : 'Повторить'}</button>}
+        {error && <p role="alert">{error}</p>}
       </section>
     </>
   }

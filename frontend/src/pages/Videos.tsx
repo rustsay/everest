@@ -5,6 +5,8 @@ import { getDiagnosticWalkthrough, getPractice, getWalkthrough, sendEvent } from
 import { useApp } from '../app/store'
 import { Icon, plural } from '../design/ui'
 import { VTASK } from './videoData'
+import type { Step } from './videoData'
+import { TYPICAL_DIAGRAMS } from './videoGeometry'
 import GeneratedVideos from '../components/GeneratedVideos'
 import ProblemText from '../components/ProblemText'
 import { examRange } from '../types'
@@ -120,8 +122,8 @@ function DiagnosticBoard({ diagnosticId, itemId }: { diagnosticId: number; itemI
     <div style={{ display: 'flex', gap: 8 }}><button className="btn btn-line" onClick={back}>К результатам</button><button className="btn btn-em" onClick={() => setRetry((n) => n + 1)}>Попробовать ещё раз</button></div>
   </section>
   if (!w) return <section className="card"><p className="muted">Готовлю разбор этой задачи с учётом твоего ответа и замечаний проверки…</p></section>
-  const task = { t: w.title, c: w.q, s: w.steps.map((s) => [s.title, s.lines, s.text] as [string, string[], string]) }
-  return <SolutionBoard n={w.task ?? undefined} proto={null} task={task} img={w.img} ctx={w.ctx_img} feedback={w.feedback}
+  const task = { t: w.title, c: w.q, s: w.steps.map((s): Step => [s.title, s.lines, s.text, s.explanation]) }
+  return <SolutionBoard n={w.task ?? undefined} proto={null} task={task} img={w.img} ctx={w.ctx_img} feedback={w.feedback} diagram={w.diagram}
     conditionFigure={w.condition_fig ? <DiagnosticFigure k={w.condition_fig} /> : undefined}
     label="Разбор задачи из диагностики" backLabel="К результатам" doneLabel="Понял, к результатам"
     onBack={back} onUnderstood={back}
@@ -132,17 +134,25 @@ function BankBoard({ r }: { r: string }) {
   const app = useApp()
   const [w, setW] = useState<Walkthrough | null>(null)
   const [err, setErr] = useState('')
-  useEffect(() => { getWalkthrough(r).then(setW).catch((e) => setErr(e instanceof Error ? e.message : 'Не удалось собрать разбор')) }, [r])
+  const [retry, setRetry] = useState(0)
+  useEffect(() => {
+    let disposed = false
+    setErr(''); setW(null)
+    getWalkthrough(r).then((value) => { if (!disposed) setW(value) })
+      .catch((e) => { if (!disposed) setErr(e instanceof Error ? e.message : 'Не удалось собрать разбор') })
+    return () => { disposed = true }
+  }, [r, retry])
   const back = (n?: number) => app.go({ v: 'video', id: 't' + (n ?? w?.task ?? 1) })
   if (err) return (
     <section className="card" style={{ display: 'grid', gap: 10 }}>
       <h2>Разбор не получился</h2><p className="muted">{err}</p>
-      <div><button className="btn btn-line" onClick={() => back()}><Icon n="prev" s={16} />К задачам</button></div>
+      <div className="row"><button className="btn btn-line" onClick={() => back()}><Icon n="prev" s={16} />К задачам</button>
+        <button className="btn btn-em" onClick={() => setRetry((n) => n + 1)}>Попробовать ещё раз</button></div>
     </section>
   )
-  if (!w) return <section className="card"><p className="muted">Звёздочка готовит разбор. Первый раз это занимает до минуты.</p></section>
-  const task = { t: w.title, c: w.q, s: w.steps.map((s) => [s.title, s.lines, s.text] as [string, string[], string]) }
-  return <SolutionBoard n={w.task} proto={w.fig} img={w.img} ctx={w.ctx_img} task={task} label={`Разбор · задание ${w.task} · банк задач`} backLabel="К задачам" doneLabel="Понял, к задачам"
+  if (!w) return <section className="card"><p className="muted" role="status">Звёздочка готовит решение и проверяет построения. Это может занять несколько минут.</p></section>
+  const task = { t: w.title, c: w.q, s: w.steps.map((s): Step => [s.title, s.lines, s.text, s.explanation]) }
+  return <SolutionBoard n={w.task} proto={w.fig} img={w.img} ctx={w.ctx_img} task={task} diagram={w.diagram} label={`Разбор · задание ${w.task} · банк задач`} backLabel="К задачам" doneLabel="Понял, к задачам"
     onBack={() => back()}
     onUnderstood={() => { app.toast('Отлично! Попробуй похожую задачу сам'); back() }}
     onNotUnderstood={(step) => app.go({ v: 'chat', id: `Разбор задачи из банка (задание ${w.task}). Условие: ${w.q} Не понял шаг «${step[0]}»: ${step[1].join('; ')}. Объясни по-другому и начни с вопроса ко мне.` })} />
@@ -151,7 +161,7 @@ function BankBoard({ r }: { r: string }) {
 function Board({ n }: { n: number }) {
   const app = useApp()
   const v = VTASK[n]
-  return <SolutionBoard n={n} task={v} backLabel="К разборам" onBack={() => app.go({ v: 'video', id: 't' + n })} onUnderstood={async () => {
+  return <SolutionBoard n={n} task={v} diagram={TYPICAL_DIAGRAMS[n]} backLabel="К разборам" onBack={() => app.go({ v: 'video', id: 't' + n })} onUnderstood={async () => {
     const first = !app.dash?.vdone?.[String(n)]
     await sendEvent('video', String(n)).catch(() => null)
     if (first) app.toast(`+40 м высоты · разбор задания ${n} понят`, 'gold')

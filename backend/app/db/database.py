@@ -31,5 +31,8 @@ async def init_db() -> None:
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS grade VARCHAR(4)",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS exam VARCHAR(10)",
                 "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_demo BOOLEAN NOT NULL DEFAULT false",
+                "ALTER TABLE generated_videos ADD COLUMN IF NOT EXISTS diagram JSONB",
+                "ALTER TABLE generated_videos ADD COLUMN IF NOT EXISTS format_version INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE problem_walkthroughs ADD COLUMN IF NOT EXISTS diagram JSONB",
             ):
                 await conn.execute(text(ddl))

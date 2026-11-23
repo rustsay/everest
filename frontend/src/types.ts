@@ -367,9 +367,26 @@ export interface TeacherPaths {
 }
 
 // ---------- board walkthrough of a bank problem ----------
+export type DiagramPoint = [number, number, number]
+export interface DiagramRelation {
+  kind: 'length' | 'equal' | 'parallel' | 'perpendicular' | 'angle' | 'midpoint' | 'on_segment' | 'collinear' | 'on_circle' | 'tangent' | 'coplanar' | 'perpendicular_plane'
+  points: string[]
+  value?: number | null
+  step: number
+}
+export interface GeometryDiagram {
+  dimension: 2 | 3
+  grid?: number | null
+  points: Record<string, DiagramPoint>
+  edges: { points: [string, string]; style: 'solid' | 'hidden' | 'auxiliary' }[]
+  circles: { center: string; through: string }[]
+  faces: string[][]
+  relations: DiagramRelation[]
+}
+export interface WalkthroughStep { title: string; lines: string[]; text: string; explanation?: string }
 export interface Walkthrough {
   ref: string; task: number; q: string; title: string; proto_name: string; fig: string | null; source: 'ai' | 'solution'
-  steps: { title: string; lines: string[]; text: string }[]; img?: string | null; ctx_img?: string | null
+  steps: WalkthroughStep[]; diagram?: GeometryDiagram | null; img?: string | null; ctx_img?: string | null
 }
 export interface WalkthroughFeedback {
   kind: string; label: string; answer: string | null; right: string | null; note: string; errors: string[]

@@ -46,8 +46,8 @@ class WalkthroughTests(unittest.IsolatedAsyncioTestCase):
             db.add(self.run)
             await db.commit()
         self.items = [
-            {'id': 't1_1', 'n': 1, 'task': 'T1', 't': 'num', 'q': 'Другая задача', 'a': '100', 'type_name': 'Первый тип'},
-            {'id': 't1_2', 'n': 1, 'task': 'T1', 't': 'num', 'q': 'Вычисли 2 − 7.', 'a': '-5', 'type_name': 'Второй тип'},
+            {'id': 't1_1', 'n': 6, 'task': 'T6', 't': 'num', 'q': 'Другая задача', 'a': '100', 'type_name': 'Первый тип'},
+            {'id': 't1_2', 'n': 6, 'task': 'T6', 't': 'num', 'q': 'Вычисли 2 − 7.', 'a': '-5', 'type_name': 'Второй тип'},
             {'id': 's13', 'n': 13, 'task': 'T13', 't': 'work', 'q': '', 'max': 2, 'choices': [
                 {'type': '13.1', 'name': 'Первый тип', 'q': 'x = 100', 'a': '100'},
                 {'type': '13.2', 'name': 'Второй тип', 'q': '(x − 1)(x − 2) = 0', 'a': '1; 2'},
@@ -180,7 +180,7 @@ class WalkthroughTests(unittest.IsolatedAsyncioTestCase):
             r = await self.client.post(self.base + '/t1_2/walkthrough')
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json()['source'], 'solution')
-        self.assertIn('знак минус', r.json()['steps'][0]['text'])
+        self.assertIn('знак минус', r.json()['steps'][0]['explanation'])
         self.generate.assert_not_called()
 
     async def test_missing_solution_returns_error_instead_of_a_typical_walkthrough(self):
@@ -196,6 +196,35 @@ class WalkthroughTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(r.json()['condition_fig'], 'tangent')
         self.assertIn('(−1; 3) и (4; 2)', self.generate.call_args.args[0])
+
+    async def test_geometry_requires_and_caches_a_diagram(self):
+        from app.video.worked_geometry import worked_geometry
+
+        self.items[1].update(n=1)
+        r = await self.client.post(self.base + '/t1_2/walkthrough')
+        self.assertEqual(r.status_code, 503)
+        self.assertTrue(self.generate.call_args.kwargs['require_geometry'])
+
+        self.generate.return_value = worked_geometry('g16.1')
+        r = await self.client.post(self.base + '/t1_2/walkthrough')
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()['diagram']['dimension'], 2)
+        self.assertIn('explanation', r.json()['steps'][0])
+        cached = await self.client.post(self.base + '/t1_2/walkthrough')
+        self.assertEqual(cached.json(), r.json())
+        self.assertEqual(self.generate.await_count, 2)
+
+    async def test_reviewed_bank_tasks_have_their_own_diagrams_without_ai(self):
+        with patch.object(type(settings), 'llm_ready', new_callable=PropertyMock, return_value=False):
+            for ref, dimension in [('g16.1', 2), ('f536', 3)]:
+                with self.subTest(ref=ref):
+                    r = await self.client.post('/api/walkthrough', json={'ref': ref})
+                    self.assertEqual(r.status_code, 200, r.text)
+                    data = r.json()
+                    self.assertEqual(data['ref'], ref)
+                    self.assertEqual(data['diagram']['dimension'], dimension)
+                    self.assertTrue(all(step['explanation'] for step in data['steps']))
+        self.generate.assert_not_called()
 
 
 if __name__ == "__main__":

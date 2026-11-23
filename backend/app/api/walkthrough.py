@@ -24,9 +24,13 @@ from app.db.database import get_db
 from app.db.models import Diagnostic, ProblemWalkthrough, User
 from app.learning import analytics, engine, fipi, problems, service
 from app.learning.taskmaps import TASK_MAPS
+from app.video.geometry import is_geometry_task
+from app.video.worked_geometry import worked_geometry
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["walkthrough"])
+FORMAT_VERSION = 2
+DRAWING_UNAVAILABLE = "Не удалось подготовить чертёж, соответствующий условию. Попробуйте собрать разбор ещё раз."
 
 
 def _proto_fig(n: int, pid: str) -> str | None:
@@ -44,9 +48,14 @@ def from_solution(sol: str, answer: str | None) -> list[dict]:
             buf = []
     if buf:
         steps.append(buf)
-    out = [{"title": f"Шаг {i + 1}", "lines": [y[:90] for y in b][:4], "text": " ".join(b)} for i, b in enumerate(steps[:8])]
+    out = []
+    for i, sentences in enumerate(steps):
+        explanation = " ".join(sentences)
+        out.append({"title": f"Шаг {i + 1}", "lines": sentences if len(explanation) <= 150 else [],
+                    "text": explanation if len(explanation) <= 150 else "Посмотри на запись на доске.",
+                    "explanation": explanation})
     if answer:
-        out.append({"title": "Ответ", "lines": [f"Ответ: {answer}"], "text": f"Ответ: {answer}."})
+        out.append({"title": "Ответ", "lines": [f"Ответ: {answer}"], "text": f"Ответ: {answer}.", "explanation": f"Ответ: {answer}."})
     return out
 
 
@@ -54,11 +63,12 @@ class RefIn(BaseModel):
     ref: str = Field(..., max_length=40)
 
 
-async def _persist_walkthrough(db: AsyncSession, ref: str, source: str, steps: list) -> ProblemWalkthrough:
+async def _persist_walkthrough(db: AsyncSession, ref: str, source: str, steps: list,
+                               diagram: dict | None = None) -> ProblemWalkthrough:
     """Insert once and return the winner when several requests build the same problem concurrently."""
     await db.execute(
         pg_insert(ProblemWalkthrough)
-        .values(ref=ref, source=source, steps=steps)
+        .values(ref=ref, source=source, steps=steps, diagram=diagram)
         .on_conflict_do_nothing(index_elements=[ProblemWalkthrough.ref])
     )
     await db.commit()
@@ -74,8 +84,9 @@ async def walkthrough(body: RefIn, user: User = Depends(get_current_user), db: A
     p = found.get(body.ref)
     if p is None:
         raise HTTPException(404, "Нет такой задачи")
+    geometry = is_geometry_task(p.get("exam", "prof"), p["task"])
     meta = {"ref": body.ref, "task": p["task"], "q": p["q"], "proto_name": p["proto_name"],
-            "fig": None if p.get("img") else _proto_fig(p["task"], p["proto"]), "img": p.get("img"), "ctx_img": p.get("ctx_img"),
+            "fig": None if geometry or p.get("img") else _proto_fig(p["task"], p["proto"]), "img": p.get("img"), "ctx_img": p.get("ctx_img"),
             "title": p["proto_name"] or f"Задание № {p['task']}"}
     if user.role == "student" and p["a"] and p.get("exam", service.key_for(user)) == service.key_for(user):
         # watched before solving: the task map counts this problem as not solved by the student
@@ -86,9 +97,13 @@ async def walkthrough(body: RefIn, user: User = Depends(get_current_user), db: A
             service.redo_add(st, body.ref, p["task"])  # watched first: it comes back to be solved alone
             service.touch(st)
             await db.commit()
-    row = (await db.execute(select(ProblemWalkthrough).where(ProblemWalkthrough.ref == body.ref))).scalars().first()
+    if prepared := worked_geometry(body.ref):
+        return {**meta, "source": "solution", **prepared}
+    identity = json.dumps(p, sort_keys=True, ensure_ascii=False)
+    ref = f"v{FORMAT_VERSION}:" + hashlib.sha256(identity.encode()).hexdigest()[:35]
+    row = (await db.execute(select(ProblemWalkthrough).where(ProblemWalkthrough.ref == ref))).scalars().first()
     if row is None:
-        steps, source = None, None
+        steps, diagram = None, None
         if settings.llm_ready:
             from app.video.steps import generate_steps
             from app.learning.exambank import path_of
@@ -108,16 +123,18 @@ async def walkthrough(body: RefIn, user: User = Depends(get_current_user), db: A
             if p["sol"]:
                 hint += f"\nРешение из банка (опирайся на него, ответ не меняй): {p['sol']}"
             try:
-                data = await generate_steps(p["q"] + hint, imgs)
-                steps, source = data["steps"], "ai"
+                data = await generate_steps(p["q"] + hint, imgs, require_geometry=geometry)
+                steps, diagram = data["steps"], data.get("diagram")
             except Exception:  # noqa: BLE001 - fall back to the written solution
                 log.exception("walkthrough %s: model failed", body.ref)
+        if geometry and not diagram:
+            raise HTTPException(503, DRAWING_UNAVAILABLE)
         if steps is None and p["sol"]:
-            steps, source = from_solution(p["sol"], p["a"]), "solution"
+            return {**meta, "source": "solution", "steps": from_solution(p["sol"], p["a"]), "diagram": None}
         if steps is None:
             raise HTTPException(503, "Для этой задачи пока нет решения в банке, а ИИ не подключён: разбор не из чего собрать")
-        row = await _persist_walkthrough(db, body.ref, source, steps)
-    return {**meta, "source": row.source, "steps": row.steps}
+        row = await _persist_walkthrough(db, ref, "ai", steps, diagram)
+    return {**meta, "source": row.source, "steps": row.steps, "diagram": row.diagram}
 
 
 def _diagnostic_feedback(item: dict, answers: dict) -> dict:
@@ -183,14 +200,17 @@ async def diagnostic_walkthrough(diag_id: int, item_id: str, user: User = Depend
             raise HTTPException(400, "В этом задании тип не был выбран: конкретной задачи для разбора нет")
     problem = dict(problem)
     # A reference can supply a written solution, but the diagnostic's condition remains authoritative.
-    if problem.get("ref") and not problem.get("sol"):
+    prepared = None
+    if problem.get("ref"):
         found = await problems.resolve(db, [problem["ref"]])
         bank = found.get(problem["ref"])
         if bank and bank.get("q") == problem.get("q") and bank.get("img") == problem.get("img"):
-            problem["sol"] = bank.get("sol")
+            problem["sol"] = problem.get("sol") or bank.get("sol")
             problem["ans_img"] = problem.get("ans_img") or bank.get("ans_img")
+            prepared = worked_geometry(problem["ref"])
     feedback = _diagnostic_feedback(item, d.answers or {})
-    identity = json.dumps({"version": 1, "user": user.id, "diagnostic": d.id, "item": item_id,
+    geometry = is_geometry_task(d.exam_key, item.get("n"))
+    identity = json.dumps({"version": FORMAT_VERSION, "user": user.id, "diagnostic": d.id, "item": item_id,
                            "exam": d.exam_key, "problem": problem, "feedback": feedback}, sort_keys=True, ensure_ascii=False)
     ref = "diag:" + hashlib.sha256(identity.encode()).hexdigest()[:35]
     meta = {"ref": ref, "task": item.get("n"), "q": problem.get("q") or "Условие на изображении",
@@ -200,25 +220,32 @@ async def diagnostic_walkthrough(diag_id: int, item_id: str, user: User = Depend
             "feedback": feedback, "diagnostic_id": d.id, "item_id": item_id}
     row = (await db.execute(select(ProblemWalkthrough).where(ProblemWalkthrough.ref == ref))).scalars().first()
     if row is None:
-        steps, source = None, "solution"
+        steps, diagram = None, None
         if settings.llm_ready:
             from app.video.steps import generate_steps
             prompt, images = _diagnostic_input(problem)
             try:
-                data = await generate_steps(prompt, images, feedback=feedback)
-                steps, source = data["steps"], "ai"
+                data = await generate_steps(prompt, images, feedback=feedback, require_geometry=geometry)
+                steps, diagram = data["steps"], data.get("diagram")
             except Exception:  # noqa: BLE001 - a written solution is a safe fallback
                 log.exception("diagnostic walkthrough %s/%s: model failed", diag_id, item_id)
+        if geometry and not diagram:
+            if prepared:
+                return {**meta, "source": "solution", **prepared}
+            raise HTTPException(503, DRAWING_UNAVAILABLE)
         if steps is None and problem.get("sol"):
             steps = from_solution(problem["sol"], problem.get("a"))
             notes = feedback["errors"] or ([feedback["note"]] if feedback["note"] else [])
             if notes:
-                steps.insert(0, {"title": "На что обратить внимание", "lines": [s[:90] for s in notes[:4]], "text": " ".join(notes)})
+                steps.insert(0, {"title": "На что обратить внимание", "lines": ["Замечания проверки"],
+                                 "text": "Посмотри на замечания проверки перед решением.", "explanation": "\n".join(notes)})
+            if steps:
+                return {**meta, "source": "solution", "steps": steps, "diagram": None}
         if not steps:
             raise HTTPException(503, "Для разбора этой задачи нужен ИИ: готового решения в банке нет. Попробуйте позже")
         # Private to this diagnostic and this learner; never reuse another student's explanation.
-        row = await _persist_walkthrough(db, ref, source, steps)
-    return {**meta, "source": row.source, "steps": row.steps}
+        row = await _persist_walkthrough(db, ref, "ai", steps, diagram)
+    return {**meta, "source": row.source, "steps": row.steps, "diagram": row.diagram}
 
 
 @router.get("/fipi/img/{name}")

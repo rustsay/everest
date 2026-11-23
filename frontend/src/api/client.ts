@@ -1,6 +1,8 @@
+import type { GeometryDiagram, WalkthroughStep } from '../types'
+
 const BASE = '/api'
 
-export interface GeneratedVideo { id: string; problem: string; title: string; status: 'pending' | 'ready' | 'error'; stage: string; error: string | null; steps: { title: string; lines: string[]; text: string }[]; created_at: string }
+export interface GeneratedVideo { id: string; problem: string; title: string; status: 'pending' | 'ready' | 'error'; stage: string; error: string | null; steps: WalkthroughStep[]; created_at: string; diagram?: GeometryDiagram | null; needs_refresh?: boolean }
 export const listGeneratedVideos = (): Promise<{ videos: GeneratedVideo[] }> => apiFetch('/videos')
 export const generateVideo = (problem: string): Promise<GeneratedVideo> => apiFetch('/videos', { method: 'POST', body: JSON.stringify({ problem }) })
 export const retryVideo = (id: string): Promise<GeneratedVideo> => apiFetch(`/videos/${id}/retry`, { method: 'POST' })
