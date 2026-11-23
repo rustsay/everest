@@ -163,7 +163,7 @@ export interface Dashboard {
   exam: ExamInfo
   redo?: { due: number; total: number; done: number }
   diag_done?: boolean
-  /** unfinished first diagnostic: how many tasks are already done (answers and photos are saved) */
+  /** unfinished first diagnostic with saved progress; opening only the introduction does not count */
   diag_open?: { done: number; total: number } | null
   /** unfinished mock (including one in exam conditions, where the timer keeps running) */
   mock_open?: { done: number; total: number; exam_mode: boolean } | null
@@ -394,7 +394,6 @@ export interface WeekReport {
   from: string; to: string; active: number; active_days: string[]; solved: number; ok: number; checks: number; checks1: number; fixed: number
   acc: number | null; forecast: number; delta: number | null; pct: boolean; max: number; target: Target | null; gap: number | null
   redo_due: number; redo_total: number; focus: { task: string; name: string; p: number }[]; lines: string[]
-  parent_email?: string | null; smtp?: boolean
 }
 export interface ClassWeek {
   from: string; to: string

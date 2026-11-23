@@ -40,10 +40,12 @@ async def unread_count(db: AsyncSession, user_id: int) -> int:
     return len(res.all())
 
 
-async def mark_read(db: AsyncSession, user_id: int, note_id: int | None) -> None:
+async def mark_read(db: AsyncSession, user_id: int, note_id: int | None, note_ids: list[int] | None = None) -> None:
     q = update(Notification).where(Notification.user_id == user_id)
     if note_id is not None:
         q = q.where(Notification.id == note_id)
+    if note_ids is not None:
+        q = q.where(Notification.id.in_(note_ids))
     await db.execute(q.values(read=True))
     await db.commit()
 

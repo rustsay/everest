@@ -5,6 +5,7 @@ import type { Check1Item, Check1Result, PracticeItem } from '../types'
 import { Icon, fmtD } from '../design/ui'
 import ProblemText from './ProblemText'
 import useImagePaste from '../hooks/useImagePaste'
+import PhotoFiles from './PhotoFiles'
 
 const VERDICT: Record<string, [string, string]> = {
   ok: ['Верно', 'p-em'], ok_doubt: ['Ответ верный, но решение стоит проверить', 'p-gold'],
@@ -30,20 +31,23 @@ export default function Check1({ preset, presetTask, from = 1, to = 12, title }:
   const loadHist = () => check1History(exam).then((r) => setHist(r.items)).catch(() => null)
   useEffect(() => { loadHist() }, [exam]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
+    let active = true
     setItems(null)
+    setRef('')
     getPractice(task, undefined, exam).then((r) => {
+      if (!active) return
       const list = r.items.filter((x) => x.check === 'answer')
       setItems(list)
-      if (preset && list.some((x) => x.ref === preset)) setRef(preset)
-      else setRef((v) => (list.some((x) => x.ref === v) ? v : list[0]?.ref ?? ''))
-    }).catch(() => setItems([]))
-  }, [task, exam]) // eslint-disable-line react-hooks/exhaustive-deps
+      if (preset && (presetTask == null || presetTask === task) && list.some((x) => x.ref === preset)) setRef(preset)
+    }).catch(() => { if (active) setItems([]) })
+    return () => { active = false }
+  }, [task, exam, preset, presetTask])
   const cur = items?.find((x) => x.ref === ref)
   const submit = async (e: FormEvent) => {
     e.preventDefault()
+    if (mode === 'bank' && !cur) return app.toast('Выбери задачу из банка')
     if (!files.length) return app.toast('Прикрепи фото решения')
     if (mode === 'own' && !problem.trim()) return app.toast('Впиши условие задачи')
-    if (mode === 'bank' && !ref) return app.toast('Выбери задачу из банка')
     setBusy(true); setRes(null)
     try {
       const r = await checkFirstPart({ task, answer, files, exam, ...(mode === 'bank' ? { ref } : { problem }) })
@@ -58,7 +62,7 @@ export default function Check1({ preset, presetTask, from = 1, to = 12, title }:
       <form onSubmit={submit} className="c1-form">
         <div className="mat-form">
           <div className="field" style={{ flex: '0 1 130px' }}><label htmlFor="c1Task">Задание</label>
-            <select id="c1Task" className="input" value={task} onChange={(e) => { setTask(Number(e.target.value)); setRes(null) }}>
+            <select id="c1Task" className="input" value={task} onChange={(e) => { setTask(Number(e.target.value)); setRef(''); setRes(null) }}>
               {Array.from({ length: to - from + 1 }, (_, i) => <option key={from + i} value={from + i}>№ {from + i}</option>)}</select></div>
           <div style={{ flex: '1 1 260px' }}><span className="flabel">Какая задача</span>
             <div className="seg" role="group" aria-label="Какая задача">
@@ -68,6 +72,7 @@ export default function Check1({ preset, presetTask, from = 1, to = 12, title }:
         {mode === 'bank' ? (
           <div className="field"><label htmlFor="c1Ref">Задача</label>
             <select id="c1Ref" className="input" value={ref} onChange={(e) => { setRef(e.target.value); setRes(null) }} disabled={!items?.length}>
+              <option value="">{items === null ? 'Загружаю задачи…' : items.length ? 'Выбери задачу' : 'Нет задач для этого задания'}</option>
               {items?.map((x, i) => <option key={x.ref} value={x.ref}>{i + 1}. {x.proto_name ? `${x.proto_name}: ` : ''}{x.q.slice(0, 80)}</option>)}</select>
             {cur && <div className="c1-q"><ProblemText q={cur.q} img={cur.img} ctx={cur.ctx_img} /></div>}
           </div>
@@ -79,12 +84,9 @@ export default function Check1({ preset, presetTask, from = 1, to = 12, title }:
         <div className="mat-form">
           <div className="field" style={{ flex: '0 1 200px' }}><label htmlFor="c1Ans">Твой ответ</label>
             <input id="c1Ans" className="input" inputMode="text" value={answer} onChange={(e) => setAnswer(e.target.value)} placeholder="например, 0,5" /></div>
-          <div className="field" style={{ flex: '1 1 260px' }}><label htmlFor="c1Files">Фото решения (до 5)</label>
-            <input id="c1Files" className="input" type="file" accept="image/*,.pdf,.heic" multiple style={{ paddingTop: 10 }}
-              onChange={(e) => setFiles(Array.from(e.target.files ?? []).slice(0, 5))} /></div>
+          <div style={{ flex: '1 1 260px', minWidth: 0 }}><PhotoFiles id="c1Files" files={files} onChange={setFiles} disabled={busy} /></div>
         </div>
-        <p className="muted" style={{ fontSize: 13 }}>Фото можно вставить из буфера: Ctrl+V или ⌘V.{files.length > 0 && ` Прикреплено: ${files.map((file) => file.name).join(', ')}.`}</p>
-        <button className="btn btn-gold" type="submit" disabled={busy}><Icon n="check" s={18} c="#16231F" />{busy ? 'Проверяю…' : 'Проверить'}</button>
+        <button className="btn btn-gold" type="submit" disabled={busy || (mode === 'bank' && !cur)}><Icon n="check" s={18} c="#16231F" />{busy ? 'Проверяю…' : 'Проверить'}</button>
       </form>
       {res && <Verdict r={res} />}
       {hist.length > 0 && (
@@ -102,7 +104,7 @@ export default function Check1({ preset, presetTask, from = 1, to = 12, title }:
   )
 }
 
-function Verdict({ r }: { r: Check1Result }) {
+export function Verdict({ r }: { r: Check1Result }) {
   const [t, cls] = VERDICT[r.kind] ?? VERDICT.method
   return (
     <div className={`c1-res ${cls}`}>

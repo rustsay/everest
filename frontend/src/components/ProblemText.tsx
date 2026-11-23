@@ -26,7 +26,12 @@ export default function ProblemText({ q, img, small, ctx }: { q: string; img?: s
       {zoom && <ImageViewer src={zoom} onClose={() => setZoom(null)} />}
     </>
   )
-  return <>{q}</>
+  return <span style={{ whiteSpace: 'pre-line' }}>{q.split(/([a-zA-Zа-яА-ЯёЁ]\u20d7)/u).map((part, index) =>
+    part.endsWith('\u20d7') ? <span key={index} className="math-vector" role="img" aria-label={`вектор ${part[0]}`}>
+      <svg viewBox="0 0 16 6" preserveAspectRatio="none" aria-hidden="true"><path d="M1 3h13M11 1l3 2-3 2" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      <span aria-hidden="true">{part[0]}</span>
+    </span> : part,
+  )}</span>
 }
 
 function ImageViewer({ src, onClose }: { src: string; onClose: () => void }) {

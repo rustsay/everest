@@ -64,9 +64,10 @@ export async function listSessions() {
   return apiFetch('/sessions')
 }
 
-export async function uploadTask(sessionId: string, taskId: number, files: File[]): Promise<void> {
+export async function uploadTask(sessionId: string, taskId: number, files: File[], problemRef?: string): Promise<void> {
   const form = new FormData()
   for (const f of files) form.append('files', f)
+  if (problemRef) form.append('ref', problemRef)
   const res = await fetch(`${BASE}/sessions/${sessionId}/tasks/${taskId}/upload`, {
     method: 'POST',
     headers: authHeader(),
@@ -149,6 +150,11 @@ export async function uploadDiagWork(id: number, item: string, files: File[]): P
 export const setDiagMode = (id: number, item: string, mode: 'dont_know' | 'oral' | 'clear'): Promise<{ work: Record<string, DiagWork> }> =>
   apiFetch(`/diagnostics/${id}/items/${encodeURIComponent(item)}/mode`, { method: 'PUT', body: JSON.stringify({ mode }) })
 export const getDiagWork = (id: number): Promise<{ work: Record<string, DiagWork> }> => apiFetch(`/diagnostics/${id}/work`)
+export async function diagWorkPhoto(id: number, item: string, page: number): Promise<string> {
+  const response = await fetch(`${BASE}/diagnostics/${id}/items/${encodeURIComponent(item)}/work/${page}`, { headers: authHeader() })
+  if (!response.ok) throw new Error('Не удалось загрузить фото')
+  return URL.createObjectURL(await response.blob())
+}
 /** Part 2 of the diagnostic by types: which type the student solves. */
 export const setDiagChoice = (id: number, item: string, type: string): Promise<{ work: Record<string, DiagWork>; choice: Record<string, string> }> =>
   apiFetch(`/diagnostics/${id}/items/${item}/choice`, { method: 'PUT', body: JSON.stringify({ type }) })
@@ -191,7 +197,8 @@ export const nodeQuiz = (node: string, ok: number, total: number): Promise<{ bef
   apiFetch(`/nodes/${node}/quiz`, { method: 'POST', body: JSON.stringify({ ok, total }) })
 
 export const getNotifications = (): Promise<{ notifications: NotificationItem[] }> => apiFetch('/notifications')
-export const readNotifications = (id?: number) => apiFetch('/notifications/read', { method: 'POST', body: JSON.stringify({ id: id ?? null }) })
+export const readNotifications = (id?: number | number[]): Promise<{ ok: boolean; unread: number }> =>
+  apiFetch('/notifications/read', { method: 'POST', body: JSON.stringify(Array.isArray(id) ? { ids: id } : { id: id ?? null }) })
 
 export const getChat = (kind: 'student' | 'teacher'): Promise<{ messages: ChatMsg[] }> => apiFetch(`/chat/${kind}`)
 export interface ReviewChatSummary {
@@ -338,8 +345,6 @@ export const check2History = (): Promise<{ items: Check2Item[] }> => apiFetch('/
 export const getRedo = (): Promise<{ items: RedoItem[]; later: number; next: string | null; done: number }> => apiFetch('/redo')
 export const weekReport = (): Promise<WeekReport> => apiFetch('/report/week')
 export const classWeek = (): Promise<ClassWeek> => apiFetch('/teacher/report/week')
-export const setParentEmail = (email: string | null): Promise<{ parent_email: string | null; smtp: boolean }> =>
-  apiFetch('/me/parent', { method: 'PUT', body: JSON.stringify({ email }) })
 const walkthroughPending = new Map<string, Promise<Walkthrough>>()
 export const getWalkthrough = (ref: string): Promise<Walkthrough> => {
   const current = walkthroughPending.get(ref)

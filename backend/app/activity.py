@@ -48,7 +48,7 @@ def section_of(path: str) -> str | None:
     if first == "teacher" and len(parts) > 3:
         first = {"paths": "paths", "report": "report"}.get(parts[3], "teacher")
     if first == "me" and len(parts) > 3:
-        first = {"events": "plan", "target": "path", "parent": "report"}.get(parts[3], "me")
+        first = {"events": "plan", "target": "path"}.get(parts[3], "me")
     if first == "sessions" and parts[-1] == "status":
         return None  # polled while a check runs
     if first == "diagnostics" and parts[-1] == "work":

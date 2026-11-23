@@ -10,6 +10,7 @@ from datetime import date
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
@@ -141,6 +142,20 @@ async def _analyze(diag_id: int, item_id: str, item: dict, pages: list[tuple[byt
             w.update({"status": status, "result": result, "error": error})
             _set_work(d, item_id, w)
             await db.commit()
+
+
+@router.get("/diagnostics/{diag_id}/items/{item_id}/work/{page}")
+async def work_photo(diag_id: int, item_id: str, page: int,
+                     user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Only the owner can view a currently attached, normalized page of a solution."""
+    d = await _own(db, diag_id, user)
+    work = ((d.answers or {}).get("_work") or {}).get(item_id) or {}
+    if item_id not in _items(d, user) or work.get("mode") != "photo" or not 0 <= page < work.get("files", 0):
+        raise HTTPException(404, "Фото не найдено")
+    path = _folder(diag_id, item_id) / f"p{page}.jpg"
+    if not path.is_file():
+        raise HTTPException(404, "Фото не найдено")
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
 
 
 @router.post("/diagnostics/{diag_id}/items/{item_id}/work")

@@ -9,6 +9,7 @@ import unittest
 import uuid
 from datetime import datetime, timedelta
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, PropertyMock, patch
 
 from fastapi import FastAPI
@@ -21,6 +22,58 @@ from app.config import settings
 from app.db.database import Base
 from app.db.models import Diagnostic, User
 from app.learning import engine
+
+
+class DiagnosticOfferTests(unittest.IsolatedAsyncioTestCase):
+    async def test_skipping_diagnostic_preserves_a_completed_tour(self):
+        user = User(id=1, role='student', grade='9', exam='oge')
+        for before, after in (('done', 'done'), ('new', 'skipped'), ('skipped', 'skipped')):
+            with self.subTest(onb=before):
+                row = SimpleNamespace(data={'onb': before})
+                with patch.object(learning.service, 'get_state', AsyncMock(return_value=row)), \
+                        patch.object(learning.service, 'touch'):
+                    await learning.skip_diagnostic(user=user, db=AsyncMock())
+                self.assertEqual(row.data['onb'], after)
+
+    async def progress(self, answers=None, position=0, mode='first'):
+        run = Diagnostic(user_id=1, mode=mode, exam_key='oge', variant=0,
+                         position=position, answers=answers)
+        user = User(id=1, role='student', grade='9', exam='oge')
+        items = [{'id': 't1', 't': 'num', 'photo': 'optional'}]
+        with patch.object(learning.crud, 'open_diagnostic', AsyncMock(return_value=run)), \
+                patch.object(engine, 'items_of', return_value=items):
+            return await learning._diag_progress(None, user, mode)
+
+    async def test_skipped_introduction_does_not_offer_to_resume(self):
+        for answers in (None, {}, {'_fmt': 'types'}, {'_fmt': 'types', '_work': {}, '_choice': {}}, {'t1': '  '}):
+            with self.subTest(answers=answers):
+                self.assertIsNone(await self.progress(answers))
+
+    async def test_first_answer_or_photo_counts_even_with_zero_completed_tasks(self):
+        for answers in ({'t1': '2'}, {'t1': '0'}, {'t1': '?'},
+                        {'_work': {'t1': {'mode': 'photo', 'status': 'pending'}}},
+                        {'_choice': {'s20': '20.1'}}):
+            with self.subTest(answers=answers):
+                self.assertIsNotNone(await self.progress(answers))
+        progress = await self.progress({'_work': {'t1': {'mode': 'photo', 'status': 'pending'}}})
+        self.assertEqual(progress, {'done': 0, 'total': 1, 'exam_mode': False})
+
+    async def test_navigation_progress_is_resumable(self):
+        self.assertIsNotNone(await self.progress({'_fmt': 'types'}, position=1))
+
+    async def test_new_mock_is_still_resumable_including_running_exam_timer(self):
+        self.assertIsNotNone(await self.progress({}, mode='mock'))
+        progress = await self.progress({'_exam': {'start': '2026-11-23T10:00:00', 'limit': 235}}, mode='mock')
+        self.assertTrue(progress['exam_mode'])
+
+    async def test_profile_does_not_mark_an_empty_run_in_progress(self):
+        user = User(id=1, role='student', grade='9', exam='oge')
+        run = Diagnostic(user_id=1, mode='first', position=0, answers={'_fmt': 'types'})
+        with patch.object(learning.crud, 'open_diagnostic', AsyncMock(return_value=run)), \
+                patch.object(learning.crud, 'last_finished_diagnostic', AsyncMock(return_value=None)):
+            self.assertEqual(await learning._diag_status(None, user), {'diag_done': False, 'diag_in_progress': False})
+            run.answers = {'t1': '2'}
+            self.assertEqual(await learning._diag_status(None, user), {'diag_done': False, 'diag_in_progress': True})
 
 
 @unittest.skipUnless(os.getenv('RUN_DB_TESTS') == '1', 'Set RUN_DB_TESTS=1 for isolated PostgreSQL tests')
@@ -126,6 +179,33 @@ class DiagnosticProgressTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('upload_id', r.json()['work']['s20'])
         answers['_work']['s20'].update(status='done', result={'score': 2})
         self.assertEqual(engine.eval_item(self.items[1], answers)['pts'], 2)
+
+    async def test_saved_solution_photo_can_be_viewed_after_reopening(self):
+        await self.store({'_work': {'t1': {'mode': 'photo', 'status': 'done', 'files': 1}}})
+        (Path(self.temp.name) / 'p0.jpg').write_bytes(b'saved-solution-photo')
+        response = await self.client.get(self.base + '/items/t1/work/0')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b'saved-solution-photo')
+        self.assertEqual(response.headers['content-type'], 'image/jpeg')
+        self.assertIn('no-store', response.headers['cache-control'])
+
+    async def test_another_user_cannot_view_the_solution_photo(self):
+        await self.store({'_work': {'t1': {'mode': 'photo', 'status': 'done', 'files': 1}}})
+        (Path(self.temp.name) / 'p0.jpg').write_bytes(b'private-photo')
+        self.app.dependency_overrides[learning.get_current_user] = lambda: self.other
+        response = await self.client.get(self.base + '/items/t1/work/0')
+        self.assertEqual(response.status_code, 404)
+
+    async def test_removed_solution_and_out_of_range_pages_cannot_be_viewed(self):
+        (Path(self.temp.name) / 'p0.jpg').write_bytes(b'old-photo')
+        await self.store({'_work': {'t1': {'mode': 'photo', 'status': 'done', 'files': 1}}})
+        for item, page in (('t1', -1), ('t1', 1), ('unknown', 0)):
+            with self.subTest(item=item, page=page):
+                response = await self.client.get(self.base + f'/items/{item}/work/{page}')
+                self.assertEqual(response.status_code, 404)
+        await self.store({'_work': {'t1': {'mode': 'oral', 'status': 'done'}}})
+        response = await self.client.get(self.base + '/items/t1/work/0')
+        self.assertEqual(response.status_code, 404)
 
     async def test_old_photo_check_cannot_overwrite_a_replacement(self):
         answers = {'_work': {'s20': {'mode': 'photo', 'status': 'pending', 'files': 2, 'upload_id': 'new'}}}

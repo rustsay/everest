@@ -112,7 +112,7 @@ export default function SolutionBoard({ n, task, onBack, onUnderstood, onNotUnde
     <>
       <div className="v-head"><button className="btn btn-sm btn-ghost" onClick={onBack}><Icon n="prev" s={16} />{backLabel ?? 'Все задания'}</button>
         <div style={{ minWidth: 0 }}><p className="muted">{label ?? (n ? 'Разбор · задание ' + n : 'Разбор своей задачи')}</p><h1>{v.t}</h1></div></div>
-      <div className="v-cond"><span className="label">Условие</span>{img ? <ProblemText q={v.c} img={img} ctx={ctx} small /> : <p>{v.c}</p>}</div>
+      <div className="v-cond"><span className="label">Условие</span>{img ? <ProblemText q={v.c} img={img} ctx={ctx} small /> : <p><ProblemText q={v.c} /></p>}</div>
       {conditionFigure}
       {feedback && <section className="card" aria-label="Твой результат в диагностике">
         <b>Твой результат: {feedback.label}</b>

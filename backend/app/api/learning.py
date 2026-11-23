@@ -47,18 +47,26 @@ def me_payload(user: User, state: dict, extra: dict | None = None) -> dict:
     }
 
 
+def _diag_started(run: Diagnostic) -> bool:
+    """Opening the introduction creates a run, but does not start the diagnostic."""
+    answers = run.answers or {}
+    return bool(run.position or answers.get("_work") or answers.get("_choice") or any(
+        str(value).strip() for key, value in answers.items() if not key.startswith("_") and value is not None
+    ))
+
+
 async def _diag_status(db: AsyncSession, user: User) -> dict:
     last = await crud.last_finished_diagnostic(db, user.id)
     run = await crud.open_diagnostic(db, user.id, "first")
-    return {"diag_done": last is not None, "diag_in_progress": run is not None}
+    return {"diag_done": last is not None, "diag_in_progress": run is not None and _diag_started(run)}
 
 
 async def _diag_progress(db: AsyncSession, user: User, mode: str) -> dict | None:
-    """Progress of an unfinished diagnostic/mock, including a newly started run with zero completed tasks."""
+    """Progress of a started diagnostic or any unfinished mock (its timer may already be running)."""
     if user.role != "student":
         return None
     run = await crud.open_diagnostic(db, user.id, mode)
-    if run is None:
+    if run is None or (mode == "first" and not _diag_started(run)):
         return None
     from app.api.diag_work import missing
     total = len(engine.items_of(run.exam_key, user.grade, run.variant, date.today(), run.answers))
@@ -67,7 +75,7 @@ async def _diag_progress(db: AsyncSession, user: User, mode: str) -> dict | None
 
 
 async def _diag_open(db: AsyncSession, user: User) -> dict | None:
-    """An unfinished first diagnostic, always shown on the home screen, even before the first answer."""
+    """An unfinished first diagnostic with saved answers, work, choices, or navigation progress."""
     return await _diag_progress(db, user, "first")
 
 
@@ -411,7 +419,8 @@ async def skip_diagnostic(user: User = Depends(get_current_user), db: AsyncSessi
     if engine.diag_required(user.grade):
         raise HTTPException(400, "Для 9-11 классов диагностика обязательна")
     row = await service.get_state(db, user.id)
-    row.data["onb"] = "skipped"
+    if row.data.get("onb") != "done":
+        row.data["onb"] = "skipped"
     service.touch(row)
     await db.commit()
     return {"ok": True}
@@ -726,12 +735,13 @@ async def notifications(user: User = Depends(get_current_user), db: AsyncSession
 
 class ReadIn(BaseModel):
     id: int | None = None
+    ids: list[int] | None = Field(None, max_length=100)
 
 
 @router.post("/notifications/read")
 async def read_notifications(body: ReadIn, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    await crud.mark_read(db, user.id, body.id)
-    return {"ok": True}
+    await crud.mark_read(db, user.id, body.id, body.ids)
+    return {"ok": True, "unread": await crud.unread_count(db, user.id)}
 
 
 # ---------- assistant chat ----------
